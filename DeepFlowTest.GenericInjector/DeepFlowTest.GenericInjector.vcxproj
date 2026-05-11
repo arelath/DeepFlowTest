@@ -4,6 +4,12 @@
     <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">Win32</Platform>
     <RootBuild Condition="'$(RootBuild)' == ''">true</RootBuild>
+    <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">1.0.0.0</AssemblyVersion>
+    <InformationalVersion Condition="'$(InformationalVersion)' == ''">$(AssemblyVersion)</InformationalVersion>
+    <MajorVersion>$([System.Version]::Parse($(AssemblyVersion)).Major)</MajorVersion>
+    <MinorVersion>$([System.Version]::Parse($(AssemblyVersion)).Minor)</MinorVersion>
+    <BuildVersion>$([System.Version]::Parse($(AssemblyVersion)).Build)</BuildVersion>
+    <RevisionVersion>$([System.Version]::Parse($(AssemblyVersion)).Revision)</RevisionVersion>
     <ResolveNuGetPackages>false</ResolveNuGetPackages>
   </PropertyGroup>
 
@@ -110,7 +116,29 @@
   </ItemDefinitionGroup>
 
   <ItemGroup>
+    <ClCompile Include="Executor.cpp" />
+    <ClCompile Include="LogHelper.cpp" />
+    <ClCompile Include="NetExecutor.cpp" />
+    <ClCompile Include="NetFrameworkExecutor.cpp" />
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="pch.cpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="FrameworkExecutor.h" />
+    <ClInclude Include="LogHelper.h" />
+    <ClInclude Include="NetExecutor.h" />
+    <ClInclude Include="NetFrameworkExecutor.h" />
+    <ClInclude Include="framework.h" />
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="version.h" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ResourceCompile Include="version.rc">
+      <PreprocessorDefinitions>VERSION_MAJOR=$(MajorVersion);VERSION_MINOR=$(MinorVersion);VERSION_BUILD=$(BuildVersion);VERSION_REVISION=$(RevisionVersion);InformationalVersion="$(InformationalVersion)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemGroup>
 
   <Import Condition="Exists('$(VCTargetsPath)\Microsoft.Cpp.targets')" Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -101,6 +101,8 @@ public sealed class RepositoryConfigurationTests
 
 		foreach (var target in expectedTargets)
 			Assert.That(buildScript, Does.Contain($"\"{target}\""));
+
+		Assert.That(buildScript, Does.Contain("new BuildTarget(\"Compile\", Compile, \"Restore\", \"CompileNativeInjector\")"));
 	}
 
 	[Test]
@@ -159,9 +161,37 @@ public sealed class RepositoryConfigurationTests
 		foreach (var command in expectedCommands)
 			Assert.That(buildDoc, Does.Contain(command));
 
+		Assert.That(buildDoc, Does.Contain("fastbuild.ps1"));
+		Assert.That(buildDoc, Does.Contain("fasttest.ps1"));
 		Assert.That(payloadDoc, Does.Contain("output/payloads/"));
 		Assert.That(payloadDoc, Does.Contain("ILRepack"));
 		Assert.That(payloadDoc, Does.Contain("No dependency has an accepted exemption"));
+	}
+
+	[Test]
+	public void QuickIterationScriptsExist()
+	{
+		var root = FindRepositoryRoot();
+		Assert.That(File.Exists(Path.Combine(root, "fastbuild.ps1")), Is.True);
+		Assert.That(File.Exists(Path.Combine(root, "fasttest.ps1")), Is.True);
+		Assert.That(File.Exists(Path.Combine(root, "fastbuild.cmd")), Is.True);
+		Assert.That(File.Exists(Path.Combine(root, "fasttest.cmd")), Is.True);
+	}
+
+	[Test]
+	public void InjectorResourcesArePackagedFromArchitectureSpecificFolders()
+	{
+		var root = FindRepositoryRoot();
+		var launcherProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.InjectorLauncher", "DeepFlowTest.InjectorLauncher.csproj"));
+		var nativeProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.GenericInjector", "DeepFlowTest.GenericInjector.vcxproj"));
+		var cliProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj"));
+
+		Assert.That(launcherProject, Does.Contain(@"DeepFlowTestResources\$(PlatformTarget)\"));
+		Assert.That(nativeProject, Does.Contain(@"DeepFlowTestResources\$(ArchitectureName)\"));
+		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x86"));
+		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x64"));
+		Assert.That(cliProject, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x86"));
+		Assert.That(cliProject, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x64"));
 	}
 
 	[Test]

@@ -13,4 +13,9 @@
     <PackageReference Include="NUnit3TestAdapter" />
     <ProjectReference Include="..\DeepFlowTest\DeepFlowTest.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\InjectorData.cs" Link="Linked\Shared\InjectorData.cs" />
+    <Compile Include="..\DeepFlowTest.InjectorLauncher\*.cs" Exclude="..\DeepFlowTest.InjectorLauncher\Program.cs" Link="Linked\InjectorLauncher\%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>
