@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <TargetFrameworks>net461;netcoreapp3.1;net5.0-windows</TargetFrameworks>
+    <RootNamespace>DeepFlowTest</RootNamespace>
+    <AssemblyName>DeepFlowTest</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <Platforms>AnyCPU;x86;x64</Platforms>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>WPF application automation library.</Description>
+    <PackageTags>WPF;Automation;Testing;UI</PackageTags>
+    <PackageProjectUrl>https://deepflowtest.local</PackageProjectUrl>
+    <RepositoryUrl>https://deepflowtest.local/repository</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" />
+    <PackageReference Include="Microsoft.CSharp" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="Serialize.Linq" />
+    <PackageReference Include="System.Buffers" />
+    <PackageReference Include="System.Memory" />
+    <PackageReference Include="System.ValueTuple" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net461'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net461" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

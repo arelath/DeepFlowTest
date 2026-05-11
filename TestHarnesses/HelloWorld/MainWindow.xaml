@@ -1,0 +1,38 @@
+<Window x:Class="HelloWorld.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DeepFlowTest HelloWorld"
+        Width="360"
+        Height="220"
+        Name="HelloWorldWindow"
+        AutomationProperties.AutomationId="HelloWorldWindow"
+        AutomationProperties.Name="HelloWorld Window">
+  <Grid Margin="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <TextBlock Text="HelloWorld Harness" />
+
+    <TextBox x:Name="InputTextBox"
+             Grid.Row="1"
+             Margin="0,12,0,0"
+             Text="Ready"
+             AutomationProperties.AutomationId="HelloWorldInput"
+             AutomationProperties.Name="HelloWorld Input" />
+
+    <Button x:Name="ActionButton"
+            Grid.Row="2"
+            Width="120"
+            Height="32"
+            Margin="0,12,0,0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Content="Press Me"
+            Click="ActionButton_Click"
+            AutomationProperties.AutomationId="HelloWorldButton"
+            AutomationProperties.Name="HelloWorld Button" />
+  </Grid>
+</Window>

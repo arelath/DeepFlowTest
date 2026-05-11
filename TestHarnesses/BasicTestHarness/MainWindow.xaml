@@ -1,0 +1,173 @@
+<Window x:Class="BasicTestHarness.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DeepFlowTest Basic Test Harness"
+        Width="780"
+        Height="560"
+        Name="BasicHarnessWindow"
+        AutomationProperties.AutomationId="BasicHarnessWindow"
+        AutomationProperties.Name="Basic Harness Window">
+  <DockPanel>
+    <Menu x:Name="MainMenu"
+          DockPanel.Dock="Top"
+          AutomationProperties.AutomationId="MainMenu"
+          AutomationProperties.Name="Main Menu">
+      <MenuItem Header="_File"
+                AutomationProperties.AutomationId="FileMenu"
+                AutomationProperties.Name="File Menu">
+        <MenuItem Header="Open"
+                  AutomationProperties.AutomationId="OpenMenuItem"
+                  AutomationProperties.Name="Open Menu Item" />
+        <MenuItem Header="Exit"
+                  AutomationProperties.AutomationId="ExitMenuItem"
+                  AutomationProperties.Name="Exit Menu Item" />
+      </MenuItem>
+      <MenuItem Header="_View"
+                AutomationProperties.AutomationId="ViewMenu"
+                AutomationProperties.Name="View Menu">
+        <MenuItem Header="Refresh"
+                  AutomationProperties.AutomationId="RefreshMenuItem"
+                  AutomationProperties.Name="Refresh Menu Item" />
+      </MenuItem>
+    </Menu>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <Grid Margin="16">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal">
+          <Button x:Name="PrimaryButton"
+                  Width="140"
+                  Height="32"
+                  Content="Primary Action"
+                  AutomationProperties.AutomationId="PrimaryButton"
+                  AutomationProperties.Name="Primary Button">
+            <Button.ContextMenu>
+              <ContextMenu x:Name="PrimaryButtonContextMenu"
+                           AutomationProperties.AutomationId="PrimaryButtonContextMenu"
+                           AutomationProperties.Name="Primary Button Context Menu">
+                <MenuItem Header="Context Action"
+                          AutomationProperties.AutomationId="ContextActionMenuItem"
+                          AutomationProperties.Name="Context Action Menu Item" />
+              </ContextMenu>
+            </Button.ContextMenu>
+          </Button>
+
+          <TextBox x:Name="SearchTextBox"
+                   Width="220"
+                   Height="32"
+                   Margin="12,0,0,0"
+                   Text="Search text"
+                   AutomationProperties.AutomationId="SearchTextBox"
+                   AutomationProperties.Name="Search Text Box" />
+        </StackPanel>
+
+        <Expander x:Name="DetailsExpander"
+                  Grid.Row="1"
+                  Margin="0,16,0,0"
+                  Header="Details"
+                  AutomationProperties.AutomationId="DetailsExpander"
+                  AutomationProperties.Name="Details Expander">
+          <TextBlock Text="Expanded details content"
+                     AutomationProperties.AutomationId="DetailsText"
+                     AutomationProperties.Name="Details Text" />
+        </Expander>
+
+        <StackPanel Grid.Row="2"
+                    Margin="0,16,0,0"
+                    Orientation="Horizontal">
+          <ToggleButton x:Name="PopupToggle"
+                        Width="140"
+                        Height="32"
+                        Content="Open Popup"
+                        Click="PopupToggle_Click"
+                        AutomationProperties.AutomationId="PopupToggle"
+                        AutomationProperties.Name="Popup Toggle" />
+          <Popup x:Name="SamplePopup"
+                 PlacementTarget="{Binding ElementName=PopupToggle}"
+                 Placement="Bottom"
+                 StaysOpen="False"
+                 AutomationProperties.AutomationId="SamplePopup"
+                 AutomationProperties.Name="Sample Popup">
+            <Border Padding="12"
+                    BorderBrush="DarkGray"
+                    BorderThickness="1"
+                    Background="White">
+              <TextBlock Text="Popup content"
+                         AutomationProperties.AutomationId="PopupText"
+                         AutomationProperties.Name="Popup Text" />
+            </Border>
+          </Popup>
+        </StackPanel>
+
+        <ListBox x:Name="SampleList"
+                 Grid.Row="3"
+                 Height="96"
+                 Margin="0,16,0,0"
+                 AutomationProperties.AutomationId="SampleList"
+                 AutomationProperties.Name="Sample List">
+          <ListBoxItem Content="Alpha"
+                       AutomationProperties.AutomationId="ListItemAlpha"
+                       AutomationProperties.Name="Alpha Item" />
+          <ListBoxItem Content="Beta"
+                       AutomationProperties.AutomationId="ListItemBeta"
+                       AutomationProperties.Name="Beta Item" />
+          <ListBoxItem Content="Gamma"
+                       AutomationProperties.AutomationId="ListItemGamma"
+                       AutomationProperties.Name="Gamma Item" />
+        </ListBox>
+
+        <TabControl x:Name="SampleTabs"
+                    Grid.Row="4"
+                    Height="140"
+                    Margin="0,16,0,0"
+                    AutomationProperties.AutomationId="SampleTabs"
+                    AutomationProperties.Name="Sample Tabs">
+          <TabItem Header="First"
+                   AutomationProperties.AutomationId="FirstTab"
+                   AutomationProperties.Name="First Tab">
+            <TextBlock Margin="8"
+                       Text="First tab content"
+                       AutomationProperties.AutomationId="FirstTabText"
+                       AutomationProperties.Name="First Tab Text" />
+          </TabItem>
+          <TabItem Header="Second"
+                   AutomationProperties.AutomationId="SecondTab"
+                   AutomationProperties.Name="Second Tab">
+            <TextBlock Margin="8"
+                       Text="Second tab content"
+                       AutomationProperties.AutomationId="SecondTabText"
+                       AutomationProperties.Name="Second Tab Text" />
+          </TabItem>
+        </TabControl>
+
+        <StackPanel Grid.Row="5"
+                    Margin="0,16,0,0"
+                    Orientation="Horizontal">
+          <Button x:Name="ShowSecondaryWindowButton"
+                  Width="160"
+                  Height="32"
+                  Content="Secondary Window"
+                  Click="ShowSecondaryWindow_Click"
+                  AutomationProperties.AutomationId="ShowSecondaryWindowButton"
+                  AutomationProperties.Name="Show Secondary Window Button" />
+          <Button x:Name="ShowModalDialogButton"
+                  Width="140"
+                  Height="32"
+                  Margin="12,0,0,0"
+                  Content="Modal Dialog"
+                  Click="ShowModalDialog_Click"
+                  AutomationProperties.AutomationId="ShowModalDialogButton"
+                  AutomationProperties.Name="Show Modal Dialog Button" />
+        </StackPanel>
+      </Grid>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

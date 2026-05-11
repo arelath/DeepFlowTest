@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net461</TargetFramework>
+    <RuntimeIdentifiers>win-x86;win-x64</RuntimeIdentifiers>
+    <RootNamespace>DeepFlowTest.InjectorLauncher</RootNamespace>
+    <PlatformTarget Condition="'$(PlatformTarget)' == '' or '$(PlatformTarget)' == 'AnyCPU'">x86</PlatformTarget>
+    <Platforms>AnyCPU;x86;x64</Platforms>
+    <AssemblyName>DeepFlowTest.InjectorLauncher.$(PlatformTarget)</AssemblyName>
+    <TargetName>$(AssemblyName)</TargetName>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\$(PlatformTarget)\</OutputPath>
+    <IntermediateOutputPath>$(RepositoryRoot)output\obj\$(MSBuildProjectName)\$(PlatformTarget)\$(Configuration)\</IntermediateOutputPath>
+    <RootBuild Condition="'$(RootBuild)' == ''">true</RootBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\InjectorData.cs" Link="InjectorData.cs" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net461" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="CompileX64InjectorLauncher" AfterTargets="Build" Condition="'$(RootBuild)' == 'true'">
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Restore" Properties="RootBuild=false;Configuration=$(Configuration);PlatformTarget=x64;Platform=x64" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="RootBuild=false;Configuration=$(Configuration);PlatformTarget=x64;Platform=x64" />
+  </Target>
+</Project>

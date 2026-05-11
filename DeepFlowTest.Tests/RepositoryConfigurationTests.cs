@@ -1,0 +1,262 @@
+namespace DeepFlowTest.Tests;
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Xml.Linq;
+using NUnit.Framework;
+
+[TestFixture]
+public sealed class RepositoryConfigurationTests
+{
+	private static readonly string[] DisallowedProductNames =
+	{
+		Decode("V3BmUGlsb3Q="),
+		Decode("U25vb3A="),
+	};
+
+	private static readonly HashSet<string> ExcludedSegments = new(StringComparer.OrdinalIgnoreCase)
+	{
+		".git",
+		".vs",
+		"artifacts",
+		"bin",
+		"Docs",
+		"obj",
+		"output",
+		"packages",
+	};
+
+	private static readonly HashSet<string> SourceExtensions = new(StringComparer.OrdinalIgnoreCase)
+	{
+		".cmd",
+		".cpp",
+		".cs",
+		".csproj",
+		".filters",
+		".h",
+		".json",
+		".props",
+		".ps1",
+		".rc",
+		".sln",
+		".targets",
+		".vcxproj",
+		".xaml",
+	};
+
+	private static readonly HashSet<string> SourceFileNames = new(StringComparer.OrdinalIgnoreCase)
+	{
+		".editorconfig",
+		".gitattributes",
+		".gitignore",
+		".vsconfig",
+	};
+
+	[Test]
+	public void ProductSourceDoesNotContainPreviousProductNames()
+	{
+		var root = FindRepositoryRoot();
+		var offenders = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+			.Where(IsProductSourceFile)
+			.SelectMany(file => FindDisallowedNames(file, File.ReadAllText(file)))
+			.ToList();
+
+		Assert.That(offenders, Is.Empty);
+	}
+
+	[Test]
+	public void CentralPackageManagementIsEnabled()
+	{
+		var props = XDocument.Load(Path.Combine(FindRepositoryRoot(), "Directory.Build.props"));
+		Assert.That(ReadProperty(props, "ManagePackageVersionsCentrally"), Is.EqualTo("true").IgnoreCase);
+		Assert.That(ReadProperty(props, "CentralPackageTransitivePinningEnabled"), Is.EqualTo("true").IgnoreCase);
+		Assert.That(ReadProperty(props, "DisableWinExeOutputInference"), Is.EqualTo("true").IgnoreCase);
+		Assert.That(ReadProperty(props, "ProduceReferenceAssembly"), Is.EqualTo("false").IgnoreCase);
+	}
+
+	[Test]
+	public void BuildScriptDeclaresMilestoneTargets()
+	{
+		var buildScript = File.ReadAllText(Path.Combine(FindRepositoryRoot(), ".build", "Build.cs"));
+		var expectedTargets = new[]
+		{
+			"Restore",
+			"Compile",
+			"CompileNativeInjector",
+			"RepackPayloads",
+			"TestFast",
+			"TestCore",
+			"TestCli",
+			"CompileTestHarnesses",
+			"TestIntegration",
+			"TestCompat",
+			"TestFull",
+			"PublishCli",
+			"Pack",
+			"CI",
+		};
+
+		foreach (var target in expectedTargets)
+			Assert.That(buildScript, Does.Contain($"\"{target}\""));
+	}
+
+	[Test]
+	public void ProjectsDeclareExpectedTargetFrameworks()
+	{
+		var root = FindRepositoryRoot();
+		Assert.That(ReadProjectProperty(root, "DeepFlowTest", "DeepFlowTest.csproj", "TargetFrameworks"), Is.EqualTo("net461;netcoreapp3.1;net5.0-windows"));
+		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
+		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Tests", "DeepFlowTest.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
+		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Cli.Tests", "DeepFlowTest.Cli.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
+		Assert.That(ReadProjectProperty(root, "TestHarnesses", "Directory.Build.props", "TargetFramework"), Is.EqualTo("net8.0-windows"));
+	}
+
+	[Test]
+	public void PayloadFoldersUseExpectedNamesWhenPresent()
+	{
+		var root = FindRepositoryRoot();
+		var payloadRoot = Path.Combine(root, "output", "payloads");
+		if (!Directory.Exists(payloadRoot))
+			return;
+
+		var allowedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+		{
+			"netframework",
+			"netcoreapp",
+			"dotnet",
+		};
+
+		var unexpectedFolders = Directory.EnumerateDirectories(payloadRoot)
+			.Select(Path.GetFileName)
+			.Where(name => name is not null && !allowedFolders.Contains(name))
+			.ToList();
+		Assert.That(unexpectedFolders, Is.Empty);
+
+		var offenders = Directory.EnumerateFiles(payloadRoot, "*", SearchOption.AllDirectories)
+			.SelectMany(file => FindDisallowedNames(file, File.ReadAllText(file)))
+			.ToList();
+		Assert.That(offenders, Is.Empty);
+	}
+
+	[Test]
+	public void BuildDocumentationMentionsExpectedCommands()
+	{
+		var root = FindRepositoryRoot();
+		var buildDoc = File.ReadAllText(Path.Combine(root, "Docs", "HowToBuildAndTest.md"));
+		var payloadDoc = File.ReadAllText(Path.Combine(root, "Docs", "PayloadRepacking.md"));
+		var expectedCommands = new[]
+		{
+			"Restore",
+			"Compile",
+			"TestFast",
+			"CompileTestHarnesses",
+			"PublishCli",
+		};
+
+		foreach (var command in expectedCommands)
+			Assert.That(buildDoc, Does.Contain(command));
+
+		Assert.That(payloadDoc, Does.Contain("output/payloads/"));
+		Assert.That(payloadDoc, Does.Contain("ILRepack"));
+		Assert.That(payloadDoc, Does.Contain("No dependency has an accepted exemption"));
+	}
+
+	[Test]
+	public void GeneratedBinariesStayOutOfSourceProjectFolders()
+	{
+		var root = FindRepositoryRoot();
+		var sourceFolders = new[]
+		{
+			"DeepFlowTest",
+			"DeepFlowTest.Cli",
+			"DeepFlowTest.Cli.Tests",
+			"DeepFlowTest.GenericInjector",
+			"DeepFlowTest.InjectorLauncher",
+			"DeepFlowTest.Tests",
+			"Shared",
+			Path.Combine("TestHarnesses", "HelloWorld"),
+			Path.Combine("TestHarnesses", "BasicTestHarness"),
+		};
+
+		var generatedFiles = sourceFolders
+			.Select(folder => Path.Combine(root, folder))
+			.Where(Directory.Exists)
+			.SelectMany(folder => Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+			.Where(IsGeneratedBinary)
+			.ToList();
+
+		Assert.That(generatedFiles, Is.Empty);
+		Assert.That(Directory.Exists(Path.Combine(root, "bin")), Is.True);
+	}
+
+	private static IEnumerable<string> FindDisallowedNames(string file, string text)
+	{
+		foreach (var name in DisallowedProductNames)
+		{
+			if (text.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+				yield return $"{Path.GetRelativePath(FindRepositoryRoot(), file)} contains {name}";
+		}
+	}
+
+	private static bool IsProductSourceFile(string file)
+	{
+		if (IsExcluded(file))
+			return false;
+
+		var extension = Path.GetExtension(file);
+		var fileName = Path.GetFileName(file);
+		return SourceExtensions.Contains(extension) || SourceFileNames.Contains(fileName);
+	}
+
+	private static bool IsGeneratedBinary(string file)
+	{
+		if (IsExcluded(file))
+			return false;
+
+		var fileName = Path.GetFileName(file);
+		var extension = Path.GetExtension(file);
+		return extension is ".dll" or ".exe" or ".pdb" ||
+			fileName.EndsWith(".deps.json", StringComparison.OrdinalIgnoreCase) ||
+			fileName.EndsWith(".runtimeconfig.json", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool IsExcluded(string path)
+	{
+		var relative = Path.GetRelativePath(FindRepositoryRoot(), path);
+		var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		return segments.Any(segment => ExcludedSegments.Contains(segment));
+	}
+
+	private static string ReadProjectProperty(string root, params string[] parts)
+	{
+		var propertyName = parts[^1];
+		var projectPath = Path.Combine(parts.Take(parts.Length - 1).Prepend(root).ToArray());
+		var document = XDocument.Load(projectPath);
+		return ReadProperty(document, propertyName);
+	}
+
+	private static string ReadProperty(XDocument document, string propertyName)
+	{
+		return document.Descendants()
+			.Where(element => element.Name.LocalName == propertyName)
+			.Select(element => element.Value.Trim())
+			.FirstOrDefault() ?? string.Empty;
+	}
+
+	private static string FindRepositoryRoot()
+	{
+		var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+		while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
+			directory = directory.Parent;
+
+		return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root was not found.");
+	}
+
+	private static string Decode(string value)
+	{
+		return Encoding.UTF8.GetString(Convert.FromBase64String(value));
+	}
+}
