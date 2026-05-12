@@ -4,16 +4,10 @@ using System;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
-public sealed class NamedPipeAppDriverCommandSession : IAppDriverCommandSession
+public sealed class NamedPipeAppDriverCommandSession(AppConnection connection, AppDriverOptions options) : IAppDriverCommandSession
 {
-	private readonly AppConnection connection;
-	private readonly AppDriverOptions options;
-
-	public NamedPipeAppDriverCommandSession(AppConnection connection, AppDriverOptions options)
-	{
-		this.connection = connection ?? throw new ArgumentNullException(nameof(connection));
-		this.options = options ?? throw new ArgumentNullException(nameof(options));
-	}
+	private readonly AppConnection connection = connection ?? throw new ArgumentNullException(nameof(connection));
+	private readonly AppDriverOptions options = options ?? throw new ArgumentNullException(nameof(options));
 
 	public TResponse Send<TResponse>(IpcCommand command)
 	{

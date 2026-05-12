@@ -41,6 +41,25 @@ public sealed class StreamCommandHandlerTests
 	}
 
 	[Test]
+	public void ScreenshotStreamFramesPreserveImagePayloadContract()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "stream", "screenshot", "--pid", "1234", "--duration-ms", "60", "--interval-ms", "60", "--target", "button-0002", "--image-format", "jpg" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("\"streamKind\":\"screenshot\""));
+		Assert.That(result.Stdout, Does.Contain("\"targetId\":\"button-0002\""));
+		Assert.That(result.Stdout, Does.Contain("\"format\":\"jpeg\""));
+		Assert.That(result.Stdout, Does.Contain("\"byteCount\":4"));
+		Assert.That(result.Stdout, Does.Contain("\"bytesBase64\":\"AQIDBA==\""));
+		var start = session.Session.Commands.OfType<StartSendingCommandRequest>().Single();
+		Assert.That(start.TargetId, Is.EqualTo("button-0002"));
+		Assert.That(start.Format, Is.EqualTo("jpeg"));
+	}
+
+	[Test]
 	public void StreamDtosRoundTripThroughMessagePacker()
 	{
 		foreach (var kind in new[]

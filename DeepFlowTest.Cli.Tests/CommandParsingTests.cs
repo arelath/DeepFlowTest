@@ -12,6 +12,7 @@ public sealed class CommandParsingTests
 	[TestCase("config clear timeoutMs")]
 	[TestCase("config reset")]
 	[TestCase("processes")]
+	[TestCase("processes --show-all")]
 	[TestCase("ping --pid 1")]
 	[TestCase("pipe status --pid 1")]
 	[TestCase("tree --pid 1")]

@@ -292,7 +292,7 @@ public static class MessagePacker
 			throw new ProtocolException(ProtocolConstants.ErrorCodes.MalformedFrame, $"Message frame length {length} exceeds the limit of {maxFrameLengthLimit} bytes.");
 	}
 
-	private static IDisposable OverrideMaxFrameLengthForTests(int maxFrameLength)
+	internal static IDisposable OverrideMaxFrameLengthForTests(int maxFrameLength)
 	{
 		var previous = maxFrameLengthLimit;
 		maxFrameLengthLimit = maxFrameLength;

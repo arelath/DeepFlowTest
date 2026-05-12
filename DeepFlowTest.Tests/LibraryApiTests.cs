@@ -6,17 +6,13 @@ using System.Linq;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Tests.Fakes;
 using NUnit.Framework;
+using FakeSession = DeepFlowTest.Tests.Fakes.FakeAppDriverCommandSession;
 
 [TestFixture]
 public sealed class LibraryApiTests
 {
-	[TearDown]
-	public void ResetBackend()
-	{
-		AppDriver.ResetBackendForTests();
-	}
-
 	[Test]
 	public void PublicApiCanFindActTypeAndScreenshotThroughSession()
 	{
@@ -35,10 +31,9 @@ public sealed class LibraryApiTests
 				BytesBase64 = Convert.ToBase64String(new byte[] { 1, 2, 3 }),
 			});
 		var backend = new FakeBackend(session);
-		AppDriver.ConfigureBackendForTests(backend);
-		AppDriver.ConfigureSessionFactoryForTests((_, _) => session);
+		var factory = new AppDriverFactory(backend, (_, _) => session);
 
-		using var driver = AppDriver.Launch("HelloWorld.exe");
+		using var driver = factory.Launch("HelloWorld.exe");
 		var button = driver.GetElement(ElementSelector.ByName("runButton"));
 		button.Click();
 		var textBox = driver.GetElement(ElementSelector.ByName("nameBox"));
@@ -64,10 +59,9 @@ public sealed class LibraryApiTests
 			BytesBase64 = Convert.ToBase64String(new byte[] { 5, 6 }),
 		});
 		var backend = new FakeBackend(session);
-		AppDriver.ConfigureBackendForTests(backend);
-		AppDriver.ConfigureSessionFactoryForTests((_, _) => session);
+		var factory = new AppDriverFactory(backend, (_, _) => session);
 
-		using var driver = AppDriver.Launch("HelloWorld.exe", "--demo");
+		using var driver = factory.Launch("HelloWorld.exe", "--demo");
 		var bytes = driver.Screenshot(ImageFormat.Jpeg);
 
 		Assert.That(backend.LastLaunchOptions!.Arguments, Is.EqualTo("--demo"));
@@ -76,13 +70,46 @@ public sealed class LibraryApiTests
 	}
 
 	[Test]
+	public void RecordApiReportsDocumentedScreenshotStreamingReplacement()
+	{
+		using var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			new FakeSession());
+
+		var exception = Assert.Throws<NotSupportedException>(() => driver.Record("capture.mp4"));
+
+		Assert.That(exception!.Message, Does.Contain("FFmpeg"));
+		Assert.That(exception.Message, Does.Contain("screenshot streaming"));
+	}
+
+	[Test]
+	public void CompatibilitySystemDialogHelpersFindSetAndInvokeDialogOperations()
+	{
+		var session = new FakeSession(
+			FindMatch("dialog", "Open", "Dialog"),
+			StandardIpcResponse.Ok(),
+			StandardIpcResponse.Ok());
+		using var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			session);
+
+		var dialog = driver.HandleFileDialog(@"C:\temp\file.txt");
+
+		Assert.That(dialog.TargetId, Is.EqualTo("dialog"));
+		var set = session.SentCommands.OfType<SetPropertyCommandRequest>().Single();
+		var operation = session.SentCommands.OfType<KnownOperationCommandRequest>().Single();
+		Assert.That(set.PropertyName, Is.EqualTo("FileName"));
+		Assert.That(set.PropertyValue, Is.EqualTo(@"C:\temp\file.txt"));
+		Assert.That(operation.Operation, Is.EqualTo("AcceptDialog"));
+	}
+
+	[Test]
 	public void PublicApiAttachLeavesTargetAliveOnDispose()
 	{
 		var backend = new FakeBackend(new FakeSession());
-		AppDriver.ConfigureBackendForTests(backend);
-		AppDriver.ConfigureSessionFactoryForTests((_, _) => new FakeSession());
+		var factory = new AppDriverFactory(backend, (_, _) => new FakeSession());
 
-		using var driver = AppDriver.AttachTo(123);
+		using var driver = factory.AttachTo(123);
 		driver.Dispose();
 
 		Assert.That(backend.Process!.KillCount, Is.EqualTo(0));
@@ -178,45 +205,6 @@ public sealed class LibraryApiTests
 			Process = new FakeTargetProcess { ProcessName = processName };
 			Connection = AppConnection.ForAttach(Process, options.PipeName ?? "attach-name-pipe");
 			return Connection;
-		}
-	}
-
-	private sealed class FakeSession : IAppDriverCommandSession
-	{
-		private readonly Queue<object> responses;
-
-		public FakeSession(params object[] responses)
-		{
-			this.responses = new Queue<object>(responses);
-		}
-
-		public List<IpcCommand> SentCommands { get; } = new();
-
-		public TResponse Send<TResponse>(IpcCommand command)
-		{
-			SentCommands.Add(command);
-			return (TResponse)responses.Dequeue();
-		}
-	}
-
-	private sealed class FakeTargetProcess : ITargetProcess
-	{
-		public int Id { get; set; } = 123;
-
-		public string ProcessName { get; set; } = "target";
-
-		public bool HasExited { get; private set; }
-
-		public int KillCount { get; private set; }
-
-		public void Kill()
-		{
-			KillCount++;
-			HasExited = true;
-		}
-
-		public void Dispose()
-		{
 		}
 	}
 

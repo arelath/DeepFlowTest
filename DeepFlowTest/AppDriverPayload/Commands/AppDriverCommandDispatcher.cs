@@ -21,48 +21,49 @@ internal static class AppDriverCommandDispatcher
 
 	private static readonly Dictionary<string, CommandHandler> ImmediateHandlers = new()
 	{
-		[ProtocolConstants.Commands.Hello] = (command, options, reusableSession) =>
-			HelloCommand.Process(MessagePacker.ConvertTo<HelloCommandRequest>(command.Value), options, reusableSession),
-		[ProtocolConstants.Commands.PipeStatus] = (command, options, reusableSession) =>
-			PipeStatusCommand.Process(MessagePacker.ConvertTo<PipeStatusCommandRequest>(command.Value), options, reusableSession),
-		[ProtocolConstants.Commands.StartSending] = (command, _, reusableSession) =>
-			StartSendingCommand.Process(MessagePacker.ConvertTo<StartSendingCommandRequest>(command.Value), command, reusableSession, TreeService),
-		[ProtocolConstants.Commands.StopSending] = (command, _, reusableSession) =>
-			StopSendingCommand.Process(MessagePacker.ConvertTo<StopSendingCommandRequest>(command.Value), reusableSession),
+		[ProtocolConstants.Commands.Hello] = context =>
+			HelloCommand.Process(context.Request<HelloCommandRequest>(), context.Options, context.ReusableSession),
+		[ProtocolConstants.Commands.PipeStatus] = context =>
+			PipeStatusCommand.Process(context.Request<PipeStatusCommandRequest>(), context.Options, context.ReusableSession),
+		[ProtocolConstants.Commands.StartSending] = context =>
+			StartSendingCommand.Process(context.Request<StartSendingCommandRequest>(), context.Command, context.ReusableSession, context.TreeService),
+		[ProtocolConstants.Commands.StopSending] = context =>
+			StopSendingCommand.Process(context.Request<StopSendingCommandRequest>(), context.ReusableSession),
 	};
 
 	private static readonly Dictionary<string, AsyncCommandHandler> UiHandlers = new()
 	{
-		[ProtocolConstants.Commands.Ping] = (command, _, _) =>
-			Task.FromResult(PingCommand.Process(MessagePacker.ConvertTo<PingCommandRequest>(command.Value))),
-		[ProtocolConstants.Commands.GetVisualTree] = (command, _, _) =>
-			Task.FromResult(GetVisualTreeCommand.Process(MessagePacker.ConvertTo<GetVisualTreeCommandRequest>(command.Value), TreeService)),
-		[ProtocolConstants.Commands.FindElement] = (command, _, _) =>
-			Task.FromResult(FindElementCommand.Process(MessagePacker.ConvertTo<FindElementCommandRequest>(command.Value), TreeService, ExpressionCache)),
-		[ProtocolConstants.Commands.Screenshot] = (command, _, _) =>
-			Task.FromResult(ScreenshotCommand.Process(MessagePacker.ConvertTo<ScreenshotCommandRequest>(command.Value), TreeService)),
-		[ProtocolConstants.Commands.Click] = (command, _, _) =>
-			Task.FromResult(TargetActionCommand.Click(MessagePacker.ConvertTo<ClickCommandRequest>(command.Value), TreeService)),
-		[ProtocolConstants.Commands.Focus] = (command, _, _) =>
-			Task.FromResult(TargetActionCommand.Focus(MessagePacker.ConvertTo<FocusCommandRequest>(command.Value), TreeService)),
-		[ProtocolConstants.Commands.TypeText] = (command, _, _) =>
-			Task.FromResult(TargetActionCommand.TypeText(MessagePacker.ConvertTo<TypeTextCommandRequest>(command.Value), TreeService)),
-		[ProtocolConstants.Commands.KeyPress] = (command, _, _) =>
-			Task.FromResult(TargetActionCommand.KeyPress(MessagePacker.ConvertTo<KeyPressCommandRequest>(command.Value), TreeService)),
-		[ProtocolConstants.Commands.SetProperty] = (command, _, _) =>
-			Task.FromResult(TargetActionCommand.SetProperty(MessagePacker.ConvertTo<SetPropertyCommandRequest>(command.Value), TreeService)),
-		[ProtocolConstants.Commands.RaiseEvent] = (command, _, _) =>
-			Task.FromResult(TargetActionCommand.RaiseEvent(MessagePacker.ConvertTo<RaiseEventCommandRequest>(command.Value), TreeService)),
-		[ProtocolConstants.Commands.KnownRoutedEvent] = (command, _, _) =>
-			Task.FromResult(TargetActionCommand.KnownRoutedEvent(MessagePacker.ConvertTo<KnownRoutedEventCommandRequest>(command.Value), TreeService)),
-		[ProtocolConstants.Commands.KnownOperation] = (command, _, _) =>
-			Task.FromResult(TargetActionCommand.KnownOperation(MessagePacker.ConvertTo<KnownOperationCommandRequest>(command.Value), TreeService)),
-		[ProtocolConstants.Commands.Invoke] = (command, _, _) =>
-			Task.FromResult(TargetActionCommand.Invoke(MessagePacker.ConvertTo<InvokeCommandRequest>(command.Value), TreeService)),
+		[ProtocolConstants.Commands.Ping] = context =>
+			Task.FromResult(PingCommand.Process(context.Request<PingCommandRequest>())),
+		[ProtocolConstants.Commands.GetVisualTree] = context =>
+			Task.FromResult(GetVisualTreeCommand.Process(context.Request<GetVisualTreeCommandRequest>(), context.TreeService)),
+		[ProtocolConstants.Commands.FindElement] = context =>
+			Task.FromResult(FindElementCommand.Process(context.Request<FindElementCommandRequest>(), context.TreeService, context.ExpressionCache)),
+		[ProtocolConstants.Commands.Screenshot] = context =>
+			Task.FromResult(ScreenshotCommand.Process(context.Request<ScreenshotCommandRequest>(), context.TreeService)),
+		[ProtocolConstants.Commands.Click] = context =>
+			Task.FromResult(TargetActionCommand.Click(context.Request<ClickCommandRequest>(), context.TreeService)),
+		[ProtocolConstants.Commands.Focus] = context =>
+			Task.FromResult(TargetActionCommand.Focus(context.Request<FocusCommandRequest>(), context.TreeService)),
+		[ProtocolConstants.Commands.TypeText] = context =>
+			Task.FromResult(TargetActionCommand.TypeText(context.Request<TypeTextCommandRequest>(), context.TreeService)),
+		[ProtocolConstants.Commands.KeyPress] = context =>
+			Task.FromResult(TargetActionCommand.KeyPress(context.Request<KeyPressCommandRequest>(), context.TreeService)),
+		[ProtocolConstants.Commands.SetProperty] = context =>
+			Task.FromResult(TargetActionCommand.SetProperty(context.Request<SetPropertyCommandRequest>(), context.TreeService)),
+		[ProtocolConstants.Commands.RaiseEvent] = context =>
+			Task.FromResult(TargetActionCommand.RaiseEvent(context.Request<RaiseEventCommandRequest>(), context.TreeService)),
+		[ProtocolConstants.Commands.KnownRoutedEvent] = context =>
+			Task.FromResult(TargetActionCommand.KnownRoutedEvent(context.Request<KnownRoutedEventCommandRequest>(), context.TreeService)),
+		[ProtocolConstants.Commands.KnownOperation] = context =>
+			Task.FromResult(TargetActionCommand.KnownOperation(context.Request<KnownOperationCommandRequest>(), context.TreeService)),
+		[ProtocolConstants.Commands.Invoke] = context =>
+			Task.FromResult(TargetActionCommand.Invoke(context.Request<InvokeCommandRequest>(), context.TreeService)),
 	};
 
 	public static void Process(NamedPipeServer.Command command, AppDriverPayloadStartupOptions options, ReusablePipeSession? reusableSession)
 	{
+		var context = new CommandContext(command, options, reusableSession, TreeService, ExpressionCache);
 		try
 		{
 			var kind = GetCommandKind(command.Value);
@@ -70,7 +71,7 @@ internal static class AppDriverCommandDispatcher
 
 			if (ImmediateHandlers.TryGetValue(kind, out var immediateHandler))
 			{
-				RespondIfNeeded(command, immediateHandler(command, options, reusableSession));
+				RespondIfNeeded(command, immediateHandler(context));
 				return;
 			}
 
@@ -78,10 +79,10 @@ internal static class AppDriverCommandDispatcher
 			{
 				var timeoutMs = GetTimeoutMs(command.Value, kind);
 				var result = ThreadUtility.RunCommandWithTimeoutAsync(
-						() => RunUiHandlerAsync(kind, uiHandler, command, options, reusableSession),
+						() => RunUiHandlerAsync(kind, uiHandler, context),
 						timeoutMs,
 						(message, exception) => PayloadLog.Write(message, exception),
-						LogCorrelationId())
+						context.LogCorrelationId)
 					.ConfigureAwait(false)
 					.GetAwaiter()
 					.GetResult();
@@ -94,7 +95,7 @@ internal static class AppDriverCommandDispatcher
 				StandardIpcResponse.FromError(
 					$"Unsupported command kind: {kind}",
 					ProtocolConstants.ErrorCodes.ProtocolError,
-					LogCorrelationId()));
+					context.LogCorrelationId));
 		}
 		catch (Exception ex)
 		{
@@ -104,7 +105,7 @@ internal static class AppDriverCommandDispatcher
 				command.Respond(StandardIpcResponse.FromError(
 					ex.ToString(),
 					ex is ProtocolException protocolException ? protocolException.ErrorCode : ProtocolConstants.ErrorCodes.ProtocolError,
-					LogCorrelationId()));
+					context.LogCorrelationId));
 			}
 		}
 	}
@@ -112,20 +113,18 @@ internal static class AppDriverCommandDispatcher
 	private static async Task<object> RunUiHandlerAsync(
 		string kind,
 		AsyncCommandHandler handler,
-		NamedPipeServer.Command command,
-		AppDriverPayloadStartupOptions options,
-		ReusablePipeSession? reusableSession)
+		CommandContext context)
 	{
 		if (delayBeforeUiHandlerForTests > 0)
 			await Task.Delay(delayBeforeUiHandlerForTests).ConfigureAwait(false);
 
 		if (kind == ProtocolConstants.Commands.Ping)
-			return await handler(command, options, reusableSession).ConfigureAwait(false);
+			return await handler(context).ConfigureAwait(false);
 
 		object? result = null;
 		var runResult = await ThreadUtility.RunOnUIThreadAsync(async () =>
 		{
-			result = await handler(command, options, reusableSession).ConfigureAwait(false);
+			result = await handler(context).ConfigureAwait(false);
 		}).ConfigureAwait(false);
 
 		if (runResult == UiThreadRunResult.Finished)
@@ -176,12 +175,7 @@ internal static class AppDriverCommandDispatcher
 		return property?.GetValue(command)?.ToString() ?? string.Empty;
 	}
 
-	private static string LogCorrelationId()
-	{
-		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
-	}
-
-	private static IDisposable DelayUiHandlersForTests(int delayMs)
+	internal static IDisposable DelayUiHandlersForTests(int delayMs)
 	{
 		var previous = delayBeforeUiHandlerForTests;
 		delayBeforeUiHandlerForTests = delayMs;
@@ -203,7 +197,39 @@ internal static class AppDriverCommandDispatcher
 		}
 	}
 
-	private delegate object CommandHandler(NamedPipeServer.Command command, AppDriverPayloadStartupOptions options, ReusablePipeSession? reusableSession);
+	private sealed class CommandContext
+	{
+		public CommandContext(
+			NamedPipeServer.Command command,
+			AppDriverPayloadStartupOptions options,
+			ReusablePipeSession? reusableSession,
+			TreeService treeService,
+			ExpressionCache expressionCache)
+		{
+			Command = command;
+			Options = options ?? throw new ArgumentNullException(nameof(options));
+			ReusableSession = reusableSession;
+			TreeService = treeService ?? throw new ArgumentNullException(nameof(treeService));
+			ExpressionCache = expressionCache ?? throw new ArgumentNullException(nameof(expressionCache));
+			LogCorrelationId = PayloadLog.CurrentCorrelationId;
+		}
 
-	private delegate Task<object> AsyncCommandHandler(NamedPipeServer.Command command, AppDriverPayloadStartupOptions options, ReusablePipeSession? reusableSession);
+		public NamedPipeServer.Command Command { get; }
+
+		public AppDriverPayloadStartupOptions Options { get; }
+
+		public ReusablePipeSession? ReusableSession { get; }
+
+		public TreeService TreeService { get; }
+
+		public ExpressionCache ExpressionCache { get; }
+
+		public string LogCorrelationId { get; }
+
+		public TRequest Request<TRequest>() => MessagePacker.ConvertTo<TRequest>(Command.Value);
+	}
+
+	private delegate object CommandHandler(CommandContext context);
+
+	private delegate Task<object> AsyncCommandHandler(CommandContext context);
 }

@@ -78,14 +78,9 @@ internal sealed class DefaultAppDriverPayloadRuntime : IAppDriverPayloadRuntime
 					command.Value.Respond(StandardIpcResponse.FromError(
 						ex.ToString(),
 						ex is ProtocolException protocolException ? protocolException.ErrorCode : ProtocolConstants.ErrorCodes.ProtocolError,
-						PathCorrelationId()));
+						PayloadLog.CurrentCorrelationId));
 				}
 			}
 		}
-	}
-
-	private static string PathCorrelationId()
-	{
-		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
 	}
 }

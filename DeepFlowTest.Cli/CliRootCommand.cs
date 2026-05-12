@@ -153,6 +153,7 @@ public static class CliRootCommand
 		var command = new Command("processes", "List candidate target processes without injection.");
 		AddOutputOptions(command);
 		command.Add(CreateOption<bool>("--candidates-only", "Only show likely WPF candidates."));
+		command.Add(CreateOption<bool>("--show-all", "Show all processes. This is the default and is accepted for compatibility."));
 		command.SetAction(_ => 0);
 		return command;
 	}

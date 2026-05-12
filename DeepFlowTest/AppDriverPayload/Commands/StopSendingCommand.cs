@@ -11,7 +11,7 @@ internal static class StopSendingCommand
 			return StandardIpcResponse.FromError(
 				"Stop stream request requires a subscription ID.",
 				ProtocolConstants.ErrorCodes.InvalidArguments,
-				LogCorrelationId());
+				PayloadLog.CurrentCorrelationId);
 		}
 
 		if (reusableSession is null)
@@ -19,7 +19,7 @@ internal static class StopSendingCommand
 			return StandardIpcResponse.FromError(
 				"Streaming requires a reusable pipe session.",
 				ProtocolConstants.ErrorCodes.ProtocolError,
-				LogCorrelationId());
+				PayloadLog.CurrentCorrelationId);
 		}
 
 		var stopped = reusableSession.StopSubscription(request.SubscriptionId, request.TimeoutMs ?? 2000);
@@ -30,8 +30,4 @@ internal static class StopSendingCommand
 		};
 	}
 
-	private static string LogCorrelationId()
-	{
-		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
-	}
 }

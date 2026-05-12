@@ -2,6 +2,7 @@ namespace DeepFlowTest;
 
 using System;
 using System.Linq;
+using DeepFlowTest.Assert;
 using Newtonsoft.Json;
 
 public static class ElementAssertions
@@ -33,7 +34,7 @@ public static class ElementAssertions
 	}
 }
 
-public sealed class AppDriverAssertionException : Exception
+public sealed class AppDriverAssertionException : AssertionFailedException
 {
 	public AppDriverAssertionException(string message)
 		: base(message)

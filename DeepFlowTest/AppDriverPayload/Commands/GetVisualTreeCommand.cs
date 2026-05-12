@@ -27,19 +27,14 @@ internal static class GetVisualTreeCommand
 				return StandardIpcResponse.FromError(
 					"No supported UI roots were found.",
 					ProtocolConstants.ErrorCodes.UnsupportedTarget,
-					LogCorrelationId());
+					PayloadLog.CurrentCorrelationId);
 			}
 
 			return request.AsSnapshot ? snapshot : snapshot.Nodes;
 		}
 		catch (TreeSnapshotException ex)
 		{
-			return StandardIpcResponse.FromError(ex.Message, ex.ErrorCode, LogCorrelationId());
+			return StandardIpcResponse.FromError(ex.Message, ex.ErrorCode, PayloadLog.CurrentCorrelationId);
 		}
-	}
-
-	private static string LogCorrelationId()
-	{
-		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
 	}
 }

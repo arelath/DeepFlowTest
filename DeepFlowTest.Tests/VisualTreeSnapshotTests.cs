@@ -71,16 +71,24 @@ public sealed class VisualTreeSnapshotTests
 				Node("root", null, "Window", ("Title", "Old")),
 				Node("changed", "root", "TextBox", ("Text", "After")),
 				Node("added", "root", "Button", ("Content", "Add")),
-			});
+			},
+			requestedPropertyNames: new[] { "Title", "Text", "Content" });
 
-		var delta = VisualTreeSnapshotDelta.Create(previous, current);
+		var delta = VisualTreeSnapshotDelta.FromSnapshots(previous, current);
 
+		Assert.That(delta.IsDelta, Is.True);
 		Assert.That(delta.BaseSequenceNumber, Is.EqualTo(1));
 		Assert.That(delta.CurrentSequenceNumber, Is.EqualTo(2));
 		Assert.That(delta.Added.Select(static node => node.TargetId), Is.EqualTo(new[] { "added" }));
 		Assert.That(delta.RemovedTargetIds, Is.EqualTo(new[] { "removed" }));
 		Assert.That(delta.Changed.Select(static node => node.TargetId), Is.EqualTo(new[] { "changed" }));
 		Assert.That(delta.HasChanges, Is.True);
+		Assert.That(delta.RequestedProperties, Is.EqualTo(new[] { "Title", "Text", "Content" }));
+		Assert.That(delta.Metadata["previousNodeCount"], Is.EqualTo(3));
+		Assert.That(delta.Metadata["currentNodeCount"], Is.EqualTo(3));
+		Assert.That(delta.Metadata["addedCount"], Is.EqualTo(1));
+		Assert.That(delta.Metadata["changedCount"], Is.EqualTo(1));
+		Assert.That(delta.Metadata["removedCount"], Is.EqualTo(1));
 	}
 
 	[Test]

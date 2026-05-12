@@ -1,7 +1,7 @@
 namespace DeepFlowTest.AppDriverPayload.Commands;
 
 using System;
-using System.ComponentModel;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
@@ -15,19 +15,17 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Media;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
 using DeepFlowTest.Utility.WpfUtility.Tree;
-using Newtonsoft.Json.Linq;
 using Serialize.Linq;
 using Serialize.Linq.Factories;
 using Serialize.Linq.Serializers;
 using Forms = System.Windows.Forms;
 using SerializeJsonSerializer = Serialize.Linq.Serializers.JsonSerializer;
 
-internal static class TargetActionCommand
+internal static partial class TargetActionCommand
 {
 	private static readonly FactorySettings ExpressionFactorySettings = new() { AllowPrivateFieldAccess = true };
 
@@ -35,18 +33,11 @@ internal static class TargetActionCommand
 		WithTarget(ProtocolConstants.Commands.Click, request.TargetId, treeService, target =>
 		{
 			var button = request.MouseButton?.Trim().ToLowerInvariant() ?? "left";
-			if (target is ButtonBase buttonBase && button == "left")
-			{
-				for (var i = 0; i < Math.Max(1, request.ClickCount); i++)
-					buttonBase.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, buttonBase));
-				return ActionResult.Ok();
-			}
+			if (button is not ("left" or "right"))
+				return ActionResult.Unsupported($"Mouse button '{request.MouseButton}' is not supported.");
 
-			if (target is UIElement uiElement && button == "right")
-			{
-				RaiseMouseButtonEvent(uiElement, UIElement.MouseRightButtonUpEvent, MouseButton.Right);
-				return ActionResult.Ok();
-			}
+			if (target is UIElement uiElement)
+				return ClickWpfElement(uiElement, button, request.ClickCount);
 
 			if (target is Forms.Button formsButton && button == "left")
 			{
@@ -122,7 +113,7 @@ internal static class TargetActionCommand
 	public static object Invoke(InvokeCommandRequest request, TreeService treeService)
 	{
 		if (!request.AllowUnsafeCode)
-			return StandardIpcResponse.FromError("Invoke requires explicit unsafe-code opt-in.", ProtocolConstants.ErrorCodes.UnsupportedCommand, LogCorrelationId());
+			return StandardIpcResponse.FromError("Invoke requires explicit unsafe-code opt-in.", ProtocolConstants.ErrorCodes.UnsupportedCommand, PayloadLog.CurrentCorrelationId);
 
 		return WithTarget(ProtocolConstants.Commands.Invoke, request.TargetId, treeService, target =>
 		{
@@ -143,7 +134,7 @@ internal static class TargetActionCommand
 			try
 			{
 				var result = method.Invoke(target, null);
-				return ActionResult.Ok(result);
+				return ActionResult.Ok(AwaitTaskResult(result, request.TimeoutMs));
 			}
 			catch (TargetInvocationException ex) when (ex.InnerException is not null)
 			{
@@ -163,7 +154,7 @@ internal static class TargetActionCommand
 			var errorCode = resolution.Status == TargetIdResolutionStatus.Stale
 				? ProtocolConstants.ErrorCodes.StaleTarget
 				: ProtocolConstants.ErrorCodes.UnsupportedTarget;
-			return StandardIpcResponse.FromError($"{commandName}: target '{targetId}' resolved as {resolution.Status}.", errorCode, LogCorrelationId());
+			return StandardIpcResponse.FromError($"{commandName}: target '{targetId}' resolved as {resolution.Status}.", errorCode, PayloadLog.CurrentCorrelationId);
 		}
 
 		try
@@ -175,36 +166,59 @@ internal static class TargetActionCommand
 			return StandardIpcResponse.FromError(
 				$"{commandName}: action timed out for target '{targetId}': {ex.Message}",
 				ProtocolConstants.ErrorCodes.CommandTimeout,
-				LogCorrelationId());
+				PayloadLog.CurrentCorrelationId);
 		}
 		catch (SerializationException ex)
 		{
 			return StandardIpcResponse.FromError(
 				$"{commandName}: action result is not serializable for target '{targetId}': {ex.Message}",
 				ProtocolConstants.ErrorCodes.ProtocolError,
-				LogCorrelationId());
+				PayloadLog.CurrentCorrelationId);
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
 			return StandardIpcResponse.FromError(
 				$"{commandName}: action failed for target '{targetId}': {ex.Message}",
 				ProtocolConstants.ErrorCodes.UnsupportedTarget,
-				LogCorrelationId());
+				PayloadLog.CurrentCorrelationId);
 		}
 	}
 
 	private static StandardIpcResponse ToResponse(ActionResult result, string? commandName = null, string? targetId = null) =>
 		result.Success
-			? new StandardIpcResponse
-			{
-				Success = true,
-				Status = ProtocolConstants.Statuses.Ok,
-				Value = result.Value,
-			}
+			? SerializableSuccess(result.Value)
 			: UnsupportedTarget(FormatActionError(result.Error ?? "The requested action is not supported for this target.", commandName, targetId));
 
+	private static StandardIpcResponse SerializableSuccess(object? value)
+	{
+		var response = new StandardIpcResponse
+		{
+			Success = true,
+			Status = ProtocolConstants.Statuses.Ok,
+			Value = value,
+		};
+
+		if (value is null || CanPackResponse(response))
+			return response;
+
+		return StandardIpcResponse.UnserializableResult();
+	}
+
+	private static bool CanPackResponse(StandardIpcResponse response)
+	{
+		try
+		{
+			MessagePacker.Pack(response);
+			return true;
+		}
+		catch (Exception ex) when (ex is ProtocolException or Newtonsoft.Json.JsonException or InvalidOperationException or NotSupportedException)
+		{
+			return false;
+		}
+	}
+
 	private static StandardIpcResponse UnsupportedTarget(string error) =>
-		StandardIpcResponse.FromError(error, ProtocolConstants.ErrorCodes.UnsupportedTarget, LogCorrelationId());
+		StandardIpcResponse.FromError(error, ProtocolConstants.ErrorCodes.UnsupportedTarget, PayloadLog.CurrentCorrelationId);
 
 	private static string FormatActionError(string error, string? commandName, string? targetId)
 	{
@@ -359,6 +373,30 @@ internal static class TargetActionCommand
 		string.Equals(keyText, "Control+A", StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(keyText, "Ctrl+A", StringComparison.OrdinalIgnoreCase);
 
+	private static ActionResult ClickWpfElement(UIElement target, string button, int clickCount)
+	{
+		var mouseButton = button == "right" ? MouseButton.Right : MouseButton.Left;
+		var count = Math.Max(1, clickCount);
+		for (var i = 0; i < count; i++)
+		{
+			RaiseMouseButtonEvent(target, UIElement.PreviewMouseDownEvent, mouseButton);
+			RaiseMouseButtonEvent(target, UIElement.MouseDownEvent, mouseButton);
+			RaiseMouseButtonEvent(target, UIElement.PreviewMouseUpEvent, mouseButton);
+			RaiseMouseButtonEvent(target, UIElement.MouseUpEvent, mouseButton);
+
+			if (target is ButtonBase buttonBase && mouseButton == MouseButton.Left)
+				buttonBase.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, buttonBase));
+		}
+
+		if (count > 1 && mouseButton == MouseButton.Left && target is Control control)
+			RaiseMouseButtonEvent(control, Control.MouseDoubleClickEvent, MouseButton.Left);
+
+		if (mouseButton == MouseButton.Right)
+			OpenContextMenu(target);
+
+		return ActionResult.Ok();
+	}
+
 	private static void RaiseMouseButtonEvent(UIElement target, RoutedEvent routedEvent, MouseButton button)
 	{
 		var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, button)
@@ -367,6 +405,20 @@ internal static class TargetActionCommand
 			Source = target,
 		};
 		target.RaiseEvent(args);
+	}
+
+	private static void OpenContextMenu(UIElement target)
+	{
+		if (target is not DependencyObject dependencyObject)
+			return;
+
+		var contextMenu = ContextMenuService.GetContextMenu(dependencyObject);
+		if (contextMenu is null)
+			return;
+
+		contextMenu.PlacementTarget = target;
+		contextMenu.Placement = PlacementMode.Bottom;
+		contextMenu.IsOpen = true;
 	}
 
 	private static ActionResult SetProperty(object target, string propertyName, object? rawValue)
@@ -470,14 +522,30 @@ internal static class TargetActionCommand
 			case "Focus":
 				return FocusTarget(target) ? ActionResult.Ok() : ActionResult.Unsupported("Target cannot receive focus.");
 			case "BringIntoView":
+				if (target is Forms.Control formsBringIntoViewControl)
+				{
+					if (formsBringIntoViewControl.Parent is Forms.ScrollableControl scrollableControl)
+						scrollableControl.ScrollControlIntoView(formsBringIntoViewControl);
+					return ActionResult.Ok();
+				}
+
 				if (target is FrameworkElement frameworkElement)
 				{
 					frameworkElement.BringIntoView();
 					return ActionResult.Ok();
 				}
 
+				if (TryInvokeNoArg(target, "BringIntoView"))
+					return ActionResult.Ok();
+
 				break;
 			case "Select":
+				if (target is Forms.Control formsSelectControl)
+				{
+					formsSelectControl.Select();
+					return ActionResult.Ok();
+				}
+
 				if (target is ListBoxItem listBoxItem)
 				{
 					listBoxItem.IsSelected = true;
@@ -490,11 +558,20 @@ internal static class TargetActionCommand
 					return ActionResult.Ok();
 				}
 
+				if (TrySetBooleanProperty(target, ["IsSelected"], true) || TryInvokeNoArg(target, "Select"))
+					return ActionResult.Ok();
+
 				if (target is AutomationElement automationElement && TrySelectAutomation(automationElement))
 					return ActionResult.Ok();
 
 				break;
 			case "Expand":
+				if (target is Forms.ComboBox formsExpandComboBox)
+				{
+					formsExpandComboBox.DroppedDown = true;
+					return ActionResult.Ok();
+				}
+
 				if (target is Expander expander)
 				{
 					expander.IsExpanded = true;
@@ -507,11 +584,20 @@ internal static class TargetActionCommand
 					return ActionResult.Ok();
 				}
 
+				if (TrySetBooleanProperty(target, ["IsExpanded"], true) || TryInvokeNoArg(target, "Expand"))
+					return ActionResult.Ok();
+
 				if (target is AutomationElement expandAutomationElement && TryExpandCollapseAutomation(expandAutomationElement, ExpandCollapseState.Expanded))
 					return ActionResult.Ok();
 
 				break;
 			case "Collapse":
+				if (target is Forms.ComboBox formsCollapseComboBox)
+				{
+					formsCollapseComboBox.DroppedDown = false;
+					return ActionResult.Ok();
+				}
+
 				if (target is Expander collapseExpander)
 				{
 					collapseExpander.IsExpanded = false;
@@ -524,27 +610,24 @@ internal static class TargetActionCommand
 					return ActionResult.Ok();
 				}
 
+				if (TrySetBooleanProperty(target, ["IsExpanded"], false) || TryInvokeNoArg(target, "Collapse"))
+					return ActionResult.Ok();
+
 				if (target is AutomationElement collapseAutomationElement && TryExpandCollapseAutomation(collapseAutomationElement, ExpandCollapseState.Collapsed))
 					return ActionResult.Ok();
 
 				break;
 			case "Check":
-				if (target is ToggleButton toggleButton)
-				{
-					toggleButton.IsChecked = true;
+				if (TrySetBooleanProperty(target, ["IsChecked", "Checked"], true) || TryInvokeNoArg(target, "Check"))
 					return ActionResult.Ok();
-				}
 
 				if (target is AutomationElement checkAutomationElement && TryToggleAutomation(checkAutomationElement, true))
 					return ActionResult.Ok();
 
 				break;
 			case "Uncheck":
-				if (target is ToggleButton uncheckToggleButton)
-				{
-					uncheckToggleButton.IsChecked = false;
+				if (TrySetBooleanProperty(target, ["IsChecked", "Checked"], false) || TryInvokeNoArg(target, "Uncheck"))
 					return ActionResult.Ok();
-				}
 
 				if (target is AutomationElement uncheckAutomationElement && TryToggleAutomation(uncheckAutomationElement, false))
 					return ActionResult.Ok();
@@ -552,17 +635,75 @@ internal static class TargetActionCommand
 				break;
 			case "AcceptDialog":
 			case "CancelDialog":
+				var accept = operation == "AcceptDialog";
 				if (target is Window window)
 				{
-					window.DialogResult = operation == "AcceptDialog";
+					window.DialogResult = accept;
 					window.Close();
 					return ActionResult.Ok();
 				}
+
+				if (target is Forms.Form form)
+				{
+					form.DialogResult = accept ? Forms.DialogResult.OK : Forms.DialogResult.Cancel;
+					form.Close();
+					return ActionResult.Ok();
+				}
+
+				if (target is AutomationElement dialogAutomationElement && TryInvokeAutomation(dialogAutomationElement))
+					return ActionResult.Ok();
+
+				if (target is IntPtr dialogHwnd && TryInvokeNativeDialogButton(dialogHwnd, accept))
+					return ActionResult.Ok();
 
 				break;
 		}
 
 		return ActionResult.Unsupported($"Known operation '{operation}' is not supported for target type '{target.GetType().FullName}'.");
+	}
+
+	private static bool TrySetBooleanProperty(object target, IReadOnlyList<string> propertyNames, bool value)
+	{
+		foreach (var propertyName in propertyNames)
+		{
+			var property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
+			if (property is null || !property.CanWrite || property.GetIndexParameters().Length != 0)
+				continue;
+
+			var propertyType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+			if (propertyType != typeof(bool))
+				continue;
+
+			try
+			{
+				property.SetValue(target, value, null);
+				return true;
+			}
+			catch (Exception ex) when (ex is TargetInvocationException or ArgumentException or InvalidOperationException)
+			{
+			}
+		}
+
+		return false;
+	}
+
+	private static bool TryInvokeNoArg(object target, string methodName)
+	{
+		var method = target.GetType()
+			.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy)
+			.FirstOrDefault(method => string.Equals(method.Name, methodName, StringComparison.Ordinal) && method.GetParameters().Length == 0);
+		if (method is null)
+			return false;
+
+		try
+		{
+			method.Invoke(target, null);
+			return true;
+		}
+		catch (Exception ex) when (ex is TargetInvocationException or ArgumentException or InvalidOperationException)
+		{
+			return false;
+		}
 	}
 
 	private static bool FocusTarget(object target)
@@ -599,6 +740,59 @@ internal static class TargetActionCommand
 		}
 
 		return false;
+	}
+
+	private static bool TryInvokeNativeDialogButton(IntPtr hwnd, bool accept)
+	{
+		if (hwnd == IntPtr.Zero)
+			return false;
+
+		var automationId = accept ? "1" : "2";
+		try
+		{
+			var root = AutomationElement.FromHandle(hwnd);
+			if (root is not null)
+			{
+				var button = root.FindFirst(
+					TreeScope.Descendants,
+					new AndCondition(
+						new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
+						new PropertyCondition(AutomationElement.AutomationIdProperty, automationId)));
+				if (button is not null && TryInvokeAutomation(button))
+					return true;
+			}
+		}
+		catch (ElementNotAvailableException)
+		{
+		}
+		catch (InvalidOperationException)
+		{
+		}
+
+		var controlId = accept ? 1 : 2;
+		foreach (var child in EnumerateNativeChildWindows(hwnd))
+		{
+			if (NativeMethods.GetDlgCtrlID(child) == controlId && TryClickNativeWindow(child, "left", 1))
+				return true;
+		}
+
+		return false;
+	}
+
+	private static IEnumerable<IntPtr> EnumerateNativeChildWindows(IntPtr hwnd)
+	{
+		if (hwnd == IntPtr.Zero)
+			yield break;
+
+		List<IntPtr> children = [];
+		NativeMethods.EnumChildWindows(hwnd, (child, _) =>
+		{
+			children.Add(child);
+			return true;
+		}, IntPtr.Zero);
+
+		foreach (var child in children)
+			yield return child;
 	}
 
 	private static bool TryClickNativeWindow(IntPtr hwnd, string mouseButton, int clickCount)
@@ -798,125 +992,4 @@ internal static class TargetActionCommand
 		return resultProperty?.GetValue(task, null);
 	}
 
-	private static object? ConvertValue(object? value, Type targetType)
-	{
-		if (value is null)
-			return targetType.IsValueType && Nullable.GetUnderlyingType(targetType) is null
-				? Activator.CreateInstance(targetType)
-				: null;
-
-		var underlyingType = Nullable.GetUnderlyingType(targetType) ?? targetType;
-		if (underlyingType.IsInstanceOfType(value))
-			return value;
-
-		if (underlyingType.IsEnum)
-			return Enum.Parse(underlyingType, Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
-
-		if (value is string text)
-		{
-			var converted = ConvertFromInvariantString(text, underlyingType);
-			if (converted is not null)
-				return converted;
-		}
-
-		var sourceConverter = TypeDescriptor.GetConverter(value);
-		if (sourceConverter.CanConvertTo(underlyingType))
-			return sourceConverter.ConvertTo(null, CultureInfo.InvariantCulture, value, underlyingType);
-
-		var targetConverter = TypeDescriptor.GetConverter(underlyingType);
-		if (targetConverter.CanConvertFrom(value.GetType()))
-			return targetConverter.ConvertFrom(null, CultureInfo.InvariantCulture, value);
-
-		return Convert.ChangeType(value, underlyingType, CultureInfo.InvariantCulture);
-	}
-
-	private static object? ConvertFromInvariantString(string text, Type targetType)
-	{
-		if (targetType == typeof(SolidColorBrush))
-		{
-			var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(text));
-			if (brush.CanFreeze)
-				brush.Freeze();
-			return brush;
-		}
-
-		var converter = TypeDescriptor.GetConverter(targetType);
-		return converter.CanConvertFrom(typeof(string))
-			? converter.ConvertFromInvariantString(text)
-			: null;
-	}
-
-	private static object? UnwrapJsonValue(object? value)
-	{
-		return value switch
-		{
-			JValue jValue => jValue.Value,
-			JToken token => token.ToObject<object>(),
-			_ => value,
-		};
-	}
-
-	private static string LogCorrelationId()
-	{
-		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
-	}
-
-	private readonly struct ActionResult
-	{
-		private ActionResult(bool success, string? error, object? value = null)
-		{
-			Success = success;
-			Error = error;
-			Value = value;
-		}
-
-		public bool Success { get; }
-
-		public string? Error { get; }
-
-		public object? Value { get; }
-
-		public static ActionResult Ok(object? value = null) => new(true, null, value);
-
-		public static ActionResult Unsupported(string error) => new(false, error);
-	}
-
-	private static class NativeMethods
-	{
-		public const int WM_LBUTTONDOWN = 0x0201;
-		public const int WM_LBUTTONUP = 0x0202;
-		public const int WM_RBUTTONDOWN = 0x0204;
-		public const int WM_RBUTTONUP = 0x0205;
-		public const int WM_SETTEXT = 0x000C;
-		public const int BM_CLICK = 0x00F5;
-
-		[System.Runtime.InteropServices.DllImport("user32.dll")]
-		public static extern bool SetForegroundWindow(IntPtr hwnd);
-
-		[System.Runtime.InteropServices.DllImport("user32.dll")]
-		public static extern bool GetClientRect(IntPtr hwnd, out NativeRect rect);
-
-		[System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
-		public static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, string lParam);
-
-		[System.Runtime.InteropServices.DllImport("user32.dll")]
-		public static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
-
-		[System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
-		public static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
-
-		[System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
-		public static extern int GetWindowTextLength(IntPtr hwnd);
-
-		[System.Runtime.InteropServices.DllImport("user32.dll")]
-		public static extern bool PostMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
-	}
-
-	private struct NativeRect
-	{
-		public int Left;
-		public int Top;
-		public int Right;
-		public int Bottom;
-	}
 }

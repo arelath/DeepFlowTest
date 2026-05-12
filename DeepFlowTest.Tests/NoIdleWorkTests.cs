@@ -68,9 +68,7 @@ public sealed class NoIdleWorkTests
 			PayloadRoot = AppContext.BaseDirectory,
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
 		};
-		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
-		var method = dispatcherType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
-		method.Invoke(null, new object?[] { command, options, session });
+		AppDriverCommandDispatcher.Process(command, options, session);
 		return response;
 	}
 }

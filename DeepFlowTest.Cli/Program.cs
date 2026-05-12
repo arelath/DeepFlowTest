@@ -133,7 +133,7 @@ public static class Program
 				services.DefaultsStore.Reset();
 				return new { reset = true };
 			case "processes":
-				return GetProcesses(services, HasOption(args, "--candidates-only"));
+				return GetProcesses(services, HasOption(args, "--candidates-only") && !HasOption(args, "--show-all"));
 			case "ping":
 				return SendProtocolCommand<PingCommandResponse>(
 					services,

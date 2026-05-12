@@ -4,9 +4,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using DeepFlowTest;
+using DeepFlowTest.Assert;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Tests.Fakes;
 using NUnit.Framework;
+using FakeSession = DeepFlowTest.Tests.Fakes.FakeAppDriverCommandSession;
 
 [TestFixture]
 public sealed class ElementApiTests
@@ -86,6 +89,19 @@ public sealed class ElementApiTests
 	}
 
 	[Test]
+	public void CachedElementsRefreshWhenVisualTreeSnapshotsUpdate()
+	{
+		var first = VisualTreeSnapshot.Create(1, new[] { Node("root", null, "Window", "Before") });
+		var second = VisualTreeSnapshot.Create(2, new[] { Node("root", null, "Window", "After") });
+		var driver = CreateDriver(new FakeSession(first, second));
+		var root = driver.GetRootElements().Single();
+
+		driver.GetVisualTree();
+
+		Assert.That(root.GetProperty<string>("Name"), Is.EqualTo("After"));
+	}
+
+	[Test]
 	public void StaleElementRepairsByRerunningOriginalSelector()
 	{
 		var session = new FakeSession(
@@ -101,6 +117,64 @@ public sealed class ElementApiTests
 		var clicks = session.SentCommands.OfType<ClickCommandRequest>().ToArray();
 		Assert.That(clicks.Select(static command => command.TargetId), Is.EqualTo(new[] { "old-target", "new-target" }));
 		Assert.That(element.TargetId, Is.EqualTo("new-target"));
+	}
+
+	[Test]
+	public void StaleExpressionElementRepairsUsingMatcherAndIdentityProperties()
+	{
+		var first = VisualTreeSnapshot.Create(1, new[]
+		{
+			Node(
+				"old-target",
+				null,
+				"Button",
+				"Submit",
+				new Dictionary<string, object?>
+				{
+					["AutomationProperties.AutomationId"] = "SubmitButton",
+					["ActualWidth"] = 120,
+					["ActualHeight"] = 30,
+				}),
+		});
+		var second = VisualTreeSnapshot.Create(2, new[]
+		{
+			Node(
+				"new-target",
+				null,
+				"Button",
+				"Submit",
+				new Dictionary<string, object?>
+				{
+					["AutomationProperties.AutomationId"] = "SubmitButton",
+					["ActualWidth"] = 120,
+					["ActualHeight"] = 30,
+				}),
+			Node(
+				"distractor",
+				null,
+				"Button",
+				"Submit",
+				new Dictionary<string, object?>
+				{
+					["AutomationProperties.AutomationId"] = "OtherButton",
+					["ActualWidth"] = 120,
+					["ActualHeight"] = 30,
+				}),
+		});
+		var session = new FakeSession(
+			first,
+			StandardIpcResponse.FromError("stale", ProtocolConstants.ErrorCodes.StaleTarget),
+			second,
+			StandardIpcResponse.Ok());
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(x => x.TypeName == "Button" && x["Name"] == "Submit", timeoutMs: 1);
+
+		element.Click();
+
+		var clicks = session.SentCommands.OfType<ClickCommandRequest>().ToArray();
+		Assert.That(clicks.Select(static command => command.TargetId), Is.EqualTo(new[] { "old-target", "new-target" }));
+		Assert.That(element.TargetId, Is.EqualTo("new-target"));
+		Assert.That(session.SentCommands.OfType<GetVisualTreeCommandRequest>().Last().PropNames, Does.Contain("Name"));
 	}
 
 	[Test]
@@ -132,6 +206,21 @@ public sealed class ElementApiTests
 
 		Assert.That(screenshot.TargetId, Is.EqualTo("new-target"));
 		Assert.That(element.TargetId, Is.EqualTo("new-target"));
+	}
+
+	[Test]
+	public void TypedInvokeThrowsSerializationExceptionForUnserializableResultStatus()
+	{
+		var session = new FakeSession(
+			FindMatch("target", "invoke"),
+			StandardIpcResponse.UnserializableResult());
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(ElementSelector.ByName("invoke"));
+
+		var exception = Assert.Throws<System.Runtime.Serialization.SerializationException>(
+			() => element.Invoke<object, object>(x => x));
+
+		Assert.That(exception!.Message, Does.Contain("Unserializable Invoke result"));
 	}
 
 	[Test]
@@ -208,6 +297,51 @@ public sealed class ElementApiTests
 		Assert.That(bytes, Is.EqualTo(new byte[] { 9, 10 }));
 	}
 
+	[Test]
+	public void ElementAssertUsesDiagnosticAssertionFramework()
+	{
+		var match = new FindElementCommandResponse
+		{
+			Matches =
+			{
+				new FindElementMatchResponse
+				{
+					TargetId = "button",
+					TypeName = "Button",
+					Properties =
+					{
+						["Name"] = "submit",
+						["Content"] = "Cancel",
+					},
+				},
+			},
+			MatchCount = 1,
+		};
+		var refreshed = VisualTreeSnapshot.Create(1, new[]
+		{
+			new VisualTreeNodeDto
+			{
+				TargetId = "button",
+				TypeName = "Button",
+				Properties =
+				{
+					["Name"] = "submit",
+					["Content"] = "Cancel",
+				},
+			},
+		});
+		var driver = CreateDriver(new FakeSession(match, refreshed, refreshed, refreshed));
+		var element = driver.GetElement(ElementSelector.ByName("submit"));
+
+		var exception = Assert.Throws<AppDriverAssertionException>(() => element.Assert(x => x["Content"] == "Save", timeoutMs: 1));
+
+		Assert.That(exception, Is.InstanceOf<AssertionFailedException>());
+		Assert.That(exception!.Message, Does.Contain("Expected:"));
+		Assert.That(exception.Message, Does.Contain("Actual:"));
+		Assert.That(exception.Message, Does.Contain("Content == \"Cancel\""));
+		Assert.That(exception.Message, Does.Contain("TargetId == \"button\""));
+	}
+
 	private static AppDriver CreateDriver(IAppDriverCommandSession session)
 	{
 		return AppDriver.CreateForTests(
@@ -232,50 +366,25 @@ public sealed class ElementApiTests
 		};
 	}
 
-	private static VisualTreeNodeDto Node(string targetId, string? parentId, string typeName, string name)
+	private static VisualTreeNodeDto Node(
+		string targetId,
+		string? parentId,
+		string typeName,
+		string name,
+		Dictionary<string, object?>? extraProperties = null)
 	{
-		return new VisualTreeNodeDto
+		var node = new VisualTreeNodeDto
 		{
 			TargetId = targetId,
 			ParentId = parentId,
 			TypeName = typeName,
 			Properties = { ["Name"] = name },
 		};
+		if (extraProperties is not null)
+			foreach (var property in extraProperties)
+				node.Properties[property.Key] = property.Value;
+
+		return node;
 	}
 
-	private sealed class FakeSession : IAppDriverCommandSession
-	{
-		private readonly Queue<object> responses;
-
-		public FakeSession(params object[] responses)
-		{
-			this.responses = new Queue<object>(responses);
-		}
-
-		public List<IpcCommand> SentCommands { get; } = new();
-
-		public TResponse Send<TResponse>(IpcCommand command)
-		{
-			SentCommands.Add(command);
-			return (TResponse)responses.Dequeue();
-		}
-	}
-
-	private sealed class FakeTargetProcess : ITargetProcess
-	{
-		public int Id => 123;
-
-		public string ProcessName => "target";
-
-		public bool HasExited { get; private set; }
-
-		public void Kill()
-		{
-			HasExited = true;
-		}
-
-		public void Dispose()
-		{
-		}
-	}
 }

@@ -3,7 +3,7 @@ namespace DeepFlowTest;
 using System;
 using System.Globalization;
 
-public sealed class Primitive
+public sealed class Primitive : IEquatable<Primitive>, IEquatable<string>, IEquatable<double>, IEquatable<float>, IEquatable<int>, IEquatable<long>, IEquatable<bool>
 {
 	public static readonly Primitive Empty = new(null);
 
@@ -28,7 +28,11 @@ public sealed class Primitive
 		if (Value is T typed)
 			return typed;
 
-		return (T?)Convert.ChangeType(Value, typeof(T), CultureInfo.InvariantCulture);
+		var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+		if (targetType.IsEnum)
+			return (T)Enum.Parse(targetType, Convert.ToString(Value, CultureInfo.InvariantCulture) ?? string.Empty, ignoreCase: true);
+
+		return (T?)Convert.ChangeType(Value, targetType, CultureInfo.InvariantCulture);
 	}
 
 	public T? To<T>() => As<T>();
@@ -42,6 +46,20 @@ public sealed class Primitive
 			? ValuesEqual(Value, primitive.Value)
 			: ValuesEqual(Value, obj);
 
+	public bool Equals(Primitive? other) => ValuesEqual(Value, other?.Value);
+
+	public bool Equals(string? other) => ValuesEqual(Value, other);
+
+	public bool Equals(double other) => ValuesEqual(Value, other);
+
+	public bool Equals(float other) => ValuesEqual(Value, other);
+
+	public bool Equals(int other) => ValuesEqual(Value, other);
+
+	public bool Equals(long other) => ValuesEqual(Value, other);
+
+	public bool Equals(bool other) => ValuesEqual(Value, other);
+
 	public override int GetHashCode() => Value?.GetHashCode() ?? 0;
 
 	public static Primitive FromProperty(Element element, string propertyName)
@@ -53,17 +71,31 @@ public sealed class Primitive
 
 	public static implicit operator Primitive(string? value) => new(value);
 	public static implicit operator Primitive(bool value) => new(value);
+	public static implicit operator Primitive(bool? value) => new(value);
 	public static implicit operator Primitive(int value) => new(value);
+	public static implicit operator Primitive(int? value) => new(value);
 	public static implicit operator Primitive(long value) => new(value);
+	public static implicit operator Primitive(long? value) => new(value);
+	public static implicit operator Primitive(float value) => new(value);
+	public static implicit operator Primitive(float? value) => new(value);
 	public static implicit operator Primitive(double value) => new(value);
+	public static implicit operator Primitive(double? value) => new(value);
 	public static implicit operator Primitive(decimal value) => new(value);
+	public static implicit operator Primitive(decimal? value) => new(value);
 
 	public static implicit operator string?(Primitive primitive) => primitive.As<string>();
 	public static implicit operator bool(Primitive primitive) => primitive.As<bool>();
+	public static implicit operator bool?(Primitive primitive) => primitive.As<bool?>();
 	public static implicit operator int(Primitive primitive) => primitive.As<int>();
+	public static implicit operator int?(Primitive primitive) => primitive.As<int?>();
 	public static implicit operator long(Primitive primitive) => primitive.As<long>();
+	public static implicit operator long?(Primitive primitive) => primitive.As<long?>();
+	public static implicit operator float(Primitive primitive) => primitive.As<float>();
+	public static implicit operator float?(Primitive primitive) => primitive.As<float?>();
 	public static implicit operator double(Primitive primitive) => primitive.As<double>();
+	public static implicit operator double?(Primitive primitive) => primitive.As<double?>();
 	public static implicit operator decimal(Primitive primitive) => primitive.As<decimal>();
+	public static implicit operator decimal?(Primitive primitive) => primitive.As<decimal?>();
 
 	public static bool operator ==(Primitive? left, Primitive? right) => ValuesEqual(left?.Value, right?.Value);
 	public static bool operator !=(Primitive? left, Primitive? right) => !ValuesEqual(left?.Value, right?.Value);
@@ -76,25 +108,111 @@ public sealed class Primitive
 	public static bool operator ==(bool left, Primitive? right) => ValuesEqual(left, right?.Value);
 	public static bool operator !=(bool left, Primitive? right) => !ValuesEqual(left, right?.Value);
 
-	public static bool operator >(Primitive left, double right) => Compare(left.Value, right) > 0;
-	public static bool operator <(Primitive left, double right) => Compare(left.Value, right) < 0;
-	public static bool operator >=(Primitive left, double right) => Compare(left.Value, right) >= 0;
-	public static bool operator <=(Primitive left, double right) => Compare(left.Value, right) <= 0;
-	public static bool operator >(double left, Primitive right) => Compare(left, right.Value) > 0;
-	public static bool operator <(double left, Primitive right) => Compare(left, right.Value) < 0;
-	public static bool operator >=(double left, Primitive right) => Compare(left, right.Value) >= 0;
-	public static bool operator <=(double left, Primitive right) => Compare(left, right.Value) <= 0;
+	public static bool operator >(Primitive left, Primitive right) => Compare(left.Value, right.Value) > 0;
+	public static bool operator <(Primitive left, Primitive right) => Compare(left.Value, right.Value) < 0;
+	public static bool operator >=(Primitive left, Primitive right) => Compare(left.Value, right.Value) >= 0;
+	public static bool operator <=(Primitive left, Primitive right) => Compare(left.Value, right.Value) <= 0;
 
-	public static Primitive operator +(Primitive left, Primitive right) => new(ToDecimal(left.Value) + ToDecimal(right.Value));
-	public static Primitive operator -(Primitive left, Primitive right) => new(ToDecimal(left.Value) - ToDecimal(right.Value));
-	public static Primitive operator *(Primitive left, Primitive right) => new(ToDecimal(left.Value) * ToDecimal(right.Value));
-	public static Primitive operator /(Primitive left, Primitive right) => new(ToDecimal(left.Value) / ToDecimal(right.Value));
+	public static Primitive operator +(Primitive left, Primitive right)
+	{
+		dynamic leftValue = left.Value!;
+		dynamic rightValue = right.Value!;
+		return new Primitive(leftValue + rightValue);
+	}
+
+	public static Primitive operator -(Primitive left, Primitive right)
+	{
+		dynamic leftValue = left.Value!;
+		dynamic rightValue = right.Value!;
+		return new Primitive(leftValue - rightValue);
+	}
+
+	public static Primitive operator *(Primitive left, Primitive right)
+	{
+		dynamic leftValue = left.Value!;
+		dynamic rightValue = right.Value!;
+		return new Primitive(leftValue * rightValue);
+	}
+
+	public static Primitive operator /(Primitive left, Primitive right)
+	{
+		dynamic leftValue = left.Value!;
+		dynamic rightValue = right.Value!;
+		return new Primitive(leftValue / rightValue);
+	}
+
+	public static Primitive operator %(Primitive left, Primitive right)
+	{
+		dynamic leftValue = left.Value!;
+		dynamic rightValue = right.Value!;
+		return new Primitive(leftValue % rightValue);
+	}
+
+	public static Primitive operator ^(Primitive left, Primitive right)
+	{
+		dynamic leftValue = left.Value!;
+		dynamic rightValue = right.Value!;
+		return new Primitive(leftValue ^ rightValue);
+	}
+
+	public static Primitive operator <<(Primitive left, int right)
+	{
+		dynamic leftValue = left.Value!;
+		return new Primitive(leftValue << right);
+	}
+
+	public static Primitive operator >>(Primitive left, int right)
+	{
+		dynamic leftValue = left.Value!;
+		return new Primitive(leftValue >> right);
+	}
+
+	public static Primitive operator ~(Primitive primitive)
+	{
+		dynamic value = primitive.Value!;
+		return new Primitive(~value);
+	}
+
+	public static Primitive operator ++(Primitive primitive)
+	{
+		dynamic value = primitive.Value!;
+		return new Primitive(++value);
+	}
+
+	public static Primitive operator --(Primitive primitive)
+	{
+		dynamic value = primitive.Value!;
+		return new Primitive(--value);
+	}
+
+	public static Primitive operator +(Primitive primitive)
+	{
+		dynamic value = primitive.Value!;
+		return new Primitive(+value);
+	}
+
+	public static Primitive operator -(Primitive primitive)
+	{
+		dynamic value = primitive.Value!;
+		return new Primitive(-value);
+	}
 
 	public static bool operator true(Primitive primitive) => primitive.As<bool>();
 	public static bool operator false(Primitive primitive) => !primitive.As<bool>();
 	public static Primitive operator !(Primitive primitive) => new(!primitive.As<bool>());
-	public static Primitive operator &(Primitive left, Primitive right) => new(left.As<bool>() & right.As<bool>());
-	public static Primitive operator |(Primitive left, Primitive right) => new(left.As<bool>() | right.As<bool>());
+	public static Primitive operator &(Primitive left, Primitive right)
+	{
+		dynamic leftValue = left.Value!;
+		dynamic rightValue = right.Value!;
+		return new Primitive(leftValue & rightValue);
+	}
+
+	public static Primitive operator |(Primitive left, Primitive right)
+	{
+		dynamic leftValue = left.Value!;
+		dynamic rightValue = right.Value!;
+		return new Primitive(leftValue | rightValue);
+	}
 
 	private static bool ValuesEqual(object? left, object? right)
 	{

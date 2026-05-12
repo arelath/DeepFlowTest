@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using DeepFlowTest.AppDriverPayload;
+using DeepFlowTest.AppDriverPayload.Commands;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using NUnit.Framework;
@@ -82,7 +83,7 @@ public sealed class FindElementCommandTests
 			{
 				MatcherCode = payload,
 				MatcherHash = payload.ExpressionHash,
-				PropNames = new[] { "Name", "Content" },
+				PropNames = ["Name", "Content"],
 				MaxMatches = 1,
 			})!;
 
@@ -110,7 +111,7 @@ public sealed class FindElementCommandTests
 			{
 				MatcherCode = payload,
 				MatcherHash = payload.ExpressionHash,
-				PropNames = new[] { "Name", "Content" },
+				PropNames = ["Name", "Content"],
 				MaxMatches = 1,
 			};
 			var cache = new ExpressionCache();
@@ -142,7 +143,7 @@ public sealed class FindElementCommandTests
 		return (FindElementCommandResponse)CaptureResponse(new FindElementCommandRequest
 		{
 			Selector = selector,
-			PropNames = new[] { "Name", "Text", "Content", "AutomationProperties.AutomationId" },
+			PropNames = ["Name", "Text", "Content", "AutomationProperties.AutomationId"],
 			MaxMatches = maxMatches,
 		})!;
 	}
@@ -189,17 +190,13 @@ public sealed class FindElementCommandTests
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
 		};
 
-		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
-		var method = dispatcherType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
-		method.Invoke(null, new object?[] { command, options, null });
+		AppDriverCommandDispatcher.Process(command, options, null);
 		return response;
 	}
 
 	private static object? InvokeFindElementProcess(FindElementCommandRequest request, DeepFlowTest.Utility.WpfUtility.Tree.TreeService treeService, ExpressionCache cache)
 	{
-		var commandType = Type.GetType("DeepFlowTest.AppDriverPayload.Commands.FindElementCommand, DeepFlowTest", throwOnError: true)!;
-		var method = commandType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
-		return method.Invoke(null, new object[] { request, treeService, cache });
+		return FindElementCommand.Process(request, treeService, cache);
 	}
 
 	private static Window CreateWindow(string title, object content)

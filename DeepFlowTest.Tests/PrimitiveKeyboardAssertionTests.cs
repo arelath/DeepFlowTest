@@ -6,8 +6,10 @@ using System.Linq;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Tests.Fakes;
 using NUnit.Framework;
 using WpfKey = System.Windows.Input.Key;
+using FakeSession = DeepFlowTest.Tests.Fakes.FakeAppDriverCommandSession;
 
 [TestFixture]
 public sealed class PrimitiveKeyboardAssertionTests
@@ -28,6 +30,42 @@ public sealed class PrimitiveKeyboardAssertionTests
 		Assert.That(primitive > 6, Is.True);
 		Assert.That(primitive == "7", Is.True);
 		Assert.That(primitive.ToString(), Is.EqualTo("7"));
+	}
+
+	[Test]
+	public void PrimitiveSupportsCompatibilityValueStyleOperators()
+	{
+		Primitive five = 5;
+		Primitive two = 2;
+		Primitive text = "Hello";
+		Primitive truth = true;
+		Primitive flags = 0b1010;
+		Primitive nullableNumber = (int?)8;
+		Primitive modeName = "Second";
+
+		Assert.That(five > two, Is.True);
+		Assert.That((five + two).To<int>(), Is.EqualTo(7));
+		Assert.That((five - two).To<int>(), Is.EqualTo(3));
+		Assert.That((five * two).To<int>(), Is.EqualTo(10));
+		Assert.That((five / two).To<int>(), Is.EqualTo(2));
+		Assert.That((five % two).To<int>(), Is.EqualTo(1));
+		Assert.That((text + " world").S, Is.EqualTo("Hello world"));
+		Assert.That((!truth).To<bool>(), Is.False);
+		Assert.That((truth & false).To<bool>(), Is.False);
+		Assert.That((truth | false).To<bool>(), Is.True);
+		Assert.That((flags & 0b0010).To<int>(), Is.EqualTo(2));
+		Assert.That((flags ^ 0b1111).To<int>(), Is.EqualTo(5));
+		Assert.That((two << 2).To<int>(), Is.EqualTo(8));
+		Assert.That((five >> 1).To<int>(), Is.EqualTo(2));
+		Assert.That((~two).To<int>(), Is.EqualTo(~2));
+		Assert.That((+five).To<int>(), Is.EqualTo(5));
+		Assert.That((-five).To<int>(), Is.EqualTo(-5));
+		Assert.That((++five).To<int>(), Is.EqualTo(6));
+		Assert.That((--five).To<int>(), Is.EqualTo(5));
+		Assert.That(nullableNumber.To<int?>(), Is.EqualTo(8));
+		Assert.That(modeName.To<SampleMode>(), Is.EqualTo(SampleMode.Second));
+		Assert.That(Primitive.Empty.S, Is.Empty);
+		Assert.That(Primitive.Empty.To<int?>(), Is.Null);
 	}
 
 	[Test]
@@ -103,39 +141,10 @@ public sealed class PrimitiveKeyboardAssertionTests
 		};
 	}
 
-	private sealed class FakeSession : IAppDriverCommandSession
+	private enum SampleMode
 	{
-		private readonly Queue<object> responses;
-
-		public FakeSession(params object[] responses)
-		{
-			this.responses = new Queue<object>(responses);
-		}
-
-		public List<IpcCommand> SentCommands { get; } = new();
-
-		public TResponse Send<TResponse>(IpcCommand command)
-		{
-			SentCommands.Add(command);
-			return (TResponse)responses.Dequeue();
-		}
+		First,
+		Second,
 	}
 
-	private sealed class FakeTargetProcess : ITargetProcess
-	{
-		public int Id => 123;
-
-		public string ProcessName => "target";
-
-		public bool HasExited { get; private set; }
-
-		public void Kill()
-		{
-			HasExited = true;
-		}
-
-		public void Dispose()
-		{
-		}
-	}
 }

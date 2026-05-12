@@ -14,6 +14,8 @@ public static class PayloadLog
 
 	public static string CurrentLogPath => activeLogPath ?? GetLogPath("startup", Process.GetCurrentProcess().Id);
 
+	public static string CurrentCorrelationId => Path.GetFileNameWithoutExtension(CurrentLogPath);
+
 	public static string Initialize(string pipeName, int? processId = null)
 	{
 		activeLogPath = GetLogPath(pipeName, processId ?? Process.GetCurrentProcess().Id);

@@ -52,6 +52,38 @@ public sealed class CliDefaultsTests
 	}
 
 	[Test]
+	public void LegacyDotPathAliasesReadWriteAndClearFlatDefaults()
+	{
+		var store = new CliDefaultsStore(CliTestHost.CreateTempConfigPath());
+
+		store.Set("commands.tree.limit", "25");
+		store.Set("common.format", "text");
+
+		Assert.That(store.Load().TreeLimit, Is.EqualTo(25));
+		Assert.That(store.Load().OutputFormat, Is.EqualTo("text"));
+		Assert.That(store.Get("commands.tree.limit"), Is.EqualTo(25));
+
+		store.Clear("commands.tree.limit");
+
+		Assert.That(store.Load().TreeLimit, Is.EqualTo(1000));
+	}
+
+	[Test]
+	public void ScreenshotFormatDefaultsUseSharedImageFormatContract()
+	{
+		var store = new CliDefaultsStore(CliTestHost.CreateTempConfigPath());
+
+		store.Set("screenshotFormat", "jpg");
+		Assert.That(store.Load().ScreenshotFormat, Is.EqualTo("jpeg"));
+
+		store.Set("screenshotFormat", "bmp");
+		Assert.That(store.Load().ScreenshotFormat, Is.EqualTo("bmp"));
+
+		store.Set("screenshotFormat", "gif");
+		Assert.That(store.Load().ScreenshotFormat, Is.EqualTo("gif"));
+	}
+
+	[Test]
 	public void ConfigCommandsCreateClearAndResetDefaults()
 	{
 		var path = CliTestHost.CreateTempConfigPath();

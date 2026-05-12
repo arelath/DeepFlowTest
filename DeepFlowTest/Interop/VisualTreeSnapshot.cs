@@ -13,13 +13,13 @@ public sealed class VisualTreeSnapshot
 
 	public DateTimeOffset GeneratedUtc { get; set; } = DateTimeOffset.UtcNow;
 
-	public List<string> RootIds { get; set; } = new();
+	public List<string> RootIds { get; set; } = [];
 
-	public List<VisualTreeNodeDto> Nodes { get; set; } = new();
+	public List<VisualTreeNodeDto> Nodes { get; set; } = [];
 
 	public int NodeCount { get; set; }
 
-	public List<string> RequestedPropertyNames { get; set; } = new();
+	public List<string> RequestedPropertyNames { get; set; } = [];
 
 	public string TargetFrameworkFamily { get; set; } = string.Empty;
 
@@ -43,7 +43,7 @@ public sealed class VisualTreeSnapshot
 			RootIds = nodeList.Where(static node => node.IsRoot || node.ParentId is null).Select(static node => node.TargetId).ToList(),
 			Nodes = nodeList,
 			NodeCount = nodeList.Count,
-			RequestedPropertyNames = requestedPropertyNames?.ToList() ?? new List<string>(),
+			RequestedPropertyNames = requestedPropertyNames?.ToList() ?? [],
 			TargetFrameworkFamily = targetFrameworkFamily,
 			IsTruncated = isTruncated,
 			TruncationReason = truncationReason,

@@ -6,24 +6,20 @@ using System.IO;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Tests.Fakes;
 using NUnit.Framework;
+using FakeSession = DeepFlowTest.Tests.Fakes.FakeAppDriverCommandSession;
 
 [TestFixture]
 public sealed class AppDriverTests
 {
-	[TearDown]
-	public void ResetBackend()
-	{
-		AppDriver.ResetBackendForTests();
-	}
-
 	[Test]
 	public void LaunchUsesBackendAndOwnsProcessByDefault()
 	{
 		var backend = new FakeBackend();
-		AppDriver.ConfigureBackendForTests(backend);
+		var factory = new AppDriverFactory(backend);
 
-		using var driver = AppDriver.Launch("target.exe", new AppDriverLaunchOptions { Arguments = "--demo" });
+		using var driver = factory.Launch("target.exe", new AppDriverLaunchOptions { Arguments = "--demo" });
 
 		Assert.That(backend.LaunchedExecutablePath, Is.EqualTo("target.exe"));
 		Assert.That(backend.LaunchedOptions!.Arguments, Is.EqualTo("--demo"));
@@ -36,9 +32,9 @@ public sealed class AppDriverTests
 	public void AttachByPidUsesBackendAndDoesNotOwnProcess()
 	{
 		var backend = new FakeBackend();
-		AppDriver.ConfigureBackendForTests(backend);
+		var factory = new AppDriverFactory(backend);
 
-		using var driver = AppDriver.AttachTo(42);
+		using var driver = factory.AttachTo(42);
 
 		Assert.That(backend.AttachedProcessId, Is.EqualTo(42));
 		Assert.That(driver.Connection.OwnsProcess, Is.False);
@@ -188,42 +184,4 @@ public sealed class AppDriverTests
 		public IReadOnlyList<ITargetProcess> GetProcesses() => processes;
 	}
 
-	private sealed class FakeTargetProcess : ITargetProcess
-	{
-		public int Id { get; set; } = 1234;
-
-		public string ProcessName { get; set; } = "target";
-
-		public bool HasExited { get; set; }
-
-		public int KillCount { get; private set; }
-
-		public void Kill()
-		{
-			KillCount++;
-			HasExited = true;
-		}
-
-		public void Dispose()
-		{
-		}
-	}
-
-	private sealed class FakeSession : IAppDriverCommandSession
-	{
-		private readonly Queue<object> responses;
-
-		public FakeSession(params object[] responses)
-		{
-			this.responses = new Queue<object>(responses);
-		}
-
-		public List<IpcCommand> SentCommands { get; } = new();
-
-		public TResponse Send<TResponse>(IpcCommand command)
-		{
-			SentCommands.Add(command);
-			return (TResponse)responses.Dequeue();
-		}
-	}
 }

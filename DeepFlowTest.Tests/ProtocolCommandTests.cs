@@ -1,7 +1,6 @@
 namespace DeepFlowTest.Tests;
 
 using System;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.AppDriverPayload;
@@ -253,23 +252,19 @@ public sealed class ProtocolCommandTests
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
 		};
 
-		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
-		var method = dispatcherType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
-		method.Invoke(null, new object?[] { command, options, reusableSession });
+		AppDriverCommandDispatcher.Process(command, options, reusableSession);
 		return new DispatchCapture(response, responseCount);
 	}
 
 	private static IDisposable DelayUiHandlers(int delayMs)
 	{
-		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
-		var method = dispatcherType.GetMethod("DelayUiHandlersForTests", BindingFlags.Static | BindingFlags.NonPublic)!;
-		return (IDisposable)method.Invoke(null, new object[] { delayMs })!;
+		return AppDriverCommandDispatcher.DelayUiHandlersForTests(delayMs);
 	}
 
 	private static IpcCommand[] CreateAllProtocolCommandDtos()
 	{
-		return new IpcCommand[]
-		{
+		return
+		[
 			new HelloCommandRequest(),
 			new PingCommandRequest(),
 			new PipeStatusCommandRequest(),
@@ -287,7 +282,7 @@ public sealed class ProtocolCommandTests
 			new KnownRoutedEventCommandRequest { TargetId = "target", EventName = "Click" },
 			new KnownOperationCommandRequest { TargetId = "target", Operation = "Focus" },
 			new InvokeCommandRequest { TargetId = "target", Code = "return null;" },
-		};
+		];
 	}
 
 	private sealed class UnknownCommand

@@ -56,6 +56,54 @@ public sealed class ProcessesCommandTests
 	}
 
 	[Test]
+	public void ShowAllCompatibilityOptionKeepsAllProcesses()
+	{
+		var source = new FakeProcessSnapshotSource
+		{
+			Result = new ProcessSnapshotResult
+			{
+				Processes = new[]
+				{
+					Process(1, "Plain", isWpf: false),
+					Process(2, "WpfApp", isWpf: true),
+				},
+				Warnings = Array.Empty<ProcessInspectionWarning>(),
+			},
+		};
+		var services = CliTestHost.CreateServices(snapshotSource: source);
+
+		var result = CliTestHost.Run(new[] { "processes", "--show-all" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("Plain"));
+		Assert.That(result.Stdout, Does.Contain("WpfApp"));
+	}
+
+	[Test]
+	public void ShowAllCompatibilityOptionOverridesCandidateFilter()
+	{
+		var source = new FakeProcessSnapshotSource
+		{
+			Result = new ProcessSnapshotResult
+			{
+				Processes = new[]
+				{
+					Process(1, "Plain", isWpf: false),
+					Process(2, "WpfApp", isWpf: true),
+				},
+				Warnings = Array.Empty<ProcessInspectionWarning>(),
+			},
+		};
+		var services = CliTestHost.CreateServices(snapshotSource: source);
+
+		var result = CliTestHost.Run(new[] { "processes", "--candidates-only", "--show-all" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("Plain"));
+		Assert.That(result.Stdout, Does.Contain("WpfApp"));
+	}
+
+	[Test]
 	public void InaccessibleProcessWarningDoesNotFailCommand()
 	{
 		var source = new FakeProcessSnapshotSource

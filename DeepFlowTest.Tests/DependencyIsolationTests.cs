@@ -88,8 +88,8 @@ public sealed class DependencyIsolationTests
 		var loadContext = new PayloadLoadContext(payloadPath);
 		var payloadAssembly = loadContext.LoadFromAssemblyPath(payloadPath);
 		var startMethod = payloadAssembly
-			.GetType("DeepFlowTest.AppDriverPayload.AppDriverPayload", throwOnError: true)!
-			.GetMethod("Start", BindingFlags.Public | BindingFlags.Static)!;
+			.GetType(typeof(DeepFlowTest.AppDriverPayload.AppDriverPayload).FullName!, throwOnError: true)!
+			.GetMethod(nameof(DeepFlowTest.AppDriverPayload.AppDriverPayload.Start), BindingFlags.Public | BindingFlags.Static)!;
 
 		Exception? startupException = null;
 		int? startupExitCode = null;

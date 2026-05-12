@@ -6,6 +6,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using DeepFlowTest.AppDriverPayload;
+using DeepFlowTest.AppDriverPayload.Commands;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
@@ -53,7 +54,7 @@ public sealed class ScreenshotCommandTests
 			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = new[] { "Name", "Content" },
+				PropNames = ["Name", "Content"],
 				MaxNodeCount = 200,
 			})!;
 			var buttonNode = snapshot.Nodes.Single(node =>
@@ -180,18 +181,14 @@ public sealed class ScreenshotCommandTests
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
 		};
 
-		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
-		var method = dispatcherType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
-		method.Invoke(null, new object?[] { command, options, null });
+		AppDriverCommandDispatcher.Process(command, options, null);
 		return response;
 	}
 
 	private static object? InvokeScreenshotProcess(ScreenshotCommandRequest request, TreeService treeService)
 	{
 		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
-		var commandType = Type.GetType("DeepFlowTest.AppDriverPayload.Commands.ScreenshotCommand, DeepFlowTest", throwOnError: true)!;
-		var method = commandType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
-		return method.Invoke(null, new object[] { request, treeService });
+		return ScreenshotCommand.Process(request, treeService);
 	}
 
 	private static string CreateCollectableTargetId(TargetIdService service, out WeakReference weakReference)

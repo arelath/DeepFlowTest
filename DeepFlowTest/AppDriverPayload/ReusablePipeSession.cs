@@ -100,7 +100,7 @@ public sealed class ReusablePipeSession
 			subscriptions[subscription.SubscriptionId] = state;
 
 		if (!deferStart)
-			subscription.Start();
+			StartSubscriptionState(state);
 
 		return state.ToResponse();
 	}
@@ -117,7 +117,7 @@ public sealed class ReusablePipeSession
 		if (state is null)
 			return false;
 
-		state.Subscription.Start();
+		StartSubscriptionState(state);
 		return true;
 	}
 
@@ -247,7 +247,7 @@ public sealed class ReusablePipeSession
 			{
 				PayloadLog.Write("Reusable command loop recovered from a command failure.", ex);
 				if (command.HasValue && !command.Value.CheckHasResponded())
-					command.Value.Respond(StandardIpcResponse.FromError(ex.ToString(), ProtocolConstants.ErrorCodes.ProtocolError, LogCorrelationId()));
+					command.Value.Respond(StandardIpcResponse.FromError(ex.ToString(), ProtocolConstants.ErrorCodes.ProtocolError, PayloadLog.CurrentCorrelationId));
 			}
 		}
 
@@ -269,7 +269,7 @@ public sealed class ReusablePipeSession
 		{
 			PayloadLog.Write("Reusable command processing failed.", ex);
 			if (!command.CheckHasResponded())
-				command.Respond(StandardIpcResponse.FromError(ex.ToString(), ProtocolConstants.ErrorCodes.ProtocolError, LogCorrelationId()));
+				command.Respond(StandardIpcResponse.FromError(ex.ToString(), ProtocolConstants.ErrorCodes.ProtocolError, PayloadLog.CurrentCorrelationId));
 		}
 		finally
 		{
@@ -287,9 +287,29 @@ public sealed class ReusablePipeSession
 			or ProtocolConstants.Commands.StopSending);
 	}
 
-	private static string LogCorrelationId()
+	private void StartSubscriptionState(ActiveSubscriptionState state)
 	{
-		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
+		state.Subscription.Start();
+		if (state.Subscription.Completion is null)
+			return;
+
+		state.Subscription.Completion.ContinueWith(
+			_ =>
+			{
+				var removed = false;
+				lock (subscriptions)
+				{
+					if (subscriptions.TryGetValue(state.Subscription.SubscriptionId, out var current) && ReferenceEquals(current, state))
+					{
+						subscriptions.Remove(state.Subscription.SubscriptionId);
+						removed = true;
+					}
+				}
+
+				if (removed)
+					state.Subscription.Dispose();
+			},
+			TaskScheduler.Default);
 	}
 
 	private static void StopAndDispose(ActiveSubscriptionState state, int timeoutMs)

@@ -119,6 +119,28 @@ public sealed class RepositoryConfigurationTests
 	}
 
 	[Test]
+	public void TestHarnessSolutionIncludesRepresentativeWpfAndWinFormsApps()
+	{
+		var root = FindRepositoryRoot();
+		var solution = File.ReadAllText(Path.Combine(root, "TestHarnesses", "TestHarnesses.sln"));
+		var basicWindow = File.ReadAllText(Path.Combine(root, "TestHarnesses", "BasicTestHarness", "MainWindow.xaml"));
+		var winFormsMain = File.ReadAllText(Path.Combine(root, "TestHarnesses", "WinFormsExampleApp", "MainForm.cs"));
+		var winFormsSecondary = File.ReadAllText(Path.Combine(root, "TestHarnesses", "WinFormsExampleApp", "SecondaryForm.cs"));
+		var winFormsModal = File.ReadAllText(Path.Combine(root, "TestHarnesses", "WinFormsExampleApp", "ModalDialogForm.cs"));
+
+		Assert.That(solution, Does.Contain("HelloWorld"));
+		Assert.That(solution, Does.Contain("BasicTestHarness"));
+		Assert.That(solution, Does.Contain("WinFormsExampleApp"));
+		Assert.That(basicWindow, Does.Contain("PrimaryButton"));
+		Assert.That(basicWindow, Does.Contain("SamplePopup"));
+		Assert.That(basicWindow, Does.Contain("ShowModalDialogButton"));
+		Assert.That(winFormsMain, Does.Contain("MainForm"));
+		Assert.That(winFormsMain, Does.Contain("OpenFileDialog"));
+		Assert.That(winFormsSecondary, Does.Contain("SecondaryForm"));
+		Assert.That(winFormsModal, Does.Contain("ModalDialogForm"));
+	}
+
+	[Test]
 	public void PayloadFoldersUseExpectedNamesWhenPresent()
 	{
 		var root = FindRepositoryRoot();
@@ -198,7 +220,8 @@ public sealed class RepositoryConfigurationTests
 		Assert.That(cliProject, Does.Not.Contain(@"DeepFlowTestResources\x64\**\*.*"));
 		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x86\*.dll"));
 		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x64\*.exe"));
-		Assert.That(nativeProject, Does.Contain("VER_ORIGINAL_FILENAME_STR=\"DeepFlowTest.GenericInjector.$(ArchitectureName).dll\""));
+		Assert.That(nativeProject, Does.Contain("$(ArchitecturePreprocessorDefinition)"));
+		Assert.That(nativeProject, Does.Contain("DEEPFLOWTEST_ARCH_X86"));
 	}
 
 	[Test]
@@ -228,6 +251,7 @@ public sealed class RepositoryConfigurationTests
 			"Shared",
 			Path.Combine("TestHarnesses", "HelloWorld"),
 			Path.Combine("TestHarnesses", "BasicTestHarness"),
+			Path.Combine("TestHarnesses", "WinFormsExampleApp"),
 		};
 
 		var generatedFiles = sourceFolders

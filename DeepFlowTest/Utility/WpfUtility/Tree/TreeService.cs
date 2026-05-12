@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -192,6 +193,9 @@ public sealed class TreeService
 			SiblingIndex = siblingIndex,
 			TypeName = wrapper.Metadata.DisplayTypeName,
 			FrameworkTypeName = wrapper.Metadata.TargetObjectType,
+			TargetKind = wrapper.Metadata.Kind.ToString(),
+			RuntimeFamily = wrapper.Metadata.RuntimeFamily,
+			CanReceiveActions = wrapper.Metadata.CanReceiveActions,
 			Hwnd = wrapper.Metadata.Hwnd,
 			Properties = propertyExtractor.Extract(target, requestedProperties),
 		};
@@ -234,9 +238,25 @@ public sealed class TreeService
 
 		if (target is Application application)
 		{
+			if (application.Resources.Count != 0)
+				yield return application.Resources;
+
 			foreach (Window? window in application.Windows)
 				yield return window;
 		}
+
+		if (target is ResourceDictionary resourceDictionary)
+		{
+			foreach (var item in resourceDictionary)
+				if (item is DictionaryEntry entry && entry.Value is not null)
+					yield return entry.Value;
+		}
+
+		if (target is FrameworkElement { Resources.Count: > 0 } frameworkElementWithResources)
+			yield return frameworkElementWithResources.Resources;
+
+		if (target is Image { Source: { } imageSource })
+			yield return imageSource;
 
 		if (target is DependencyObject dependencyObject)
 		{

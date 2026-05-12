@@ -14,7 +14,7 @@ public class AppDriverOptions
 
 	public string InjectorLauncherPath { get; set; } = ResolveDefaultInjectorLauncherPath();
 
-	public int[] ElementPollBackoffMs { get; set; } = { 25, 100, 500, 1000, 2000 };
+	public int[] ElementPollBackoffMs { get; set; } = [25, 100, 500, 1000, 2000];
 
 	private static string ResolveDefaultInjectorLauncherPath()
 	{

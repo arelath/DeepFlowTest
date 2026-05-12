@@ -7,7 +7,11 @@
 #define VER_PRODUCTNAME_STR "DeepFlowTest"
 #define VER_PRODUCT_VERSION VER_FILE_VERSION
 #define VER_PRODUCT_VERSION_STR STRINGIZE(InformationalVersion)
-#ifndef VER_ORIGINAL_FILENAME_STR
+#if defined(DEEPFLOWTEST_ARCH_X86)
+#define VER_ORIGINAL_FILENAME_STR "DeepFlowTest.GenericInjector.x86.dll"
+#elif defined(DEEPFLOWTEST_ARCH_X64)
+#define VER_ORIGINAL_FILENAME_STR "DeepFlowTest.GenericInjector.x64.dll"
+#else
 #define VER_ORIGINAL_FILENAME_STR "DeepFlowTest.GenericInjector.dll"
 #endif
 #define VER_INTERNAL_NAME_STR VER_ORIGINAL_FILENAME_STR

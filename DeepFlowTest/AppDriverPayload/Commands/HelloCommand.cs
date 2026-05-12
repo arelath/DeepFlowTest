@@ -14,7 +14,7 @@ internal static class HelloCommand
 			return StandardIpcResponse.FromError(
 				$"Protocol version '{request.ProtocolVersion}' is not supported.",
 				ProtocolConstants.ErrorCodes.UnsupportedProtocol,
-				LogCorrelationId());
+				PayloadLog.CurrentCorrelationId);
 		}
 
 		return new HelloCommandResponse
@@ -31,8 +31,4 @@ internal static class HelloCommand
 		};
 	}
 
-	private static string LogCorrelationId()
-	{
-		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
-	}
 }

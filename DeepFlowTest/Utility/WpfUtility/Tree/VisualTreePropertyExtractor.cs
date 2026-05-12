@@ -8,6 +8,11 @@ using System.Linq;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Markup;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 public sealed class VisualTreePropertyExtractor
 {
@@ -53,6 +58,12 @@ public sealed class VisualTreePropertyExtractor
 	{
 		try
 		{
+			if (TryReadSpecialProperty(target, propertyName, out value))
+			{
+				error = null;
+				return true;
+			}
+
 			if (TryReadAttachedProperty(target, propertyName, out value))
 			{
 				error = null;
@@ -87,6 +98,100 @@ public sealed class VisualTreePropertyExtractor
 			error = PropertyExtractionError.Failed(propertyName, ex);
 			return false;
 		}
+	}
+
+	private static bool TryReadSpecialProperty(object target, string propertyName, out object? value)
+	{
+		value = null;
+		switch (propertyName)
+		{
+			case "Xaml":
+				if (target is DependencyObject)
+				{
+					value = XamlWriter.Save(target);
+					return true;
+				}
+
+				return false;
+			case "ResourceKeys":
+				if (target is ResourceDictionary resourceDictionary)
+				{
+					value = resourceDictionary.Keys.Cast<object?>()
+						.Select(static key => Convert.ToString(key, CultureInfo.InvariantCulture) ?? string.Empty)
+						.ToArray();
+					return true;
+				}
+
+				return false;
+			case "ImageMetadata":
+				if (TryReadImageMetadata(target, out value))
+					return true;
+
+				return false;
+			case "Bindings":
+				if (target is DependencyObject dependencyObject)
+				{
+					value = ReadBindings(dependencyObject);
+					return true;
+				}
+
+				return false;
+			default:
+				return false;
+		}
+	}
+
+	private static bool TryReadImageMetadata(object target, out object? value)
+	{
+		var source = target switch
+		{
+			Image image => image.Source,
+			ImageSource imageSource => imageSource,
+			_ => null,
+		};
+		if (source is null)
+		{
+			value = null;
+			return false;
+		}
+
+		var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+		{
+			["Type"] = source.GetType().Name,
+			["Width"] = source.Width,
+			["Height"] = source.Height,
+		};
+		if (source is BitmapSource bitmapSource)
+		{
+			metadata["PixelWidth"] = bitmapSource.PixelWidth;
+			metadata["PixelHeight"] = bitmapSource.PixelHeight;
+		}
+
+		value = metadata;
+		return true;
+	}
+
+	private static IReadOnlyDictionary<string, object?> ReadBindings(DependencyObject target)
+	{
+		var bindings = new Dictionary<string, object?>(StringComparer.Ordinal);
+		var localValues = target.GetLocalValueEnumerator();
+		while (localValues.MoveNext())
+		{
+			var entry = localValues.Current;
+			if (BindingOperations.GetBindingExpressionBase(target, entry.Property) is not { } expression)
+				continue;
+
+			var summary = new Dictionary<string, object?>(StringComparer.Ordinal)
+			{
+				["Status"] = expression.Status.ToString(),
+			};
+			if (expression is BindingExpression bindingExpression)
+				summary["Path"] = bindingExpression.ParentBinding.Path?.Path;
+
+			bindings[entry.Property.Name] = summary;
+		}
+
+		return bindings;
 	}
 
 	private static bool TryReadAttachedProperty(object target, string propertyName, out object? value)

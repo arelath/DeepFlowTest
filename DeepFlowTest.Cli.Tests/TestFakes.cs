@@ -199,14 +199,16 @@ internal sealed class FakeCliAppSession : ICliAppSession
 	public ICliStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs)
 	{
 		Commands.Add(command);
-		return new FakeCliStreamSession(new StartSendingCommandResponse
-		{
-			SubscriptionId = "sub-1",
-			StreamKind = command.StreamKind,
-			Status = ProtocolConstants.Statuses.Started,
-			IntervalMs = command.IntervalMs,
-			SequenceStart = 1,
-		});
+		return new FakeCliStreamSession(
+			new StartSendingCommandResponse
+			{
+				SubscriptionId = "sub-1",
+				StreamKind = command.StreamKind,
+				Status = ProtocolConstants.Statuses.Started,
+				IntervalMs = command.IntervalMs,
+				SequenceStart = 1,
+			},
+			command);
 	}
 
 	public void Dispose()
@@ -218,10 +220,12 @@ internal sealed class FakeCliAppSession : ICliAppSession
 internal sealed class FakeCliStreamSession : ICliStreamSession
 {
 	private int sequence;
+	private readonly StartSendingCommandRequest request;
 
-	public FakeCliStreamSession(StartSendingCommandResponse start)
+	public FakeCliStreamSession(StartSendingCommandResponse start, StartSendingCommandRequest request)
 	{
 		Start = start;
+		this.request = request;
 	}
 
 	public StartSendingCommandResponse Start { get; }
@@ -237,7 +241,17 @@ internal sealed class FakeCliStreamSession : ICliStreamSession
 			SubscriptionId = Start.SubscriptionId,
 			StreamKind = Start.StreamKind,
 			SequenceNumber = sequence,
-			Data = new { status = "fake" },
+			Data = Start.StreamKind == ProtocolConstants.StreamKinds.Screenshot
+				? new ScreenshotCommandResponse
+				{
+					TargetId = request.TargetId ?? "root-0001",
+					Format = request.Format,
+					Width = 2,
+					Height = 1,
+					ByteCount = 4,
+					BytesBase64 = "AQIDBA==",
+				}
+				: new { status = "fake" },
 		};
 	}
 

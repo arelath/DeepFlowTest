@@ -7,10 +7,12 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Runtime.Serialization;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using DeepFlowTest.Assert;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using LinqExpression = System.Linq.Expressions.Expression;
@@ -20,12 +22,21 @@ public class Element
 	private readonly AppDriver driver;
 	private VisualTreeNodeDto node;
 
-	internal Element(AppDriver driver, VisualTreeNodeDto node, ElementSelector? selector = null, VisualTreeSnapshot? snapshot = null)
+	internal Element(
+		AppDriver driver,
+		VisualTreeNodeDto node,
+		ElementSelector? selector = null,
+		VisualTreeSnapshot? snapshot = null,
+		ElementRepairInfo? repairInfo = null,
+		bool register = true)
 	{
 		this.driver = driver ?? throw new ArgumentNullException(nameof(driver));
 		this.node = node ?? throw new ArgumentNullException(nameof(node));
 		Selector = selector;
 		Snapshot = snapshot;
+		RepairInfo = repairInfo;
+		if (register)
+			this.driver.RegisterElement(this);
 	}
 
 	protected Element(Element source)
@@ -35,6 +46,8 @@ public class Element
 		node = source.node;
 		Selector = source.Selector;
 		Snapshot = source.Snapshot;
+		RepairInfo = source.RepairInfo;
+		driver.RegisterElement(this);
 	}
 
 	public string TargetId => node.TargetId;
@@ -46,6 +59,12 @@ public class Element
 	public IReadOnlyDictionary<string, object?> Properties => node.Properties;
 
 	public ElementSelector? Selector { get; }
+
+	internal ElementRepairInfo? RepairInfo { get; }
+
+	internal VisualTreeNodeDto SnapshotNode => node;
+
+	internal VisualTreeSnapshot? CurrentSnapshot => Snapshot;
 
 	protected VisualTreeSnapshot? Snapshot { get; private set; }
 
@@ -181,6 +200,7 @@ public class Element
 	public virtual TOutput? Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, int timeoutMs = 10_000)
 	{
 		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		ThrowIfUnserializableResult(response, nameof(Invoke));
 		return ConvertResponseValue<TOutput>(response.Value);
 	}
 
@@ -199,6 +219,7 @@ public class Element
 	public virtual TOutput? InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, int timeoutMs = 10_000)
 	{
 		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		ThrowIfUnserializableResult(response, nameof(InvokeAsync));
 		return ConvertResponseValue<TOutput>(response.Value);
 	}
 
@@ -222,36 +243,17 @@ public class Element
 	public virtual Element Assert(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs = 10_000)
 	{
 		_ = predicateExpression ?? throw new ArgumentNullException(nameof(predicateExpression));
-		var predicate = predicateExpression.Compile();
-		var timeout = TimeSpan.FromMilliseconds(Math.Max(1, timeoutMs));
-		var delays = new[] { 0, 25, 100, 250, 500, 1000 };
-		var stopwatch = Stopwatch.StartNew();
-		Exception? lastException = null;
-
-		for (var attempt = 0; ; attempt++)
-		{
-			try
-			{
-				RefreshFromCurrentSnapshot();
-				if (predicate(this) == true)
-					return this;
-				lastException = null;
-			}
-			catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
-			{
-				lastException = ex;
-			}
-
-			if (stopwatch.Elapsed >= timeout)
-				break;
-
-			Thread.Sleep(delays[Math.Min(attempt + 1, delays.Length - 1)]);
-		}
-
-		throw new AppDriverAssertionException(FormatAssertionFailure(predicateExpression, timeoutMs, lastException));
+		var parameter = DebugValueExpressionVisitor.GetDebugExpression(TypeName, this);
+		var assertable = Assertable.FromValueExpression(this, parameter, RefreshFromCurrentSnapshot);
+		assertable.IsTrue(predicateExpression, timeoutMs);
+		return this;
 	}
 
-	internal static Element FromMatch(AppDriver driver, FindElementMatchResponse match, ElementSelector? selector)
+	internal static Element FromMatch(
+		AppDriver driver,
+		FindElementMatchResponse match,
+		ElementSelector? selector,
+		ElementRepairInfo? repairInfo = null)
 	{
 		return new Element(
 			driver,
@@ -262,13 +264,27 @@ public class Element
 				FrameworkTypeName = match.FrameworkTypeName,
 				Properties = match.Properties,
 			},
-			selector);
+			selector,
+			repairInfo: repairInfo);
 	}
 
-	internal static Element FromNode(AppDriver driver, VisualTreeNodeDto node, VisualTreeSnapshot snapshot) =>
-		new(driver, node, snapshot: snapshot);
+	internal static Element FromNode(
+		AppDriver driver,
+		VisualTreeNodeDto node,
+		VisualTreeSnapshot snapshot,
+		ElementRepairInfo? repairInfo = null,
+		bool register = true) =>
+		new(driver, node, snapshot: snapshot, repairInfo: repairInfo, register: register);
 
 	protected void ReplaceNode(VisualTreeNodeDto replacement, VisualTreeSnapshot? snapshot = null)
+	{
+		var previousTargetId = node.TargetId;
+		node = replacement;
+		Snapshot = snapshot;
+		driver.MoveElementRegistration(this, previousTargetId, replacement.TargetId);
+	}
+
+	internal void RefreshFromCache(VisualTreeNodeDto replacement, VisualTreeSnapshot snapshot)
 	{
 		node = replacement;
 		Snapshot = snapshot;
@@ -360,34 +376,6 @@ public class Element
 		ReplaceNode(repaired.node, repaired.Snapshot);
 	}
 
-	private string FormatAssertionFailure(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs, Exception? lastException)
-	{
-		var propertyNames = ElementPropertyAccessCollector.Collect(predicateExpression);
-		var actuals = propertyNames.Count == 0
-			? Properties.OrderBy(static property => property.Key, StringComparer.Ordinal).Take(12)
-			: propertyNames.OrderBy(static name => name, StringComparer.Ordinal)
-				.Select(name => new KeyValuePair<string, object?>(name, Properties.TryGetValue(name, out var value) ? value : Primitive.Empty));
-		var builder = new StringBuilder()
-			.AppendFormat(CultureInfo.InvariantCulture, "Expected '{0}' to be true within {1}ms. ", predicateExpression.Body, timeoutMs)
-			.AppendFormat(CultureInfo.InvariantCulture, "TargetId={0}; TypeName={1}; ", TargetId, TypeName)
-			.Append("Actuals={")
-			.Append(string.Join(", ", actuals.Select(static property => property.Key + "=" + FormatValue(property.Value))))
-			.Append('}');
-
-		if (lastException is not null)
-			builder.AppendFormat(CultureInfo.InvariantCulture, "; LastError={0}: {1}", lastException.GetType().Name, lastException.Message);
-
-		return builder.ToString();
-	}
-
-	private static string FormatValue(object? value) =>
-		value switch
-		{
-			null => "null",
-			Primitive primitive => primitive.ToString(),
-			_ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
-		};
-
 	private static T? ConvertResponseValue<T>(object? value)
 	{
 		if (value is null)
@@ -397,6 +385,12 @@ public class Element
 		if (value is Newtonsoft.Json.Linq.JToken token)
 			return token.ToObject<T>();
 		return (T?)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
+	}
+
+	private static void ThrowIfUnserializableResult(StandardIpcResponse response, string caller)
+	{
+		if (string.Equals(response.Status, ProtocolConstants.Statuses.UnserializableResult, StringComparison.Ordinal))
+			throw new SerializationException($"Unserializable {caller} result received.");
 	}
 
 	private sealed class ElementPropertyAccessCollector : ExpressionVisitor

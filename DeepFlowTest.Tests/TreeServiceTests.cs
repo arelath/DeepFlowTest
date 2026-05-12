@@ -1,11 +1,17 @@
 namespace DeepFlowTest.Tests;
 
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Data;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Automation.Peers;
 using DeepFlowTest.AppDriverPayload;
+using DeepFlowTest.Utility;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
 
@@ -114,6 +120,94 @@ public sealed class TreeServiceTests
 		}
 	}
 
+	[Test]
+	public void WrapperModelExposesTargetKindResourcesImagesWebBrowserAndAutomationPeers()
+	{
+		_ = Application.Current ?? new Application();
+		var image = new Image
+		{
+			Name = "treeImage",
+			Width = 2,
+			Height = 2,
+			Source = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 0, 0, 0, 0 }, 4),
+		};
+		var panel = new StackPanel { Name = "breadthPanel" };
+		panel.Resources["resourceImage"] = image.Source;
+		panel.Children.Add(image);
+		panel.Children.Add(new WebBrowser { Name = "treeWebBrowser", Width = 10, Height = 10 });
+		var window = CreateWindow("Breadth", panel);
+
+		try
+		{
+			window.Show();
+
+			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
+			{
+				RequestedPropertyNames = new[] { "Name", "Width", "Height", "Count", "ResourceKeys", "ImageMetadata", "Xaml" },
+				MaxNodeCount = 500,
+			});
+
+			Assert.That(snapshot.Nodes.Any(node => node.TypeName == "WebBrowser"), Is.True);
+			Assert.That(snapshot.Nodes.Any(node => node.TargetKind == TargetObjectKind.Resource.ToString()), Is.True);
+			Assert.That(snapshot.Nodes.Any(node => node.TargetKind == TargetObjectKind.Image.ToString()), Is.True);
+			Assert.That(snapshot.Nodes.Any(node => node.RuntimeFamily == "image"), Is.True);
+			var imageNode = snapshot.Nodes.Single(node => node.Properties.TryGetValue("Name", out var name) && Equals(name, "treeImage"));
+			Assert.That(imageNode.CanReceiveActions, Is.True);
+			Assert.That(imageNode.Properties["ImageMetadata"], Is.Not.Null);
+			Assert.That(snapshot.Nodes.Any(node =>
+				node.TargetKind == TargetObjectKind.Resource.ToString()
+				&& node.Properties.TryGetValue("ResourceKeys", out var keys)
+				&& keys is System.Collections.IEnumerable resourceKeys
+				&& resourceKeys.Cast<object?>().Any(key => Equals(key, "resourceImage"))), Is.True);
+
+			var targetIds = new TargetIdService();
+			var peerId = targetIds.GetOrCreateId(UIElementAutomationPeer.CreatePeerForElement(image));
+			var peerSnapshot = new TreeService(targetIds).CaptureSnapshot(new TreeSnapshotOptions
+			{
+				RootTargetId = peerId,
+				RequestedPropertyNames = new[] { "ClassName" },
+				MaxNodeCount = 10,
+			});
+
+			Assert.That(peerSnapshot.Nodes.Single().TargetKind, Is.EqualTo(TargetObjectKind.WpfAutomationPeer.ToString()));
+			Assert.That(peerSnapshot.Nodes.Single().CanReceiveActions, Is.False);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void ExplicitHelperPropertiesExposeBindingsAndXaml()
+	{
+		var source = new BindingSource { Caption = "Bound value" };
+		var textBlock = new TextBlock { Name = "boundText" };
+		textBlock.SetBinding(TextBlock.TextProperty, new Binding(nameof(BindingSource.Caption)) { Source = source });
+		var window = CreateWindow("Binding helpers", textBlock);
+
+		try
+		{
+			window.Show();
+
+			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
+			{
+				RequestedPropertyNames = new[] { "Name", "Text", "Bindings", "Xaml" },
+				MaxNodeCount = 200,
+			});
+
+			var textNode = snapshot.Nodes.Single(node => node.Properties.TryGetValue("Name", out var name) && Equals(name, "boundText"));
+			Assert.That(textNode.Properties["Text"], Is.EqualTo("Bound value"));
+			Assert.That(textNode.Properties["Xaml"]?.ToString(), Does.Contain("TextBlock"));
+			var bindings = (IReadOnlyDictionary<string, object?>)textNode.Properties["Bindings"]!;
+			Assert.That(bindings.ContainsKey("Text"), Is.True);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
 	private static Window CreateWindow(string title, object content)
 	{
 		return new Window
@@ -133,5 +227,10 @@ public sealed class TreeServiceTests
 	{
 		return snapshot.Nodes.Any(node =>
 			node.Properties.TryGetValue("Name", out var value) && Equals(value, name));
+	}
+
+	private sealed class BindingSource
+	{
+		public string Caption { get; set; } = string.Empty;
 	}
 }

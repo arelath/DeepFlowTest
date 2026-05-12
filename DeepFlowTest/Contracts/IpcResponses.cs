@@ -20,6 +20,9 @@ public sealed class StandardIpcResponse
 	public static StandardIpcResponse Ok() =>
 		new() { Success = true, Status = ProtocolConstants.Statuses.Ok };
 
+	public static StandardIpcResponse UnserializableResult() =>
+		new() { Success = true, Status = ProtocolConstants.Statuses.UnserializableResult };
+
 	public static StandardIpcResponse FromError(string error, string errorCode = ProtocolConstants.ErrorCodes.ProtocolError, string? logCorrelationId = null) =>
 		new()
 		{
@@ -77,7 +80,7 @@ public sealed class PipeStatusCommandResponse
 
 	public int ActiveSubscriptionCount { get; set; }
 
-	public IReadOnlyList<ActiveSubscriptionResponse> ActiveSubscriptions { get; set; } = Array.Empty<ActiveSubscriptionResponse>();
+	public IReadOnlyList<ActiveSubscriptionResponse> ActiveSubscriptions { get; set; } = [];
 
 	public int TotalCommandsHandled { get; set; }
 
@@ -85,7 +88,7 @@ public sealed class PipeStatusCommandResponse
 
 	public string IdleMode { get; set; } = "waiting-for-client-or-command";
 
-	public Dictionary<string, long> Counters { get; set; } = new();
+	public Dictionary<string, long> Counters { get; set; } = [];
 }
 
 public sealed class FindElementCommandResponse
@@ -94,7 +97,7 @@ public sealed class FindElementCommandResponse
 
 	public string Status { get; set; } = ProtocolConstants.Statuses.Ok;
 
-	public List<FindElementMatchResponse> Matches { get; set; } = new();
+	public List<FindElementMatchResponse> Matches { get; set; } = [];
 
 	public int MatchCount { get; set; }
 
@@ -109,7 +112,7 @@ public sealed class FindElementMatchResponse
 
 	public string? FrameworkTypeName { get; set; }
 
-	public Dictionary<string, object?> Properties { get; set; } = new();
+	public Dictionary<string, object?> Properties { get; set; } = [];
 }
 
 public sealed class ScreenshotCommandResponse

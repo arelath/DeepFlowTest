@@ -5,7 +5,9 @@ using System.Linq;
 using System.Linq.Expressions;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Tests.Fakes;
 using NUnit.Framework;
+using FakeSession = DeepFlowTest.Tests.Fakes.FakeAppDriverCommandSession;
 
 [TestFixture]
 public sealed class ExpressionPayloadSerializerTests
@@ -89,42 +91,6 @@ public sealed class ExpressionPayloadSerializerTests
 
 		public int Count { get; set; }
 
-		public string[] Tags { get; set; } = Array.Empty<string>();
-	}
-
-	private sealed class FakeSession : DeepFlowTest.IAppDriverCommandSession
-	{
-		private readonly object response;
-
-		public FakeSession(object response)
-		{
-			this.response = response;
-		}
-
-		public System.Collections.Generic.List<IpcCommand> SentCommands { get; } = new();
-
-		public TResponse Send<TResponse>(IpcCommand command)
-		{
-			SentCommands.Add(command);
-			return (TResponse)response;
-		}
-	}
-
-	private sealed class FakeTargetProcess : DeepFlowTest.ITargetProcess
-	{
-		public int Id => 123;
-
-		public string ProcessName => "target";
-
-		public bool HasExited { get; private set; }
-
-		public void Kill()
-		{
-			HasExited = true;
-		}
-
-		public void Dispose()
-		{
-		}
+		public string[] Tags { get; set; } = [];
 	}
 }

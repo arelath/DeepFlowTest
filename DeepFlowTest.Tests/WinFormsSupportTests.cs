@@ -4,9 +4,11 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Forms.Integration;
 using DeepFlowTest.AppDriverPayload;
+using DeepFlowTest.AppDriverPayload.Commands;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
@@ -32,7 +34,7 @@ public sealed class WinFormsSupportTests
 			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = new[] { "Name", "Text" },
+				PropNames = ["Name", "Text"],
 				MaxNodeCount = 200,
 			})!;
 
@@ -43,6 +45,41 @@ public sealed class WinFormsSupportTests
 		finally
 		{
 			form.Close();
+		}
+	}
+
+	[Test]
+	public void SecondaryWinFormsFormsAppearInSnapshots()
+	{
+		using var mainForm = CreateForm();
+		using var secondaryForm = CreateForm();
+		secondaryForm.Name = "secondaryFormsRoot";
+		secondaryForm.Text = "Secondary WinForms support";
+		mainForm.Controls.Add(new Forms.Label { Name = "mainFormsLabel", Text = "Main", Width = 80 });
+		secondaryForm.Controls.Add(new Forms.Label { Name = "secondaryFormsLabel", Text = "Secondary", Width = 120 });
+
+		try
+		{
+			mainForm.Show();
+			secondaryForm.Show();
+			Forms.Application.DoEvents();
+
+			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
+			{
+				AsSnapshot = true,
+				PropNames = ["Name", "Text"],
+				MaxNodeCount = 300,
+			})!;
+
+			Assert.That(snapshot.Nodes.Count(static node => node.TypeName == "Form"), Is.GreaterThanOrEqualTo(2));
+			Assert.That(snapshot.Nodes.Any(node => node.Properties.TryGetValue("Name", out var value) && Equals(value, "mainFormsLabel")), Is.True);
+			Assert.That(snapshot.Nodes.Any(node => node.Properties.TryGetValue("Name", out var value) && Equals(value, "secondaryFormsLabel")), Is.True);
+			Assert.That(snapshot.TargetFrameworkFamily, Is.EqualTo("winforms").Or.EqualTo("mixed"));
+		}
+		finally
+		{
+			secondaryForm.Close();
+			mainForm.Close();
 		}
 	}
 
@@ -78,6 +115,48 @@ public sealed class WinFormsSupportTests
 	}
 
 	[Test]
+	public void WinFormsKnownOperationsSupportSelectionToggleAndComboExpansion()
+	{
+		using var form = CreateForm();
+		var textBox = new Forms.TextBox { Name = "formsSelectBox", Top = 8, Width = 120 };
+		var checkBox = new Forms.CheckBox { Name = "formsKnownCheckBox", Text = "Check", Top = 40, Width = 120 };
+		var comboBox = new Forms.ComboBox { Name = "formsKnownComboBox", Top = 72, Width = 120 };
+		comboBox.Items.AddRange(new object[] { "One", "Two" });
+		form.Controls.Add(textBox);
+		form.Controls.Add(checkBox);
+		form.Controls.Add(comboBox);
+
+		try
+		{
+			form.Show();
+			Forms.Application.DoEvents();
+
+			var textBoxId = FindTargetId("formsSelectBox");
+			var checkBoxId = FindTargetId("formsKnownCheckBox");
+			var comboBoxId = FindTargetId("formsKnownComboBox");
+
+			AssertOk(CaptureResponse(new KnownOperationCommandRequest { TargetId = textBoxId, Operation = "Select" }));
+			Assert.That(form.ActiveControl, Is.SameAs(textBox));
+
+			AssertOk(CaptureResponse(new KnownOperationCommandRequest { TargetId = checkBoxId, Operation = "Check" }));
+			Assert.That(checkBox.Checked, Is.True);
+
+			AssertOk(CaptureResponse(new KnownOperationCommandRequest { TargetId = checkBoxId, Operation = "Uncheck" }));
+			Assert.That(checkBox.Checked, Is.False);
+
+			AssertOk(CaptureResponse(new KnownOperationCommandRequest { TargetId = comboBoxId, Operation = "Expand" }));
+			Assert.That(comboBox.DroppedDown, Is.True);
+
+			AssertOk(CaptureResponse(new KnownOperationCommandRequest { TargetId = comboBoxId, Operation = "Collapse" }));
+			Assert.That(comboBox.DroppedDown, Is.False);
+		}
+		finally
+		{
+			form.Close();
+		}
+	}
+
+	[Test]
 	public void NativeWindowScreenshotAndClickSmoke()
 	{
 		using var form = CreateForm();
@@ -94,7 +173,7 @@ public sealed class WinFormsSupportTests
 			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = new[] { "Name", "Text" },
+				PropNames = ["Name", "Text"],
 				MaxNodeCount = 300,
 			})!;
 			var hwndNode = snapshot.Nodes.FirstOrDefault(node => node.TypeName == "HWND" && node.Hwnd == button.Handle.ToInt64());
@@ -119,6 +198,110 @@ public sealed class WinFormsSupportTests
 	}
 
 	[Test]
+	public void NativeWindowFileNamePropertySetsWindowText()
+	{
+		using var form = CreateForm();
+		var textBox = new Forms.TextBox { Name = "nativeFileNameBox", Width = 160 };
+		form.Controls.Add(textBox);
+
+		try
+		{
+			form.Show();
+			Forms.Application.DoEvents();
+
+			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
+			{
+				AsSnapshot = true,
+				PropNames = ["Name", "Text"],
+				MaxNodeCount = 300,
+			})!;
+			var hwndNode = snapshot.Nodes.FirstOrDefault(node => node.TypeName == "HWND" && node.Hwnd == textBox.Handle.ToInt64());
+			Assert.That(hwndNode, Is.Not.Null);
+
+			AssertOk(CaptureResponse(new SetPropertyCommandRequest
+			{
+				TargetId = hwndNode!.TargetId,
+				PropertyName = "FileName",
+				PropertyValue = @"C:\temp\selected.txt",
+			}));
+			Forms.Application.DoEvents();
+
+			Assert.That(textBox.Text, Is.EqualTo(@"C:\temp\selected.txt"));
+		}
+		finally
+		{
+			form.Close();
+		}
+	}
+
+	[Test]
+	public void NativeAutomationFileNamePropertySetsValuePattern()
+	{
+		using var form = CreateForm();
+		var textBox = new Forms.TextBox { Name = "automationFileNameBox", Width = 160 };
+		form.Controls.Add(textBox);
+
+		try
+		{
+			form.Show();
+			Forms.Application.DoEvents();
+			var automationElement = AutomationElement.FromHandle(textBox.Handle);
+			var targetIds = new TargetIdService();
+			var targetId = targetIds.GetOrCreateId(automationElement);
+
+			AssertOk(InvokeSetProperty(
+				new SetPropertyCommandRequest
+				{
+					TargetId = targetId,
+					PropertyName = "FileName",
+					PropertyValue = @"C:\temp\automation-selected.txt",
+				},
+				new TreeService(targetIds)));
+			Forms.Application.DoEvents();
+
+			Assert.That(textBox.Text, Is.EqualTo(@"C:\temp\automation-selected.txt"));
+		}
+		finally
+		{
+			form.Close();
+		}
+	}
+
+	[Test]
+	public void NativeDialogKnownOperationsInvokeAcceptAndCancelButtons()
+	{
+		using var form = CreateForm();
+		var acceptCount = 0;
+		var cancelCount = 0;
+		var acceptButton = new Forms.Button { Name = "1", Text = "OK", Width = 80, Height = 28 };
+		var cancelButton = new Forms.Button { Name = "2", Text = "Cancel", Left = 90, Width = 80, Height = 28 };
+		acceptButton.Click += (_, _) => acceptCount++;
+		cancelButton.Click += (_, _) => cancelCount++;
+		form.Controls.Add(acceptButton);
+		form.Controls.Add(cancelButton);
+
+		try
+		{
+			form.Show();
+			Forms.Application.DoEvents();
+			var targetIds = new TargetIdService();
+			var targetId = targetIds.GetOrCreateId(form.Handle);
+			var treeService = new TreeService(targetIds);
+
+			AssertOk(InvokeKnownOperation(new KnownOperationCommandRequest { TargetId = targetId, Operation = "AcceptDialog" }, treeService));
+			AssertOk(InvokeKnownOperation(new KnownOperationCommandRequest { TargetId = targetId, Operation = "CancelDialog" }, treeService));
+			Forms.Application.DoEvents();
+
+			Assert.That(acceptCount, Is.EqualTo(1));
+			Assert.That(cancelCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			form.Close();
+		}
+	}
+
+	[Test]
 	public void HybridWpfWinFormsHostAppearsInSnapshots()
 	{
 		_ = Application.Current ?? new Application();
@@ -135,7 +318,7 @@ public sealed class WinFormsSupportTests
 		var snapshot = new TreeService(targetIds).CaptureSnapshot(new TreeSnapshotOptions
 		{
 			RootTargetId = rootId,
-			RequestedPropertyNames = new[] { "Name", "Text", "Title" },
+			RequestedPropertyNames = ["Name", "Text", "Title"],
 			MaxNodeCount = 300,
 		});
 
@@ -156,7 +339,7 @@ public sealed class WinFormsSupportTests
 		var snapshot = new TreeService(targetIds).CaptureSnapshot(new TreeSnapshotOptions
 		{
 			RootTargetId = rootId,
-			RequestedPropertyNames = new[] { "Name", "Content" },
+			RequestedPropertyNames = ["Name", "Content"],
 			MaxNodeCount = 300,
 		});
 
@@ -187,12 +370,24 @@ public sealed class WinFormsSupportTests
 		var response = (FindElementCommandResponse)CaptureResponse(new FindElementCommandRequest
 		{
 			Selector = new ElementSelectorDto { Name = name },
-			PropNames = new[] { "Name", "Text" },
+			PropNames = ["Name", "Text"],
 			MaxMatches = 1,
 		})!;
 
 		Assert.That(response.MatchCount, Is.EqualTo(1), name);
 		return response.Matches[0].TargetId;
+	}
+
+	private static object? InvokeKnownOperation(KnownOperationCommandRequest request, TreeService treeService)
+	{
+		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
+		return TargetActionCommand.KnownOperation(request, treeService);
+	}
+
+	private static object? InvokeSetProperty(SetPropertyCommandRequest request, TreeService treeService)
+	{
+		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
+		return TargetActionCommand.SetProperty(request, treeService);
 	}
 
 	private static void AssertOk(object? response)
@@ -231,9 +426,7 @@ public sealed class WinFormsSupportTests
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
 		};
 
-		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
-		var method = dispatcherType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
-		method.Invoke(null, new object?[] { command, options, null });
+		AppDriverCommandDispatcher.Process(command, options, null);
 		return response;
 	}
 

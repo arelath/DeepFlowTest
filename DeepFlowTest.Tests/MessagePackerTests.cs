@@ -3,7 +3,6 @@ namespace DeepFlowTest.Tests;
 using System;
 using System.IO;
 using System.IO.Compression;
-using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -110,11 +109,8 @@ public sealed class MessagePackerTests
 			Throws.TypeOf<OperationCanceledException>());
 	}
 
-	private static IDisposable OverrideMaxFrameLength(int maxFrameLength)
-	{
-		var method = typeof(MessagePacker).GetMethod("OverrideMaxFrameLengthForTests", BindingFlags.Static | BindingFlags.NonPublic)!;
-		return (IDisposable)method.Invoke(null, new object[] { maxFrameLength })!;
-	}
+	private static IDisposable OverrideMaxFrameLength(int maxFrameLength) =>
+		MessagePacker.OverrideMaxFrameLengthForTests(maxFrameLength);
 
 	private static MemoryStream CreateFrame(string json)
 	{

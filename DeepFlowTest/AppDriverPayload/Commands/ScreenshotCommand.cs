@@ -31,7 +31,7 @@ internal static class ScreenshotCommand
 			return StandardIpcResponse.FromError(
 				$"Unsupported screenshot format '{request.Format}'.",
 				ProtocolConstants.ErrorCodes.ProtocolError,
-				LogCorrelationId());
+				PayloadLog.CurrentCorrelationId);
 		}
 
 		var resolution = ResolveTarget(request, treeService, out var targetId);
@@ -40,11 +40,11 @@ internal static class ScreenshotCommand
 			var errorCode = resolution.Status == TargetIdResolutionStatus.Stale
 				? ProtocolConstants.ErrorCodes.StaleTarget
 				: ProtocolConstants.ErrorCodes.UnsupportedTarget;
-			return StandardIpcResponse.FromError($"Target '{targetId}' resolved as {resolution.Status}.", errorCode, LogCorrelationId());
+			return StandardIpcResponse.FromError($"Target '{targetId}' resolved as {resolution.Status}.", errorCode, PayloadLog.CurrentCorrelationId);
 		}
 
 		if (!TryCapture(resolution.Target!, format, out var capture, out var error))
-			return StandardIpcResponse.FromError(error ?? "Target cannot be captured.", ProtocolConstants.ErrorCodes.UnsupportedTarget, LogCorrelationId());
+			return StandardIpcResponse.FromError(error ?? "Target cannot be captured.", ProtocolConstants.ErrorCodes.UnsupportedTarget, PayloadLog.CurrentCorrelationId);
 
 		return new ScreenshotCommandResponse
 		{
@@ -66,7 +66,7 @@ internal static class ScreenshotCommand
 
 		var snapshot = treeService.CaptureSnapshot(new TreeSnapshotOptions
 		{
-			RequestedPropertyNames = Array.Empty<string>(),
+			RequestedPropertyNames = [],
 			MaxNodeCount = 1,
 		});
 		targetId = snapshot.RootIds.FirstOrDefault();
@@ -231,20 +231,9 @@ internal static class ScreenshotCommand
 
 	private static string? NormalizeFormat(string? format)
 	{
-		return (format ?? "png").Trim().ToLowerInvariant() switch
-		{
-			"png" => "png",
-			"bmp" => "bmp",
-			"gif" => "gif",
-			"jpg" => "jpeg",
-			"jpeg" => "jpeg",
-			_ => null,
-		};
-	}
-
-	private static string LogCorrelationId()
-	{
-		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
+		return DeepFlowTest.ImageFormatExtensions.TryParseProtocolString(format, out var imageFormat)
+			? imageFormat.ToProtocolString()
+			: null;
 	}
 
 	[DllImport("user32.dll")]
@@ -260,7 +249,7 @@ internal static class ScreenshotCommand
 
 	private readonly struct ScreenshotCapture
 	{
-		public static readonly ScreenshotCapture Empty = new(0, 0, Array.Empty<byte>());
+		public static readonly ScreenshotCapture Empty = new(0, 0, []);
 
 		public ScreenshotCapture(int width, int height, byte[] bytes)
 		{

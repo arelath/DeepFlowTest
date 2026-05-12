@@ -26,9 +26,35 @@ public sealed class CliDefaultsStore
 			["waitIntervalMs"] = DefaultValueDefinition.Int(d => d.WaitIntervalMs, (d, value) => d.WaitIntervalMs = value),
 			["waitMatchCount"] = DefaultValueDefinition.Int(d => d.WaitMatchCount, (d, value) => d.WaitMatchCount = value),
 			["streamIntervalMs"] = DefaultValueDefinition.Int(d => d.StreamIntervalMs, (d, value) => d.StreamIntervalMs = value),
-			["screenshotFormat"] = DefaultValueDefinition.String(d => d.ScreenshotFormat, (d, value) => d.ScreenshotFormat = value, new[] { "png", "jpg", "jpeg" }),
+			["screenshotFormat"] = DefaultValueDefinition.String(
+				d => d.ScreenshotFormat,
+				(d, value) => d.ScreenshotFormat = ScreenshotFileService.NormalizeFormat(value),
+				new[] { "png", "bmp", "gif", "jpg", "jpeg" }),
 			["keyDelayMs"] = DefaultValueDefinition.Int(d => d.KeyDelayMs, (d, value) => d.KeyDelayMs = value),
 			["ensureForeground"] = DefaultValueDefinition.Bool(d => d.EnsureForeground, (d, value) => d.EnsureForeground = value),
+		};
+
+	private static readonly IReadOnlyDictionary<string, string> PathAliases =
+		new Dictionary<string, string>(StringComparer.Ordinal)
+		{
+			["common.timeoutMs"] = "timeoutMs",
+			["common.format"] = "outputFormat",
+			["common.hideEmpty"] = "hideEmpty",
+			["common.useShortIds"] = "useShortIds",
+			["common.after"] = "afterSnapshot",
+			["commands.tree.shape"] = "treeShape",
+			["commands.tree.maxDepth"] = "treeMaxDepth",
+			["commands.tree.limit"] = "treeLimit",
+			["commands.tree.props"] = "propertyNames",
+			["commands.find.limit"] = "findLimit",
+			["commands.wait.intervalMs"] = "waitIntervalMs",
+			["commands.wait.matchCount"] = "waitMatchCount",
+			["commands.stream.intervalMs"] = "streamIntervalMs",
+			["commands.stream.props"] = "propertyNames",
+			["commands.stream.imageFormat"] = "screenshotFormat",
+			["commands.screenshot.imageFormat"] = "screenshotFormat",
+			["commands.key.delayMs"] = "keyDelayMs",
+			["commands.key.foreground"] = "ensureForeground",
 		};
 
 	public CliDefaultsStore(string? configPath = null)
@@ -75,6 +101,7 @@ public sealed class CliDefaultsStore
 
 	public void Set(string key, string value)
 	{
+		key = NormalizeKey(key);
 		var definition = GetDefinition(key);
 		var root = ReadConfigObjectOrEmpty();
 		if (string.Equals(value, "null", StringComparison.OrdinalIgnoreCase))
@@ -91,6 +118,7 @@ public sealed class CliDefaultsStore
 
 	public void Clear(string key)
 	{
+		key = NormalizeKey(key);
 		_ = GetDefinition(key);
 		var root = ReadConfigObjectOrEmpty();
 		root.Remove(key);
@@ -119,11 +147,15 @@ public sealed class CliDefaultsStore
 
 	private DefaultValueDefinition GetDefinition(string key)
 	{
+		key = NormalizeKey(key);
 		if (!Definitions.TryGetValue(key, out var definition))
 			throw new CliException(CliErrorCodes.InvalidArguments, $"Unknown config key '{key}'.");
 
 		return definition;
 	}
+
+	private static string NormalizeKey(string key) =>
+		PathAliases.TryGetValue(key, out var normalized) ? normalized : key;
 
 	private JsonObject ReadConfigObjectOrEmpty()
 	{

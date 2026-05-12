@@ -44,8 +44,12 @@ public sealed class ReusablePipeSessionStreamingTests
 			await stopClient.SendAsync(new StopSendingCommandRequest { SubscriptionId = start.SubscriptionId }));
 
 		Assert.That(start.Status, Is.EqualTo(ProtocolConstants.Statuses.Started));
+		Assert.That(start.SequenceStart, Is.EqualTo(1));
 		Assert.That(frame.MessageKind, Is.EqualTo("stream"));
+		Assert.That(frame.SubscriptionId, Is.EqualTo(start.SubscriptionId));
+		Assert.That(frame.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.EventLog));
 		Assert.That(frame.SequenceNumber, Is.GreaterThanOrEqualTo(1));
+		Assert.That(MessagePacker.ConvertTo<System.Collections.Generic.Dictionary<string, object?>>(frame.Data!)["status"]!.ToString(), Is.EqualTo("heartbeat"));
 		Assert.That(status.IsSending, Is.True);
 		Assert.That(status.ActiveSubscriptions[0].LastSequenceNumber, Is.GreaterThanOrEqualTo(1));
 		Assert.That(stop.Status, Is.EqualTo(ProtocolConstants.Statuses.Stopped));
@@ -70,6 +74,20 @@ public sealed class ReusablePipeSessionStreamingTests
 		Assert.That(SpinWaitUntil(() => sends >= 1, TimeSpan.FromSeconds(2)), Is.True);
 		Assert.That(session.StopSubscription(subscription.SubscriptionId), Is.True);
 		Assert.That(session.StopSubscription(subscription.SubscriptionId), Is.False);
+	}
+
+	[Test]
+	public void ClientWriterFailureRemovesActiveSubscription()
+	{
+		var session = new ReusablePipeSession("pipe", _ => { });
+		_ = session.StartSubscription(
+			ProtocolConstants.StreamKinds.EventLog,
+			"connection",
+			50,
+			_ => false,
+			sequence => new { sequence });
+
+		Assert.That(SpinWaitUntil(() => session.ActiveSubscriptions.Count == 0, TimeSpan.FromSeconds(2)), Is.True);
 	}
 
 	[Test]

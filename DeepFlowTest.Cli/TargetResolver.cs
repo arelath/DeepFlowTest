@@ -3,7 +3,10 @@ namespace DeepFlowTest.Cli;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using DeepFlowTest;
 
@@ -98,6 +101,128 @@ public sealed class ProcessNameCache
 	}
 }
 
+public interface IProcessNameCache
+{
+	int? TryGet(string processName);
+
+	void Set(string processName, int processId);
+
+	void Remove(string processName);
+}
+
+public sealed class NullProcessNameCache : IProcessNameCache
+{
+	public static readonly NullProcessNameCache Instance = new();
+
+	private NullProcessNameCache()
+	{
+	}
+
+	public int? TryGet(string processName) => null;
+
+	public void Set(string processName, int processId)
+	{
+	}
+
+	public void Remove(string processName)
+	{
+	}
+}
+
+public sealed class FileProcessNameCache : IProcessNameCache
+{
+	public const string FileName = "DeepFlowTest.Cli.ProcessCache.json";
+
+	private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+	private static readonly JsonSerializerOptions JsonOptions = new()
+	{
+		DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+		WriteIndented = true,
+	};
+
+	private readonly string path;
+
+	public FileProcessNameCache(string? path = null)
+	{
+		this.path = path ?? DefaultPath;
+	}
+
+	public static string DefaultPath => Path.Combine(AppContext.BaseDirectory, FileName);
+
+	public int? TryGet(string processName)
+	{
+		var document = TryRead();
+		return document.ProcessNames.TryGetValue(NormalizeKey(processName), out var processId)
+			? processId
+			: null;
+	}
+
+	public void Set(string processName, int processId)
+	{
+		var document = TryRead();
+		document.ProcessNames[NormalizeKey(processName)] = processId;
+		TryWrite(document);
+	}
+
+	public void Remove(string processName)
+	{
+		var document = TryRead();
+		if (!document.ProcessNames.Remove(NormalizeKey(processName)))
+			return;
+
+		TryWrite(document);
+	}
+
+	private ProcessNameCacheDocument TryRead()
+	{
+		try
+		{
+			if (!File.Exists(path))
+				return new ProcessNameCacheDocument();
+
+			return JsonSerializer.Deserialize<ProcessNameCacheDocument>(File.ReadAllText(path, Utf8NoBom), JsonOptions)
+				?? new ProcessNameCacheDocument();
+		}
+		catch (Exception ex) when (IsCacheIoException(ex))
+		{
+			return new ProcessNameCacheDocument();
+		}
+	}
+
+	private void TryWrite(ProcessNameCacheDocument document)
+	{
+		try
+		{
+			var directory = Path.GetDirectoryName(path);
+			if (!string.IsNullOrWhiteSpace(directory))
+				Directory.CreateDirectory(directory);
+
+			File.WriteAllText(path, JsonSerializer.Serialize(document, JsonOptions), Utf8NoBom);
+		}
+		catch (Exception ex) when (IsCacheIoException(ex))
+		{
+		}
+	}
+
+	private static string NormalizeKey(string processName) =>
+		Path.GetFileNameWithoutExtension(processName ?? string.Empty).Trim().ToLowerInvariant();
+
+	private static bool IsCacheIoException(Exception ex) =>
+		ex is IOException
+			or UnauthorizedAccessException
+			or NotSupportedException
+			or System.Security.SecurityException
+			or JsonException;
+
+	private sealed class ProcessNameCacheDocument
+	{
+		public int SchemaVersion { get; set; } = 1;
+
+		public Dictionary<string, int> ProcessNames { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+	}
+}
+
 public interface ITargetResolver
 {
 	TargetInfo Resolve(TargetSelector selector);
@@ -107,11 +232,16 @@ public sealed class TargetResolver : ITargetResolver
 {
 	private readonly IProcessSnapshotSource snapshotSource;
 	private readonly ProcessNameCache processNameCache;
+	private readonly IProcessNameCache fileProcessNameCache;
 
-	public TargetResolver(IProcessSnapshotSource snapshotSource, ProcessNameCache? processNameCache = null)
+	public TargetResolver(
+		IProcessSnapshotSource snapshotSource,
+		ProcessNameCache? processNameCache = null,
+		IProcessNameCache? fileProcessNameCache = null)
 	{
 		this.snapshotSource = snapshotSource ?? throw new ArgumentNullException(nameof(snapshotSource));
 		this.processNameCache = processNameCache ?? new ProcessNameCache();
+		this.fileProcessNameCache = fileProcessNameCache ?? new FileProcessNameCache();
 	}
 
 	public TargetInfo Resolve(TargetSelector selector)
@@ -141,22 +271,55 @@ public sealed class TargetResolver : ITargetResolver
 
 	private TargetInfo ResolveByName(string processName)
 	{
-		var cached = processNameCache.Find(processName);
+		var normalizedProcessName = NormalizeProcessName(processName);
+		var cached = processNameCache.Find(normalizedProcessName);
 		if (cached.Count != 0)
 			return ExactlyOne(cached, $"cached process name '{processName}'");
+
+		var cachedFileTarget = TryResolveFileCachedProcessName(normalizedProcessName);
+		if (cachedFileTarget is not null)
+			return cachedFileTarget;
 
 		var result = snapshotSource.GetSnapshots();
 		processNameCache.Remember(result.Processes);
 		var exact = result.Processes
-			.Where(process => process.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase))
+			.Where(process => NormalizeProcessName(process.ProcessName).Equals(normalizedProcessName, StringComparison.OrdinalIgnoreCase))
 			.ToArray();
 		if (exact.Length != 0)
-			return ExactlyOne(exact, $"process name '{processName}'");
+			return CacheAndReturn(ExactlyOne(exact, $"process name '{processName}'"), normalizedProcessName);
 
 		var contains = result.Processes
-			.Where(process => process.ProcessName.Contains(processName, StringComparison.OrdinalIgnoreCase))
+			.Where(process => NormalizeProcessName(process.ProcessName).Contains(normalizedProcessName, StringComparison.OrdinalIgnoreCase))
 			.ToArray();
-		return ExactlyOne(contains, $"process name containing '{processName}'");
+		return CacheAndReturn(ExactlyOne(contains, $"process name containing '{processName}'"), normalizedProcessName);
+	}
+
+	private TargetInfo? TryResolveFileCachedProcessName(string normalizedProcessName)
+	{
+		var cachedProcessId = fileProcessNameCache.TryGet(normalizedProcessName);
+		if (!cachedProcessId.HasValue)
+			return null;
+
+		var result = snapshotSource.GetSnapshots();
+		var match = result.Processes.FirstOrDefault(process => process.ProcessId == cachedProcessId.Value);
+		if (match is not null && ProcessNameMatches(match, normalizedProcessName))
+			return ToTarget(match);
+
+		fileProcessNameCache.Remove(normalizedProcessName);
+		return null;
+	}
+
+	private TargetInfo CacheAndReturn(TargetInfo target, string normalizedProcessName)
+	{
+		fileProcessNameCache.Set(normalizedProcessName, target.ProcessId);
+		return target;
+	}
+
+	private static bool ProcessNameMatches(ProcessSnapshot process, string normalizedProcessName)
+	{
+		var candidateName = NormalizeProcessName(process.ProcessName);
+		return candidateName.Equals(normalizedProcessName, StringComparison.OrdinalIgnoreCase)
+			|| candidateName.Contains(normalizedProcessName, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private TargetInfo ResolveByWindowTitle(string windowTitle)
@@ -206,4 +369,7 @@ public sealed class TargetResolver : ITargetResolver
 
 		return TargetInfo.FromSnapshot(snapshot);
 	}
+
+	private static string NormalizeProcessName(string processName) =>
+		Path.GetFileNameWithoutExtension(processName ?? string.Empty).Trim();
 }

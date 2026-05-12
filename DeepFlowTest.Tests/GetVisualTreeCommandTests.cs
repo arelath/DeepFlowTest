@@ -28,7 +28,7 @@ public sealed class GetVisualTreeCommandTests
 			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = new[] { "Name", "Content", "Title" },
+				PropNames = ["Name", "Content", "Title"],
 				MaxNodeCount = 200,
 			})!;
 
@@ -59,7 +59,7 @@ public sealed class GetVisualTreeCommandTests
 			var response = CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = false,
-				PropNames = new[] { "Name", "Content" },
+				PropNames = ["Name", "Content"],
 				MaxNodeCount = 200,
 			});
 
@@ -86,7 +86,7 @@ public sealed class GetVisualTreeCommandTests
 			var fullSnapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = new[] { "Name", "Content", "Title" },
+				PropNames = ["Name", "Content", "Title"],
 				MaxNodeCount = 200,
 			})!;
 			var panelNode = FindByName(fullSnapshot, "limitedRoot")!;
@@ -95,7 +95,7 @@ public sealed class GetVisualTreeCommandTests
 			{
 				AsSnapshot = true,
 				RootTargetId = panelNode.TargetId,
-				PropNames = new[] { "Name", "Content", "Title" },
+				PropNames = ["Name", "Content", "Title"],
 				MaxNodeCount = 200,
 			})!;
 
@@ -123,14 +123,14 @@ public sealed class GetVisualTreeCommandTests
 			var depthLimited = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = new[] { "Name" },
+				PropNames = ["Name"],
 				MaxDepth = 0,
 				MaxNodeCount = 200,
 			})!;
 			var countLimited = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = new[] { "Name" },
+				PropNames = ["Name"],
 				MaxNodeCount = 1,
 			})!;
 
@@ -178,9 +178,7 @@ public sealed class GetVisualTreeCommandTests
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
 		};
 
-		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
-		var method = dispatcherType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
-		method.Invoke(null, new object?[] { command, options, null });
+		AppDriverCommandDispatcher.Process(command, options, null);
 		return response;
 	}
 

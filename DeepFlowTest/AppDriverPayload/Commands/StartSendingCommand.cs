@@ -23,7 +23,7 @@ internal static class StartSendingCommand
 			return StandardIpcResponse.FromError(
 				"Streaming requires a reusable pipe session.",
 				ProtocolConstants.ErrorCodes.ProtocolError,
-				LogCorrelationId());
+				PayloadLog.CurrentCorrelationId);
 		}
 
 		var targetValidation = ValidateTarget(request, treeService);
@@ -54,27 +54,27 @@ internal static class StartSendingCommand
 	private static StandardIpcResponse? Validate(StartSendingCommandRequest request)
 	{
 		if (request is null)
-			return StandardIpcResponse.FromError("Start stream request is required.", ProtocolConstants.ErrorCodes.ProtocolError, LogCorrelationId());
+			return StandardIpcResponse.FromError("Start stream request is required.", ProtocolConstants.ErrorCodes.ProtocolError, PayloadLog.CurrentCorrelationId);
 
 		if (request.StreamKind is not (ProtocolConstants.StreamKinds.VisualTree
 			or ProtocolConstants.StreamKinds.VisualTreeDelta
 			or ProtocolConstants.StreamKinds.Screenshot
 			or ProtocolConstants.StreamKinds.EventLog))
 		{
-			return StandardIpcResponse.FromError($"Unsupported stream kind '{request.StreamKind}'.", ProtocolConstants.ErrorCodes.InvalidArguments, LogCorrelationId());
+			return StandardIpcResponse.FromError($"Unsupported stream kind '{request.StreamKind}'.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
 		}
 
 		if (request.IntervalMs < 50)
-			return StandardIpcResponse.FromError("Stream interval must be at least 50 ms.", ProtocolConstants.ErrorCodes.InvalidArguments, LogCorrelationId());
+			return StandardIpcResponse.FromError("Stream interval must be at least 50 ms.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
 
-		if (request.Format is not ("png" or "bmp" or "gif" or "jpg" or "jpeg"))
-			return StandardIpcResponse.FromError($"Unsupported stream image format '{request.Format}'.", ProtocolConstants.ErrorCodes.InvalidArguments, LogCorrelationId());
+		if (!DeepFlowTest.ImageFormatExtensions.TryParseProtocolString(request.Format, out _))
+			return StandardIpcResponse.FromError($"Unsupported stream image format '{request.Format}'.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
 
 		if (request.PropNames is not null)
 		{
 			foreach (var property in request.PropNames)
 				if (string.IsNullOrWhiteSpace(property))
-					return StandardIpcResponse.FromError("Stream property names cannot be blank.", ProtocolConstants.ErrorCodes.InvalidArguments, LogCorrelationId());
+					return StandardIpcResponse.FromError("Stream property names cannot be blank.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
 		}
 
 		return null;
@@ -92,12 +92,16 @@ internal static class StartSendingCommand
 		var errorCode = resolution.Status == TargetIdResolutionStatus.Stale
 			? ProtocolConstants.ErrorCodes.StaleTarget
 			: ProtocolConstants.ErrorCodes.UnsupportedTarget;
-		return StandardIpcResponse.FromError($"Target '{request.TargetId}' resolved as {resolution.Status}.", errorCode, LogCorrelationId());
+		return StandardIpcResponse.FromError($"Target '{request.TargetId}' resolved as {resolution.Status}.", errorCode, PayloadLog.CurrentCorrelationId);
 	}
 
 	private static Func<long, object> CreateCapture(StartSendingCommandRequest request, TreeService treeService)
 	{
 		VisualTreeSnapshot? previous = null;
+		var imageFormat = DeepFlowTest.ImageFormatExtensions.ParseProtocolString(request.Format).ToProtocolString();
+		if (request.StreamKind == ProtocolConstants.StreamKinds.EventLog)
+			return _ => CaptureEventLog(treeService);
+
 		return _ =>
 		{
 			object? captured = null;
@@ -110,12 +114,11 @@ internal static class StartSendingCommand
 						ProtocolConstants.StreamKinds.Screenshot => ScreenshotCommand.Process(
 							new ScreenshotCommandRequest
 							{
-								Format = request.Format,
+								Format = imageFormat,
 								TargetId = request.TargetId,
 								TimeoutMs = request.TimeoutMs,
 							},
 							treeService),
-						ProtocolConstants.StreamKinds.EventLog => CaptureEventLog(treeService),
 						_ => throw new InvalidOperationException($"Unsupported stream kind '{request.StreamKind}'."),
 					};
 					return System.Threading.Tasks.Task.CompletedTask;
@@ -126,7 +129,7 @@ internal static class StartSendingCommand
 
 			return runResult == UiThreadRunResult.Finished
 				? captured ?? StandardIpcResponse.Ok()
-				: StandardIpcResponse.FromError("No supported UI thread is available for streaming.", ProtocolConstants.ErrorCodes.UnsupportedTarget, LogCorrelationId());
+				: StandardIpcResponse.FromError("No supported UI thread is available for streaming.", ProtocolConstants.ErrorCodes.UnsupportedTarget, PayloadLog.CurrentCorrelationId);
 		};
 	}
 
@@ -157,7 +160,7 @@ internal static class StartSendingCommand
 	{
 		var snapshot = treeService.CaptureSnapshot(new TreeSnapshotOptions
 		{
-			RequestedPropertyNames = new[] { "Name", "AutomationProperties.Name" },
+			RequestedPropertyNames = ["Name", "AutomationProperties.Name"],
 			IncludeHidden = true,
 			MaxNodeCount = 50,
 		});
@@ -171,8 +174,4 @@ internal static class StartSendingCommand
 		};
 	}
 
-	private static string LogCorrelationId()
-	{
-		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
-	}
 }

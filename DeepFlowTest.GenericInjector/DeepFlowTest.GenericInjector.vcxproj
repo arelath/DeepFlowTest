@@ -50,6 +50,8 @@
     <ProjectName>DeepFlowTest.GenericInjector</ProjectName>
     <ArchitectureName>$(Platform)</ArchitectureName>
     <ArchitectureName Condition="'$(Platform)' == 'Win32'">x86</ArchitectureName>
+    <ArchitecturePreprocessorDefinition>DEEPFLOWTEST_ARCH_X64</ArchitecturePreprocessorDefinition>
+    <ArchitecturePreprocessorDefinition Condition="'$(ArchitectureName)' == 'x86'">DEEPFLOWTEST_ARCH_X86</ArchitecturePreprocessorDefinition>
     <TargetName>DeepFlowTest.GenericInjector.$(ArchitectureName)</TargetName>
     <IntDir>$(MSBuildThisFileDirectory)..\output\obj\DeepFlowTest.GenericInjector\$(Configuration)\$(Platform)\</IntDir>
     <OutDir>$(MSBuildThisFileDirectory)..\bin\$(Configuration)\DeepFlowTestResources\$(ArchitectureName)\</OutDir>
@@ -137,7 +139,7 @@
 
   <ItemGroup>
     <ResourceCompile Include="version.rc">
-      <PreprocessorDefinitions>VERSION_MAJOR=$(MajorVersion);VERSION_MINOR=$(MinorVersion);VERSION_BUILD=$(BuildVersion);VERSION_REVISION=$(RevisionVersion);InformationalVersion="$(InformationalVersion)";VER_ORIGINAL_FILENAME_STR="DeepFlowTest.GenericInjector.$(ArchitectureName).dll";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>VERSION_MAJOR=$(MajorVersion);VERSION_MINOR=$(MinorVersion);VERSION_BUILD=$(BuildVersion);VERSION_REVISION=$(RevisionVersion);InformationalVersion="$(InformationalVersion)";$(ArchitecturePreprocessorDefinition);%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
   </ItemGroup>
 

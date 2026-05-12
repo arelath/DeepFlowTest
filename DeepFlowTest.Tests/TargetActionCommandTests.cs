@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -48,6 +49,54 @@ public sealed class TargetActionCommandTests
 
 			AssertOk(CaptureResponse(new KnownRoutedEventCommandRequest { TargetId = targetId, EventName = "Click" }));
 			Assert.That(clickCount, Is.EqualTo(4));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void ClickRaisesWpfMouseEventsDoubleClickAndContextMenu()
+	{
+		var previewDownCount = 0;
+		var downCount = 0;
+		var upCount = 0;
+		var doubleClickCount = 0;
+		var panel = new StackPanel();
+		var border = new Border
+		{
+			Name = "mouseBorder",
+			Width = 60,
+			Height = 40,
+			ContextMenu = new ContextMenu(),
+		};
+		var button = new Button { Name = "doubleClickButton", Content = "Double" };
+		border.PreviewMouseDown += (_, _) => previewDownCount++;
+		border.MouseDown += (_, _) => downCount++;
+		border.MouseUp += (_, _) => upCount++;
+		button.MouseDoubleClick += (_, _) => doubleClickCount++;
+		panel.Children.Add(border);
+		panel.Children.Add(button);
+		var window = CreateWindow("Mouse routed actions", panel);
+
+		try
+		{
+			window.Show();
+			var borderId = FindTargetId("mouseBorder");
+			var buttonId = FindTargetId("doubleClickButton");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = borderId }));
+			Assert.That(previewDownCount, Is.EqualTo(1));
+			Assert.That(downCount, Is.EqualTo(1));
+			Assert.That(upCount, Is.EqualTo(1));
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = buttonId, ClickCount = 2 }));
+			Assert.That(doubleClickCount, Is.EqualTo(1));
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = borderId, MouseButton = "right" }));
+			Assert.That(border.ContextMenu.IsOpen, Is.True);
+			border.ContextMenu.IsOpen = false;
 		}
 		finally
 		{
@@ -108,6 +157,54 @@ public sealed class TargetActionCommandTests
 
 			AssertOk(CaptureResponse(new KnownOperationCommandRequest { TargetId = checkBoxId, Operation = "Uncheck" }));
 			Assert.That(checkBox.IsChecked, Is.False);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void SetPropertyConvertsCommonWpfValueTypes()
+	{
+		var target = new PropertyConversionTarget { Name = "conversionTarget" };
+		var window = CreateWindow("Set conversion actions", target);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("conversionTarget");
+
+			void Set(string propertyName, string value) => AssertOk(CaptureResponse(new SetPropertyCommandRequest
+			{
+				TargetId = targetId,
+				PropertyName = propertyName,
+				PropertyValue = value,
+			}));
+
+			Set(nameof(PropertyConversionTarget.AccentBrush), "#FF336699");
+			Set(nameof(PropertyConversionTarget.SampleFontFamily), "Segoe UI");
+			Set(nameof(PropertyConversionTarget.SampleSize), "12,34");
+			Set(nameof(PropertyConversionTarget.SamplePoint), "1,2");
+			Set(nameof(PropertyConversionTarget.SampleThickness), "1,2,3,4");
+			Set(nameof(PropertyConversionTarget.SampleRect), "1,2,3,4");
+			Set(nameof(PropertyConversionTarget.SampleFontWeight), "SemiBold");
+			Set(nameof(PropertyConversionTarget.NumericFontWeight), "700");
+			Set(nameof(PropertyConversionTarget.SampleFontStyle), "Italic");
+			Set(nameof(PropertyConversionTarget.SampleFontStretch), "Condensed");
+			Set(nameof(PropertyConversionTarget.NumericFontStretch), "5");
+
+			Assert.That(target.AccentBrush.Color, Is.EqualTo((Color)ColorConverter.ConvertFromString("#FF336699")));
+			Assert.That(target.SampleFontFamily.Source, Is.EqualTo("Segoe UI"));
+			Assert.That(target.SampleSize, Is.EqualTo(new Size(12, 34)));
+			Assert.That(target.SamplePoint, Is.EqualTo(new Point(1, 2)));
+			Assert.That(target.SampleThickness, Is.EqualTo(new Thickness(1, 2, 3, 4)));
+			Assert.That(target.SampleRect, Is.EqualTo(new Rect(1, 2, 3, 4)));
+			Assert.That(target.SampleFontWeight, Is.EqualTo(FontWeights.SemiBold));
+			Assert.That(target.NumericFontWeight, Is.EqualTo(FontWeights.Bold));
+			Assert.That(target.SampleFontStyle, Is.EqualTo(FontStyles.Italic));
+			Assert.That(target.SampleFontStretch, Is.EqualTo(FontStretches.Condensed));
+			Assert.That(target.NumericFontStretch, Is.EqualTo(FontStretches.Normal));
 		}
 		finally
 		{
@@ -243,6 +340,93 @@ public sealed class TargetActionCommandTests
 	}
 
 	[Test]
+	public void MethodNameInvokeAwaitsTaskResult()
+	{
+		var target = new InvokeTarget { Name = "methodInvokeTarget" };
+		var window = CreateWindow("Method invoke action", target);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("methodInvokeTarget");
+
+			var response = (StandardIpcResponse)CaptureResponse(new InvokeCommandRequest
+			{
+				TargetId = targetId,
+				Code = nameof(InvokeTarget.ReadAsync),
+				AllowUnsafeCode = true,
+				TimeoutMs = 1000,
+			})!;
+
+			Assert.That(response.Success, Is.True, response.Error);
+			Assert.That(response.Value, Is.EqualTo("method-result"));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void InvokeTimeoutReturnsCommandTimeout()
+	{
+		var target = new InvokeTarget { Name = "timeoutInvokeTarget" };
+		var window = CreateWindow("Timeout invoke action", target);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("timeoutInvokeTarget");
+			Expression<Func<InvokeTarget, Task<string>>> readSlowly = x => x.ReadSlowlyAsync();
+
+			var response = (StandardIpcResponse)CaptureResponse(new InvokeCommandRequest
+			{
+				TargetId = targetId,
+				Code = ExpressionPayloadSerializer.Serialize(readSlowly),
+				AllowUnsafeCode = true,
+				TimeoutMs = 10,
+			})!;
+
+			Assert.That(response.Success, Is.False);
+			Assert.That(response.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.CommandTimeout));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void InvokeUnserializableResultReportsStableStatus()
+	{
+		var textBox = new TextBox { Name = "unserializableInvokeBox", Text = "value" };
+		var window = CreateWindow("Unserializable invoke action", textBox);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("unserializableInvokeBox");
+			Expression<Func<TextBox, TextBox>> returnTarget = x => x;
+
+			var response = (StandardIpcResponse)CaptureResponse(new InvokeCommandRequest
+			{
+				TargetId = targetId,
+				Code = ExpressionPayloadSerializer.Serialize(returnTarget),
+				AllowUnsafeCode = true,
+				TimeoutMs = 1000,
+			})!;
+
+			Assert.That(response.Success, Is.True);
+			Assert.That(response.Status, Is.EqualTo(ProtocolConstants.Statuses.UnserializableResult));
+			Assert.That(response.Value, Is.Null);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
 	public void UnsupportedActionReturnsStableErrorWithoutCrashingTarget()
 	{
 		var textBlock = new TextBlock { Name = "readOnlyText", Text = "Read only" };
@@ -253,7 +437,7 @@ public sealed class TargetActionCommandTests
 			window.Show();
 			var targetId = FindTargetId("readOnlyText");
 
-			var response = (StandardIpcResponse)CaptureResponse(new ClickCommandRequest { TargetId = targetId })!;
+			var response = (StandardIpcResponse)CaptureResponse(new KnownOperationCommandRequest { TargetId = targetId, Operation = "Select" })!;
 
 			Assert.That(response.Success, Is.False);
 			Assert.That(response.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.UnsupportedTarget));
@@ -270,7 +454,7 @@ public sealed class TargetActionCommandTests
 		var response = (FindElementCommandResponse)CaptureResponse(new FindElementCommandRequest
 		{
 			Selector = new ElementSelectorDto { Name = name },
-			PropNames = new[] { "Name", "Text", "Content", "AutomationProperties.AutomationId" },
+			PropNames = ["Name", "Text", "Content", "AutomationProperties.AutomationId"],
 			MaxMatches = 1,
 		})!;
 
@@ -284,6 +468,42 @@ public sealed class TargetActionCommandTests
 		var standard = (StandardIpcResponse)response!;
 		Assert.That(standard.Success, Is.True, standard.Error);
 		Assert.That(standard.Status, Is.EqualTo(ProtocolConstants.Statuses.Ok));
+	}
+
+	private sealed class PropertyConversionTarget : Control
+	{
+		public SolidColorBrush AccentBrush { get; set; } = new(Colors.Black);
+
+		public FontFamily SampleFontFamily { get; set; } = new("Arial");
+
+		public Size SampleSize { get; set; }
+
+		public Point SamplePoint { get; set; }
+
+		public Thickness SampleThickness { get; set; }
+
+		public Rect SampleRect { get; set; }
+
+		public FontWeight SampleFontWeight { get; set; } = FontWeights.Normal;
+
+		public FontWeight NumericFontWeight { get; set; } = FontWeights.Normal;
+
+		public FontStyle SampleFontStyle { get; set; } = FontStyles.Normal;
+
+		public FontStretch SampleFontStretch { get; set; } = FontStretches.Normal;
+
+		public FontStretch NumericFontStretch { get; set; } = FontStretches.Normal;
+	}
+
+	public sealed class InvokeTarget : Control
+	{
+		public Task<string> ReadAsync() => Task.FromResult("method-result");
+
+		public async Task<string> ReadSlowlyAsync()
+		{
+			await Task.Delay(250);
+			return "late";
+		}
 	}
 
 	private static object? CaptureResponse(object request)
@@ -316,9 +536,7 @@ public sealed class TargetActionCommandTests
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
 		};
 
-		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
-		var method = dispatcherType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
-		method.Invoke(null, new object?[] { command, options, null });
+		AppDriverCommandDispatcher.Process(command, options, null);
 		return response;
 	}
 

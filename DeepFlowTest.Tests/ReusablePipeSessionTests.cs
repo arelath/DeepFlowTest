@@ -2,7 +2,6 @@ namespace DeepFlowTest.Tests;
 
 using System;
 using System.IO.Pipes;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.AppDriverPayload;
@@ -171,8 +170,6 @@ public sealed class ReusablePipeSessionTests
 
 	private static IDisposable DelayUiHandlers(int delayMs)
 	{
-		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
-		var method = dispatcherType.GetMethod("DelayUiHandlersForTests", BindingFlags.Static | BindingFlags.NonPublic)!;
-		return (IDisposable)method.Invoke(null, new object[] { delayMs })!;
+		return AppDriverCommandDispatcher.DelayUiHandlersForTests(delayMs);
 	}
 }

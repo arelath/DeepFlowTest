@@ -63,15 +63,14 @@ public sealed class ScreenshotFileService
 
 	public static string NormalizeFormat(string? format)
 	{
-		return (format ?? "png").Trim().ToLowerInvariant() switch
+		try
 		{
-			"png" => "png",
-			"bmp" => "bmp",
-			"gif" => "gif",
-			"jpg" => "jpeg",
-			"jpeg" => "jpeg",
-			_ => throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported image format '{format}'."),
-		};
+			return DeepFlowTest.ImageFormatExtensions.ParseProtocolString(format).ToProtocolString();
+		}
+		catch (FormatException)
+		{
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported image format '{format}'.");
+		}
 	}
 
 	private static string NormalizeOutputPath(string outputPath, string format)

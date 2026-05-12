@@ -2,6 +2,7 @@ namespace DeepFlowTest.Tests;
 
 using System;
 using DeepFlowTest;
+using DeepFlowTest.Tests.Fakes;
 using NUnit.Framework;
 
 [TestFixture]
@@ -82,30 +83,6 @@ public sealed class AppConnectionTests
 		Assert.That(connection.InjectorState, Is.EqualTo(AppConnectionInjectorState.Failed));
 		Assert.That(connection.LastStartupLog, Is.EqualTo("payload crash tail"));
 		Assert.That(exception!.StartupLogTail, Is.EqualTo("payload crash tail"));
-	}
-
-	private sealed class FakeTargetProcess : ITargetProcess
-	{
-		public int Id { get; set; } = 1234;
-
-		public string ProcessName { get; set; } = "target";
-
-		public bool HasExited { get; set; }
-
-		public int KillCount { get; private set; }
-
-		public int DisposeCount { get; private set; }
-
-		public void Kill()
-		{
-			KillCount++;
-			HasExited = true;
-		}
-
-		public void Dispose()
-		{
-			DisposeCount++;
-		}
 	}
 
 	private sealed class FakeInjector : IAppConnectionInjector
