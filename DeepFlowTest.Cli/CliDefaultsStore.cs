@@ -77,6 +77,13 @@ public sealed class CliDefaultsStore
 	{
 		var definition = GetDefinition(key);
 		var root = ReadConfigObjectOrEmpty();
+		if (string.Equals(value, "null", StringComparison.OrdinalIgnoreCase))
+		{
+			root.Remove(key);
+			Save(root);
+			return;
+		}
+
 		root[key] = definition.Parse(value, key);
 		Save(root);
 		Load();
@@ -262,24 +269,42 @@ public sealed class CliDefaultsStore
 						throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' must be a string array.");
 
 					var values = new List<string>();
-					foreach (var item in array)
-						values.Add(item?.GetValue<string>() ?? throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' must contain only strings."));
+					try
+					{
+						foreach (var item in array)
+							values.Add(item?.GetValue<string>() ?? throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' must contain only strings."));
+					}
+					catch (InvalidOperationException ex)
+					{
+						throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' must contain only strings: {ex.Message}");
+					}
 					set(d, values);
 				},
 				(value, _) =>
 				{
 					var array = new JsonArray();
-					if (value.TrimStart().StartsWith("[", StringComparison.Ordinal))
+					try
 					{
-						var parsed = JsonNode.Parse(value) as JsonArray
-							?? throw new CliException(CliErrorCodes.InvalidArguments, "String-list config values must be JSON arrays or comma-separated strings.");
-						foreach (var item in parsed)
-							array.Add(item?.GetValue<string>() ?? throw new CliException(CliErrorCodes.InvalidArguments, "String-list config values must contain only strings."));
+						if (value.TrimStart().StartsWith("[", StringComparison.Ordinal))
+						{
+							var parsed = JsonNode.Parse(value) as JsonArray
+								?? throw new CliException(CliErrorCodes.InvalidArguments, "String-list config values must be JSON arrays or comma-separated strings.");
+							foreach (var item in parsed)
+								array.Add(item?.GetValue<string>() ?? throw new CliException(CliErrorCodes.InvalidArguments, "String-list config values must contain only strings."));
+						}
+						else
+						{
+							foreach (var item in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+								array.Add(item);
+						}
 					}
-					else
+					catch (CliException)
 					{
-						foreach (var item in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-							array.Add(item);
+						throw;
+					}
+					catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+					{
+						throw new CliException(CliErrorCodes.InvalidArguments, $"String-list config value is invalid: {ex.Message}");
 					}
 
 					return array;

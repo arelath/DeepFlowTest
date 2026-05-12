@@ -40,6 +40,17 @@ public sealed class CliReadServiceTests
 	}
 
 	[Test]
+	public void VisualTreeReaderRejectsBlankAndDuplicateTargetIds()
+	{
+		Assert.That(
+			() => new VisualTreeResponseReader().Read(Snapshot(Node(""))),
+			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ProtocolError));
+		Assert.That(
+			() => new VisualTreeResponseReader().Read(Snapshot(Node("dup"), Node("dup"))),
+			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ProtocolError));
+	}
+
+	[Test]
 	public void VisualTreeReaderMapsStandardError()
 	{
 		var response = StandardIpcResponse.FromError("stale", ProtocolConstants.ErrorCodes.StaleTarget);
@@ -93,6 +104,20 @@ public sealed class CliReadServiceTests
 	}
 
 	[Test]
+	public void TreeSnapshotServiceRejectsUnknownShapeAndNormalizesDefaultProperties()
+	{
+		var snapshot = Snapshot(Node("root", isRoot: true));
+		snapshot.Nodes[0].Properties["Complex"] = new Version(1, 2);
+
+		var shaped = new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions { Shape = "flat" });
+
+		Assert.That(shaped.Nodes[0].Properties["Complex"], Is.EqualTo("1.2"));
+		Assert.That(
+			() => new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions { Shape = "sideways" }),
+			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+	}
+
+	[Test]
 	public void TreeSnapshotServiceFiltersHiddenAndMarksLimitTruncation()
 	{
 		var snapshot = Snapshot(
@@ -119,6 +144,26 @@ public sealed class CliReadServiceTests
 		Assert.That(
 			() => service.Find(snapshot, new FindSnapshotOptions { PropertyRegex = new KeyValuePair<string, string>("Text", "[") }),
 			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+	}
+
+	[Test]
+	public void FindSnapshotServiceMatchesFullSelectorMatrix()
+	{
+		var node = Node("button-2", "root-1", type: "Button", automationId: "GoButton", text: "Go");
+		node.Properties["Content"] = "Run";
+		node.Properties["Header"] = "Launch";
+		node.Properties["Custom"] = "abc-123";
+		var snapshot = Snapshot(Node("root-1", isRoot: true, childIds: new[] { "button-2" }), node);
+		var service = new FindSnapshotService();
+
+		Assert.That(service.Find(snapshot, new FindSnapshotOptions { TypeName = "Button", Limit = 10 }).MatchCount, Is.EqualTo(1));
+		Assert.That(service.Find(snapshot, new FindSnapshotOptions { TypeContains = "but", Limit = 10 }).MatchCount, Is.EqualTo(1));
+		Assert.That(service.Find(snapshot, new FindSnapshotOptions { Name = "button-2", Limit = 10 }).MatchCount, Is.EqualTo(1));
+		Assert.That(service.Find(snapshot, new FindSnapshotOptions { Text = "Launch", Limit = 10 }).MatchCount, Is.EqualTo(1));
+		Assert.That(service.Find(snapshot, new FindSnapshotOptions { PropertyEquals = new KeyValuePair<string, string>("Custom", "abc-123"), Limit = 10 }).MatchCount, Is.EqualTo(1));
+		Assert.That(service.Find(snapshot, new FindSnapshotOptions { PropertyContains = new KeyValuePair<string, string>("Custom", "bc-1"), Limit = 10 }).MatchCount, Is.EqualTo(1));
+		Assert.That(service.Find(snapshot, new FindSnapshotOptions { PropertyRegex = new KeyValuePair<string, string>("Custom", "abc-\\d+"), Limit = 10 }).MatchCount, Is.EqualTo(1));
+		Assert.That(service.Find(snapshot, new FindSnapshotOptions { Visible = true, Enabled = true, Limit = 10 }).MatchCount, Is.EqualTo(2));
 	}
 
 	internal static VisualTreeSnapshot Snapshot(params VisualTreeNodeDto[] nodes) => VisualTreeSnapshot.Create(1, nodes);

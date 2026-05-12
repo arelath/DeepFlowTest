@@ -1,5 +1,6 @@
 namespace DeepFlowTest.Cli.Tests;
 
+using System.Linq;
 using NUnit.Framework;
 
 [TestFixture]
@@ -29,5 +30,17 @@ public sealed class FindCommandHandlerTests
 		Assert.That(optional.Stdout, Does.Contain("\"matchCount\":0"));
 		Assert.That(required.ExitCode, Is.EqualTo(8));
 		Assert.That(required.Stdout, Does.Contain("\"code\":\"no-match\""));
+	}
+
+	[Test]
+	public void FindLimitCanIncreaseSnapshotRequestLimit()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "find", "--pid", "1234", "--automation-id", "SubmitButton", "--limit", "1500" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(session.Session.Commands.OfType<DeepFlowTest.Contracts.GetVisualTreeCommandRequest>().Single().MaxNodeCount, Is.EqualTo(1500));
 	}
 }

@@ -34,6 +34,20 @@ public sealed class ActionCommandHandlerTests
 	}
 
 	[Test]
+	public void RightDoubleClickKeepsClickPayload()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "click", "--pid", "1234", "--target", "0002", "--button", "right", "--count", "2" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		var command = session.Session.Commands.OfType<ClickCommandRequest>().Single();
+		Assert.That(command.MouseButton, Is.EqualTo("right"));
+		Assert.That(command.ClickCount, Is.EqualTo(2));
+	}
+
+	[Test]
 	public void FocusTypeKeySetRaiseAndInvokeCreateExpectedPayloads()
 	{
 		var session = new FakeAppSessionService();
@@ -49,6 +63,7 @@ public sealed class ActionCommandHandlerTests
 		Assert.That(session.Session.Commands.OfType<FocusCommandRequest>().Single().TargetId, Is.EqualTo("button-0002"));
 		Assert.That(session.Session.Commands.OfType<TypeTextCommandRequest>().Single().ClearFirst, Is.True);
 		Assert.That(session.Session.Commands.OfType<KeyPressCommandRequest>().Single().DelayMs, Is.EqualTo(75));
+		Assert.That(session.Session.Commands.OfType<KeyPressCommandRequest>().Single().EnsureForeground, Is.True);
 		Assert.That(session.Session.Commands.OfType<SetPropertyCommandRequest>().Single().PropertyValue, Is.EqualTo(true));
 		Assert.That(session.Session.Commands.OfType<KnownRoutedEventCommandRequest>().Single(command => command.EventName == "Click").TargetId, Is.EqualTo("button-0002"));
 		Assert.That(session.Session.Commands.OfType<KnownOperationCommandRequest>().Single().Operation, Is.EqualTo("Focus"));
@@ -74,11 +89,14 @@ public sealed class ActionCommandHandlerTests
 
 		var badEvent = CliTestHost.Run(new[] { "raise", "--pid", "1234", "--target", "0002", "--event", "Anything" }, services);
 		var deniedInvoke = CliTestHost.Run(new[] { "invoke", "--pid", "1234", "--target", "0002", "--code", "\"PublicMethod\"" }, services);
+		var mixedInvoke = CliTestHost.Run(new[] { "invoke", "--pid", "1234", "--target", "0002", "--operation", "Focus", "--code", "\"PublicMethod\"", "--allow-arbitrary-invoke" }, services);
 		var badJson = CliTestHost.Run(new[] { "invoke", "--pid", "1234", "--target", "0002", "--code", "{", "--allow-arbitrary-invoke" }, services);
 
 		Assert.That(badEvent.ExitCode, Is.EqualTo(1));
 		Assert.That(deniedInvoke.ExitCode, Is.EqualTo(1));
 		Assert.That(deniedInvoke.Stdout, Does.Contain("\"code\":\"arbitrary-invoke-denied\""));
+		Assert.That(mixedInvoke.ExitCode, Is.EqualTo(1));
+		Assert.That(mixedInvoke.Stdout, Does.Contain("either --operation or --code"));
 		Assert.That(badJson.ExitCode, Is.EqualTo(1));
 	}
 
@@ -109,6 +127,39 @@ public sealed class ActionCommandHandlerTests
 		Assert.That(afterTarget.Stdout, Does.Contain("\"node\""));
 		Assert.That(afterTree.ExitCode, Is.EqualTo(0));
 		Assert.That(afterTree.Stdout, Does.Contain("\"shape\":\"flat\""));
+	}
+
+	[Test]
+	public void SetAfterTargetRequestsSetPropertyAndPayloadErrorsKeepDetails()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var afterSet = CliTestHost.Run(new[] { "set", "--pid", "1234", "--target", "0002", "--property", "CustomProp", "--value", "1", "--after", "target" }, services);
+		var afterSetRequestedProperty = session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Last().PropNames;
+		session.Session.ActionResponse = DeepFlowTest.Contracts.StandardIpcResponse.FromError("bad target", DeepFlowTest.Contracts.ProtocolConstants.ErrorCodes.UnsupportedTarget);
+		var failed = CliTestHost.Run(new[] { "click", "--pid", "1234", "--target", "0002" }, services);
+
+		Assert.That(afterSet.ExitCode, Is.EqualTo(0));
+		Assert.That(afterSetRequestedProperty, Does.Contain("CustomProp"));
+		Assert.That(failed.ExitCode, Is.EqualTo(3));
+		Assert.That(failed.Stdout, Does.Contain("\"details\""));
+		Assert.That(failed.Stdout, Does.Contain("bad target"));
+	}
+
+	[Test]
+	public void TypeCanSeparateTypedValueFromTextSelectorAndIndexRejectsNegative()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var typed = CliTestHost.Run(new[] { "type", "--pid", "1234", "--selector-text", "Submit", "--value", "hello" }, services);
+		var badIndex = CliTestHost.Run(new[] { "click", "--pid", "1234", "--automation-id", "SubmitButton", "--index", "-1" }, services);
+
+		Assert.That(typed.ExitCode, Is.EqualTo(0));
+		Assert.That(session.Session.Commands.OfType<TypeTextCommandRequest>().Last().Text, Is.EqualTo("hello"));
+		Assert.That(badIndex.ExitCode, Is.EqualTo(1));
+		Assert.That(badIndex.Stdout, Does.Contain("\"code\":\"invalid-arguments\""));
 	}
 
 	[Test]

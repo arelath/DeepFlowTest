@@ -3,6 +3,7 @@ namespace DeepFlowTest;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Threading;
@@ -33,10 +34,28 @@ public sealed class AppDriver : IDisposable
 
 	public Keyboard Keyboard => new(this);
 
-	public static AppDriver Launch(string executablePath, AppDriverLaunchOptions? options = null)
+	public static AppDriver Launch(string executablePath) =>
+		Launch(executablePath, new AppDriverLaunchOptions());
+
+	public static AppDriver Launch(string executablePath, string? args) =>
+		Launch(executablePath, new AppDriverLaunchOptions { Arguments = args });
+
+	public static AppDriver Launch(ProcessStartInfo processStartInfo)
 	{
-		var effectiveOptions = options ?? new AppDriverLaunchOptions();
-		return new AppDriver(backend.Launch(executablePath, effectiveOptions), effectiveOptions);
+		_ = processStartInfo ?? throw new ArgumentNullException(nameof(processStartInfo));
+		return Launch(
+			processStartInfo.FileName,
+			new AppDriverLaunchOptions
+			{
+				Arguments = processStartInfo.Arguments,
+				WorkingDirectory = string.IsNullOrWhiteSpace(processStartInfo.WorkingDirectory) ? null : processStartInfo.WorkingDirectory,
+			});
+	}
+
+	public static AppDriver Launch(string executablePath, AppDriverLaunchOptions options)
+	{
+		_ = options ?? throw new ArgumentNullException(nameof(options));
+		return new AppDriver(backend.Launch(executablePath, options), options);
 	}
 
 	public static AppDriver AttachTo(int processId, AppDriverAttachOptions? options = null)
@@ -82,6 +101,15 @@ public sealed class AppDriver : IDisposable
 		GetElements(matcher, maxMatches: 1).SingleOrDefault()
 		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
 
+	public Element GetElement(Expression<Func<Element, bool?>> matcher) =>
+		GetElements(matcher, maxMatches: 1).SingleOrDefault()
+		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
+
+	public TElement GetElement<TElement>(Expression<Func<TElement, bool?>> matcher)
+		where TElement : Element =>
+		GetElements<TElement>(matcher, maxMatches: 1).SingleOrDefault()
+		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
+
 	public IReadOnlyList<Element> GetElements(ElementSelector selector, int maxMatches = 100)
 	{
 		_ = selector ?? throw new ArgumentNullException(nameof(selector));
@@ -93,6 +121,31 @@ public sealed class AppDriver : IDisposable
 		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
 		var payload = ExpressionPayloadSerializer.Serialize(matcher);
 		return FindElements(null, payload, maxMatches);
+	}
+
+	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int maxMatches = 100)
+	{
+		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
+		var predicate = matcher.Compile();
+		var snapshot = GetVisualTree();
+		return snapshot.Nodes
+			.Select(node => Element.FromNode(this, node, snapshot))
+			.Where(element => predicate(element) == true)
+			.Take(Math.Max(0, maxMatches))
+			.ToArray();
+	}
+
+	public IReadOnlyList<TElement> GetElements<TElement>(Expression<Func<TElement, bool?>> matcher, int maxMatches = 100)
+		where TElement : Element
+	{
+		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
+		var predicate = matcher.Compile();
+		var snapshot = GetVisualTree();
+		return snapshot.Nodes
+			.Select(node => WrapElement<TElement>(Element.FromNode(this, node, snapshot)))
+			.Where(element => predicate(element) == true)
+			.Take(Math.Max(0, maxMatches))
+			.ToArray();
 	}
 
 	private IReadOnlyList<Element> FindElements(ElementSelector? selector, ExpressionMatcherPayload? matcherPayload, int maxMatches)
@@ -153,8 +206,21 @@ public sealed class AppDriver : IDisposable
 
 	public TResponse Send<TResponse>(IpcCommand command) => Session.Send<TResponse>(command);
 
-	public ScreenshotCommandResponse Screenshot(string format = "png") =>
+	public ScreenshotCommandResponse CaptureScreenshot(string format = "png") =>
 		Send<ScreenshotCommandResponse>(new ScreenshotCommandRequest { Format = format });
+
+	public byte[] Screenshot(ImageFormat format = ImageFormat.Jpeg) =>
+		DecodeScreenshot(CaptureScreenshot(format.ToProtocolString()));
+
+	public void Screenshot(string fileOutputPath)
+	{
+		_ = fileOutputPath ?? throw new ArgumentNullException(nameof(fileOutputPath));
+		var bytes = Screenshot(GetImageFormatFromPath(fileOutputPath));
+		var directory = Path.GetDirectoryName(Path.GetFullPath(fileOutputPath));
+		if (!string.IsNullOrEmpty(directory))
+			Directory.CreateDirectory(directory);
+		File.WriteAllBytes(fileOutputPath, bytes);
+	}
 
 	internal Element Repair(Element element)
 	{
@@ -177,5 +243,36 @@ public sealed class AppDriver : IDisposable
 
 		disposed = true;
 		Connection.Dispose();
+	}
+
+	private static TElement WrapElement<TElement>(Element element)
+		where TElement : Element
+	{
+		if (element is TElement typed)
+			return typed;
+
+		var constructor = typeof(TElement).GetConstructor(
+			System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic,
+			binder: null,
+			new[] { typeof(Element) },
+			modifiers: null);
+		if (constructor is not null)
+			return (TElement)constructor.Invoke(new object[] { element });
+
+		throw new AppDriverException(AppDriverErrorCodes.UnsupportedTarget, $"Element type '{typeof(TElement).FullName}' must expose a constructor that accepts Element.");
+	}
+
+	private static byte[] DecodeScreenshot(ScreenshotCommandResponse response) =>
+		Convert.FromBase64String(response.BytesBase64 ?? string.Empty);
+
+	private static ImageFormat GetImageFormatFromPath(string path)
+	{
+		return Path.GetExtension(path).ToLowerInvariant() switch
+		{
+			".bmp" => ImageFormat.Bmp,
+			".gif" => ImageFormat.Gif,
+			".jpg" or ".jpeg" => ImageFormat.Jpeg,
+			_ => ImageFormat.Png,
+		};
 	}
 }

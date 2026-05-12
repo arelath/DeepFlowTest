@@ -7,12 +7,11 @@ using DeepFlowTest.Interop;
 public sealed class SelectorSuggestionService
 {
 	private readonly CliTargetIdService targetIds;
-	private readonly SnapshotRelationships relationships;
 
 	public SelectorSuggestionService(CliTargetIdService targetIds, VisualTreeSnapshot snapshot)
 	{
 		this.targetIds = targetIds ?? throw new ArgumentNullException(nameof(targetIds));
-		relationships = SnapshotRelationships.Create(snapshot ?? throw new ArgumentNullException(nameof(snapshot)));
+		_ = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
 	}
 
 	public SelectorSuggestionData Suggest(VisualTreeNodeDto node, bool useShortIds)
@@ -26,16 +25,9 @@ public sealed class SelectorSuggestionService
 
 		suggestions.Add(new SelectorSuggestion
 		{
-			Kind = "path",
-			Confidence = 0.45,
-			Cli = $"--path \"{relationships.PathOf(node.TargetId)}\"",
-			Explanation = "Structural path is useful as a fallback when semantic properties are absent.",
-		});
-		suggestions.Add(new SelectorSuggestion
-		{
 			Kind = "target-id",
 			Confidence = 0.40,
-			Cli = $"--target \"{node.TargetId}\"",
+			Cli = $"--target {Quote(node.TargetId)}",
 			Explanation = "Full target IDs are exact but may become stale after UI changes.",
 		});
 		if (useShortIds)
@@ -44,7 +36,7 @@ public sealed class SelectorSuggestionService
 			{
 				Kind = "short-id",
 				Confidence = 0.40,
-				Cli = $"--target \"{targetIds.GetShortId(node.TargetId)}\"",
+				Cli = $"--target {Quote(targetIds.GetShortId(node.TargetId))}",
 				Explanation = "Short target ID is concise when it is unique in the current snapshot.",
 			});
 		}
@@ -73,8 +65,8 @@ public sealed class SelectorSuggestionService
 			return;
 
 		var cli = cliOption == "--property"
-			? $"{cliOption} \"{propertyName}={text}\""
-			: $"{cliOption} \"{text}\"";
+			? $"{cliOption} {Quote(propertyName + "=" + text)}"
+			: $"{cliOption} {Quote(text)}";
 		suggestions.Add(new SelectorSuggestion
 		{
 			Kind = propertyName,
@@ -99,12 +91,15 @@ public sealed class SelectorSuggestionService
 			{
 				Kind = property,
 				Confidence = 0.75,
-				Cli = $"--text \"{text}\"",
+				Cli = $"--text {Quote(text)}",
 				Explanation = $"{property} is a readable fallback when automation properties are absent.",
 			});
 			return;
 		}
 	}
+
+	private static string Quote(string value) =>
+		"\"" + value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
 }
 
 public sealed class SelectorSuggestionData

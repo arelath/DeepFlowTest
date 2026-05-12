@@ -105,6 +105,9 @@ public sealed class ReusablePipeSession
 		return state.ToResponse();
 	}
 
+	public ActiveSubscriptionResponse StartSubscription(string kind, string? connectionId, int intervalMs = 1000) =>
+		StartSubscription(kind, connectionId, intervalMs, _ => false, _ => new { status = "test" }, deferStart: true);
+
 	public bool StartStoredSubscription(string subscriptionId)
 	{
 		ActiveSubscriptionState? state;

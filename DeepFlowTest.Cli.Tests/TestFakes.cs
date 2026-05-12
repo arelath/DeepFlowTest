@@ -2,6 +2,7 @@ namespace DeepFlowTest.Cli.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -98,6 +99,8 @@ internal sealed class FakeCliAppSession : ICliAppSession
 
 	public List<IpcCommand> Commands { get; } = new();
 
+	public Exception? SendException { get; set; }
+
 	public VisualTreeSnapshot Snapshot { get; set; } = VisualTreeSnapshot.Create(1, new[]
 	{
 		new VisualTreeNodeDto
@@ -143,10 +146,15 @@ internal sealed class FakeCliAppSession : ICliAppSession
 		BytesBase64 = "AQIDBA==",
 	};
 
+	public StandardIpcResponse ActionResponse { get; set; } = StandardIpcResponse.Ok();
+
 	public bool Disposed { get; private set; }
 
 	public TResponse Send<TResponse>(IpcCommand command, int timeoutMs)
 	{
+		if (SendException is not null)
+			throw SendException;
+
 		Commands.Add(command);
 		object response = command switch
 		{
@@ -162,14 +170,14 @@ internal sealed class FakeCliAppSession : ICliAppSession
 				ByteCount = Screenshot.ByteCount,
 				BytesBase64 = Screenshot.BytesBase64,
 			},
-			ClickCommandRequest => StandardIpcResponse.Ok(),
-			FocusCommandRequest => StandardIpcResponse.Ok(),
-			TypeTextCommandRequest => StandardIpcResponse.Ok(),
-			KeyPressCommandRequest => StandardIpcResponse.Ok(),
-			SetPropertyCommandRequest => StandardIpcResponse.Ok(),
-			KnownRoutedEventCommandRequest => StandardIpcResponse.Ok(),
-			KnownOperationCommandRequest => StandardIpcResponse.Ok(),
-			InvokeCommandRequest => StandardIpcResponse.Ok(),
+			ClickCommandRequest => ActionResponse,
+			FocusCommandRequest => ActionResponse,
+			TypeTextCommandRequest => ActionResponse,
+			KeyPressCommandRequest => ActionResponse,
+			SetPropertyCommandRequest => ActionResponse,
+			KnownRoutedEventCommandRequest => ActionResponse,
+			KnownOperationCommandRequest => ActionResponse,
+			InvokeCommandRequest => ActionResponse,
 			StartSendingCommandRequest start => new StartSendingCommandResponse
 			{
 				SubscriptionId = "sub-1",
@@ -188,9 +196,53 @@ internal sealed class FakeCliAppSession : ICliAppSession
 		return (TResponse)response;
 	}
 
+	public ICliStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs)
+	{
+		Commands.Add(command);
+		return new FakeCliStreamSession(new StartSendingCommandResponse
+		{
+			SubscriptionId = "sub-1",
+			StreamKind = command.StreamKind,
+			Status = ProtocolConstants.Statuses.Started,
+			IntervalMs = command.IntervalMs,
+			SequenceStart = 1,
+		});
+	}
+
 	public void Dispose()
 	{
 		Disposed = true;
+	}
+}
+
+internal sealed class FakeCliStreamSession : ICliStreamSession
+{
+	private int sequence;
+
+	public FakeCliStreamSession(StartSendingCommandResponse start)
+	{
+		Start = start;
+	}
+
+	public StartSendingCommandResponse Start { get; }
+
+	public StreamMessage? ReadFrame(int timeoutMs, CancellationToken cancellationToken = default)
+	{
+		if (sequence >= 3)
+			return null;
+
+		sequence++;
+		return new StreamMessage
+		{
+			SubscriptionId = Start.SubscriptionId,
+			StreamKind = Start.StreamKind,
+			SequenceNumber = sequence,
+			Data = new { status = "fake" },
+		};
+	}
+
+	public void Dispose()
+	{
 	}
 }
 

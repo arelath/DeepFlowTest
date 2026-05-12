@@ -128,7 +128,7 @@ public sealed class ElementApiTests
 		var driver = CreateDriver(session);
 		var element = driver.GetElement(ElementSelector.ByName("image"));
 
-		var screenshot = element.Screenshot();
+		var screenshot = element.CaptureScreenshot();
 
 		Assert.That(screenshot.TargetId, Is.EqualTo("new-target"));
 		Assert.That(element.TargetId, Is.EqualTo("new-target"));
@@ -175,10 +175,37 @@ public sealed class ElementApiTests
 		var driver = CreateDriver(session);
 		var element = driver.GetElement(ElementSelector.ByName("image"));
 
-		var screenshot = element.Screenshot();
+		var screenshot = element.CaptureScreenshot();
 
 		Assert.That(screenshot.TargetId, Is.EqualTo("image-target"));
 		Assert.That(session.SentCommands.OfType<ScreenshotCommandRequest>().Single().TargetId, Is.EqualTo("image-target"));
+	}
+
+	[Test]
+	public void WpfPilot2StylePrimitiveIndexerFluentActionsAndScreenshotBytesWork()
+	{
+		var session = new FakeSession(
+			FindMatch("button", "submit"),
+			StandardIpcResponse.Ok(),
+			new ScreenshotCommandResponse
+			{
+				TargetId = "button",
+				Format = "jpeg",
+				Width = 1,
+				Height = 1,
+				ByteCount = 2,
+				BytesBase64 = Convert.ToBase64String(new byte[] { 9, 10 }),
+			});
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(ElementSelector.ByName("submit"));
+
+		var chained = element.Click();
+		var bytes = element.Screenshot(ImageFormat.Jpeg);
+
+		Assert.That(chained, Is.SameAs(element));
+		Assert.That(element.HasProperty("Name"), Is.True);
+		Assert.That(element["Name"] == "submit", Is.True);
+		Assert.That(bytes, Is.EqualTo(new byte[] { 9, 10 }));
 	}
 
 	private static AppDriver CreateDriver(IAppDriverCommandSession session)

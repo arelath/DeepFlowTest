@@ -43,13 +43,36 @@ public sealed class LibraryApiTests
 		button.Click();
 		var textBox = driver.GetElement(ElementSelector.ByName("nameBox"));
 		textBox.Type("Codex", clearFirst: true);
-		var screenshot = textBox.Screenshot();
+		var screenshot = textBox.Screenshot(ImageFormat.Png);
 
 		Assert.That(backend.Connection!.OwnsProcess, Is.True);
 		Assert.That(session.SentCommands.OfType<FindElementCommandRequest>().Count(), Is.EqualTo(2));
 		Assert.That(session.SentCommands.OfType<ClickCommandRequest>().Single().TargetId, Is.EqualTo("button"));
 		Assert.That(session.SentCommands.OfType<TypeTextCommandRequest>().Single().Text, Is.EqualTo("Codex"));
-		Assert.That(screenshot.ByteCount, Is.EqualTo(3));
+		Assert.That(screenshot.Length, Is.EqualTo(3));
+	}
+
+	[Test]
+	public void WpfPilot2StyleLaunchAndScreenshotOverloadsCompileAndSendExpectedCommands()
+	{
+		var session = new FakeSession(new ScreenshotCommandResponse
+		{
+			Format = "jpeg",
+			Width = 1,
+			Height = 1,
+			ByteCount = 2,
+			BytesBase64 = Convert.ToBase64String(new byte[] { 5, 6 }),
+		});
+		var backend = new FakeBackend(session);
+		AppDriver.ConfigureBackendForTests(backend);
+		AppDriver.ConfigureSessionFactoryForTests((_, _) => session);
+
+		using var driver = AppDriver.Launch("HelloWorld.exe", "--demo");
+		var bytes = driver.Screenshot(ImageFormat.Jpeg);
+
+		Assert.That(backend.LastLaunchOptions!.Arguments, Is.EqualTo("--demo"));
+		Assert.That(bytes, Is.EqualTo(new byte[] { 5, 6 }));
+		Assert.That(session.SentCommands.OfType<ScreenshotCommandRequest>().Single().Format, Is.EqualTo("jpeg"));
 	}
 
 	[Test]
@@ -64,6 +87,23 @@ public sealed class LibraryApiTests
 
 		Assert.That(backend.Process!.KillCount, Is.EqualTo(0));
 		Assert.That(driver.Connection.OwnsProcess, Is.False);
+	}
+
+	[Test]
+	public void WpfPilot2StyleElementExpressionLookupSupportsPropertyIndexer()
+	{
+		var snapshot = VisualTreeSnapshot.Create(1, new[]
+		{
+			new VisualTreeNodeDto { TargetId = "root", TypeName = "Window", IsRoot = true, Properties = { ["Name"] = "Main" } },
+			new VisualTreeNodeDto { TargetId = "button", TypeName = "Button", Properties = { ["Name"] = "Run", ["Width"] = 120 } },
+		});
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			new FakeSession(snapshot));
+
+		var element = driver.GetElement(x => x["Name"] == "Run" && x["Width"] > 100);
+
+		Assert.That(element.TargetId, Is.EqualTo("button"));
 	}
 
 	private static FindElementCommandResponse FindMatch(string targetId, string name, string typeName)
@@ -96,9 +136,12 @@ public sealed class LibraryApiTests
 
 		public AppConnection? Connection { get; private set; }
 
+		public AppDriverLaunchOptions? LastLaunchOptions { get; private set; }
+
 		public AppConnection Launch(string executablePath, AppDriverLaunchOptions options)
 		{
 			Process = new FakeTargetProcess();
+			LastLaunchOptions = options;
 			Connection = AppConnection.ForLaunch(Process, options.PipeName ?? "launch-pipe");
 			return Connection;
 		}

@@ -22,6 +22,10 @@ public sealed class PrimitiveKeyboardAssertionTests
 		Assert.That(primitive.TargetId, Is.EqualTo("target"));
 		Assert.That(primitive.PropertyName, Is.EqualTo("Count"));
 		Assert.That(primitive.As<int>(), Is.EqualTo(7));
+		Assert.That(primitive.To<int>(), Is.EqualTo(7));
+		Assert.That(primitive.S, Is.EqualTo("7"));
+		Assert.That(primitive > 6, Is.True);
+		Assert.That(primitive == "7", Is.True);
 		Assert.That(primitive.ToString(), Is.EqualTo("7"));
 	}
 

@@ -71,7 +71,9 @@ public sealed class ElementResolver
 				match.Node.ShortId,
 				match.Node.TypeName,
 				Name = match.Node.Properties.TryGetValue("Name", out var name) ? name : null,
+				AutomationName = match.Node.Properties.TryGetValue("AutomationProperties.Name", out var automationName) ? automationName : null,
 				Text = match.Node.Properties.TryGetValue("Text", out var text) ? text : null,
+				Content = match.Node.Properties.TryGetValue("Content", out var content) ? content : null,
 				match.Node.Path,
 			}).ToArray();
 			throw new CliException(CliErrorCodes.AmbiguousTarget, "Multiple elements matched the selector.", candidates);

@@ -41,6 +41,7 @@ public sealed class TreeSnapshotService
 		_ = options ?? throw new ArgumentNullException(nameof(options));
 
 		var relationships = SnapshotRelationships.Create(snapshot);
+		var shape = NormalizeShape(options.Shape);
 		var rootIds = ResolveRootIds(snapshot, options);
 		var flattened = Flatten(snapshot, relationships, rootIds)
 			.Where(item => options.MaxDepth < 0 || item.Depth <= options.MaxDepth)
@@ -68,16 +69,16 @@ public sealed class TreeSnapshotService
 
 		return new TreeSnapshotData
 		{
-			Shape = NormalizeShape(options.Shape),
+			Shape = shape,
 			NodeCount = nodeOutputs.Count,
 			TotalNodeCount = snapshot.NodeCount,
 			Truncated = truncated,
 			TruncationReason = truncationReason,
 			RequestedProperties = options.Properties,
-			Roots = NormalizeShape(options.Shape) == "nested"
+			Roots = shape == "nested"
 				? BuildNested(nodeOutputs, rootIds)
 				: nodeOutputs.Where(node => node.ParentId is null || rootIds.Contains(node.TargetId, StringComparer.Ordinal)).ToList(),
-			Nodes = NormalizeShape(options.Shape) == "flat" ? nodeOutputs : Array.Empty<TreeNodeData>(),
+			Nodes = shape == "flat" ? nodeOutputs : Array.Empty<TreeNodeData>(),
 		};
 	}
 
@@ -150,7 +151,7 @@ public sealed class TreeSnapshotService
 	private static Dictionary<string, object?> SelectProperties(VisualTreeNodeDto node, IReadOnlyList<string> properties)
 	{
 		if (properties.Count == 0)
-			return new Dictionary<string, object?>(node.Properties, StringComparer.Ordinal);
+			return node.Properties.ToDictionary(static property => property.Key, static property => NormalizeScalar(property.Value), StringComparer.Ordinal);
 
 		var selected = new Dictionary<string, object?>(StringComparer.Ordinal);
 		foreach (var property in properties)
@@ -183,8 +184,17 @@ public sealed class TreeSnapshotService
 		return !string.Equals(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture), "false", StringComparison.OrdinalIgnoreCase);
 	}
 
-	private static string NormalizeShape(string shape) =>
-		string.Equals(shape, "tree", StringComparison.OrdinalIgnoreCase) ? "nested" : shape.ToLowerInvariant();
+	private static string NormalizeShape(string shape)
+	{
+		if (string.Equals(shape, "tree", StringComparison.OrdinalIgnoreCase) ||
+			string.Equals(shape, "nested", StringComparison.OrdinalIgnoreCase))
+			return "nested";
+
+		if (string.Equals(shape, "flat", StringComparison.OrdinalIgnoreCase))
+			return "flat";
+
+		throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported tree shape '{shape}'.");
+	}
 
 	private sealed record TreeNodeTraversalItem(VisualTreeNodeDto Node, int Depth);
 }
@@ -305,10 +315,13 @@ internal sealed class SnapshotRelationships
 
 	public IEnumerable<VisualTreeNodeDto> SubtreeOf(string targetId, int maxDepth)
 	{
+		if (maxDepth == 0)
+			yield break;
+
 		foreach (var child in ChildrenOf(targetId))
 		{
 			yield return child;
-			if (maxDepth != 0)
+			if (maxDepth != 1)
 			{
 				foreach (var descendant in SubtreeOf(child.TargetId, maxDepth < 0 ? -1 : maxDepth - 1))
 					yield return descendant;

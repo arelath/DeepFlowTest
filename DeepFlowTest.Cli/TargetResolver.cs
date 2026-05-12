@@ -63,24 +63,37 @@ public sealed class TargetInfo
 
 public sealed class ProcessNameCache
 {
-	private readonly Dictionary<string, ProcessSnapshot> snapshots = new(StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, List<ProcessSnapshot>> snapshots = new(StringComparer.OrdinalIgnoreCase);
 
 	public void Remember(IEnumerable<ProcessSnapshot> processes)
 	{
 		foreach (var process in processes)
 		{
-			if (!process.HasExited && !string.IsNullOrWhiteSpace(process.ProcessName))
-				snapshots[process.ProcessName] = process;
+			if (process.HasExited || string.IsNullOrWhiteSpace(process.ProcessName))
+				continue;
+
+			if (!snapshots.TryGetValue(process.ProcessName, out var bucket))
+			{
+				bucket = new List<ProcessSnapshot>();
+				snapshots[process.ProcessName] = bucket;
+			}
+
+			var existingIndex = bucket.FindIndex(item => item.ProcessId == process.ProcessId);
+			if (existingIndex >= 0)
+				bucket[existingIndex] = process;
+			else
+				bucket.Add(process);
 		}
 	}
 
 	public IReadOnlyList<ProcessSnapshot> Find(string processName)
 	{
 		if (snapshots.TryGetValue(processName, out var exact))
-			return new[] { exact };
+			return exact.Where(static process => !process.HasExited).ToArray();
 
-		return snapshots.Values
+		return snapshots.Values.SelectMany(static process => process)
 			.Where(process => process.ProcessName.Contains(processName, StringComparison.OrdinalIgnoreCase))
+			.Where(static process => !process.HasExited)
 			.ToArray();
 	}
 }
@@ -129,8 +142,8 @@ public sealed class TargetResolver : ITargetResolver
 	private TargetInfo ResolveByName(string processName)
 	{
 		var cached = processNameCache.Find(processName);
-		if (cached.Count == 1 && !cached[0].HasExited)
-			return ToTarget(cached[0]);
+		if (cached.Count != 0)
+			return ExactlyOne(cached, $"cached process name '{processName}'");
 
 		var result = snapshotSource.GetSnapshots();
 		processNameCache.Remember(result.Processes);
@@ -150,10 +163,21 @@ public sealed class TargetResolver : ITargetResolver
 	{
 		var result = snapshotSource.GetSnapshots();
 		var matches = result.Processes
-			.Where(process => !string.IsNullOrWhiteSpace(process.MainWindowTitle)
-				&& process.MainWindowTitle.Contains(windowTitle, StringComparison.OrdinalIgnoreCase))
+			.Where(process => WindowTitleMatches(process, windowTitle))
 			.ToArray();
 		return ExactlyOne(matches, $"window title containing '{windowTitle}'");
+	}
+
+	private static bool WindowTitleMatches(ProcessSnapshot process, string windowTitle)
+	{
+		if (!string.IsNullOrWhiteSpace(process.MainWindowTitle)
+			&& process.MainWindowTitle.Contains(windowTitle, StringComparison.OrdinalIgnoreCase))
+		{
+			return true;
+		}
+
+		return process.TopLevelWindows.Any(window => !string.IsNullOrWhiteSpace(window.Title)
+			&& window.Title.Contains(windowTitle, StringComparison.OrdinalIgnoreCase));
 	}
 
 	private TargetInfo ExactlyOne(IReadOnlyList<ProcessSnapshot> matches, string description)

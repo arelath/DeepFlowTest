@@ -4,6 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json.Serialization;
 using DeepFlowTest;
 
@@ -15,6 +17,8 @@ public sealed class ProcessSnapshot
 
 	public string? MainWindowTitle { get; set; }
 
+	public IReadOnlyList<ProcessWindowSnapshot> TopLevelWindows { get; set; } = Array.Empty<ProcessWindowSnapshot>();
+
 	public string? Architecture { get; set; }
 
 	public string? FrameworkFamily { get; set; }
@@ -25,6 +29,13 @@ public sealed class ProcessSnapshot
 
 	[JsonIgnore]
 	public ITargetProcess? TargetProcess { get; set; }
+}
+
+public sealed class ProcessWindowSnapshot
+{
+	public long Hwnd { get; set; }
+
+	public string Title { get; set; } = string.Empty;
 }
 
 public sealed class ProcessInspectionWarning
@@ -66,6 +77,9 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 				{
 					Message = ex.Message,
 				});
+			}
+			finally
+			{
 				process.Dispose();
 			}
 		}
@@ -81,22 +95,27 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 	{
 		var processId = SafeGet(() => process.Id, 0);
 		var processName = SafeGet(() => process.ProcessName, string.Empty);
-		var title = SafeGet(() => process.MainWindowTitle, string.Empty);
 		var hasExited = SafeGet(() => process.HasExited, true);
 		var modules = TryGetModuleNames(process, processId, processName, warnings);
+		var windows = EnumerateTopLevelWindows(processId);
+		var title = SafeGet(() => process.MainWindowTitle, string.Empty);
+		if (string.IsNullOrWhiteSpace(title))
+			title = windows.FirstOrDefault(window => !string.IsNullOrWhiteSpace(window.Title))?.Title ?? string.Empty;
 		var framework = DetectFramework(modules);
+		var hasWindowCandidate = windows.Any(static window => !string.IsNullOrWhiteSpace(window.Title));
 
 		return new ProcessSnapshot
 		{
 			ProcessId = processId,
 			ProcessName = processName,
 			MainWindowTitle = title,
-			Architecture = Environment.Is64BitOperatingSystem ? "unknown" : "x86",
+			TopLevelWindows = windows,
+			Architecture = DetectArchitecture(process),
 			FrameworkFamily = framework,
 			IsLikelyWpfCandidate = modules.Any(static x => x.Equals("PresentationFramework.dll", StringComparison.OrdinalIgnoreCase))
-				|| modules.Any(static x => x.Equals("PresentationCore.dll", StringComparison.OrdinalIgnoreCase)),
+				|| modules.Any(static x => x.Equals("PresentationCore.dll", StringComparison.OrdinalIgnoreCase))
+				|| hasWindowCandidate,
 			HasExited = hasExited,
-			TargetProcess = new TargetProcess(process),
 		};
 	}
 
@@ -135,6 +154,73 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 		return string.Empty;
 	}
 
+	private static string DetectArchitecture(Process process)
+	{
+		if (!Environment.Is64BitOperatingSystem)
+			return "x86";
+
+		try
+		{
+			if (IsWow64Process2(process.Handle, out var processMachine, out var nativeMachine))
+			{
+				return processMachine switch
+				{
+					ImageFileMachineI386 => "x86",
+					ImageFileMachineArm32 => "arm",
+					0 when nativeMachine == ImageFileMachineArm64 => "arm64",
+					0 => "x64",
+					_ => "unknown",
+				};
+			}
+		}
+		catch (EntryPointNotFoundException)
+		{
+		}
+		catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+		{
+			return "unknown";
+		}
+
+		try
+		{
+			return Environment.Is64BitProcess && IsWow64Process(process.Handle, out var isWow64) && isWow64
+				? "x86"
+				: "x64";
+		}
+		catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+		{
+			return "unknown";
+		}
+	}
+
+	private static IReadOnlyList<ProcessWindowSnapshot> EnumerateTopLevelWindows(int processId)
+	{
+		if (processId <= 0)
+			return Array.Empty<ProcessWindowSnapshot>();
+
+		var windows = new List<ProcessWindowSnapshot>();
+		EnumWindows((hwnd, _) =>
+		{
+			GetWindowThreadProcessId(hwnd, out var windowProcessId);
+			if (windowProcessId != processId || !IsWindowVisible(hwnd))
+				return true;
+
+			var titleLength = GetWindowTextLength(hwnd);
+			if (titleLength <= 0)
+				return true;
+
+			var builder = new StringBuilder(titleLength + 1);
+			GetWindowText(hwnd, builder, builder.Capacity);
+			windows.Add(new ProcessWindowSnapshot
+			{
+				Hwnd = hwnd.ToInt64(),
+				Title = builder.ToString(),
+			});
+			return true;
+		}, IntPtr.Zero);
+		return windows;
+	}
+
 	private static T SafeGet<T>(Func<T> getter, T fallback)
 	{
 		try
@@ -146,6 +232,33 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 			return fallback;
 		}
 	}
+
+	private const ushort ImageFileMachineI386 = 0x014c;
+	private const ushort ImageFileMachineArm32 = 0x01c4;
+	private const ushort ImageFileMachineArm64 = 0xaa64;
+
+	private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+	[DllImport("user32.dll")]
+	private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+	[DllImport("user32.dll")]
+	private static extern bool IsWindowVisible(IntPtr hwnd);
+
+	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+	private static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
+
+	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+	private static extern int GetWindowTextLength(IntPtr hwnd);
+
+	[DllImport("user32.dll")]
+	private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out int processId);
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	private static extern bool IsWow64Process(IntPtr process, out bool wow64Process);
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	private static extern bool IsWow64Process2(IntPtr process, out ushort processMachine, out ushort nativeMachine);
 }
 
 public sealed class ProcessListData

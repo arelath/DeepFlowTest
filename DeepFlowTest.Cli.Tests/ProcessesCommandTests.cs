@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Cli.Tests;
 
 using System;
+using System.Linq;
 using NUnit.Framework;
 
 [TestFixture]
@@ -94,6 +95,18 @@ public sealed class ProcessesCommandTests
 		Assert.That(result.ExitCode, Is.EqualTo(0));
 		Assert.That(result.Stdout, Does.Contain("PID"));
 		Assert.That(result.Stdout, Does.Contain("Alpha"));
+	}
+
+	[Test]
+	public void LiveProcessSnapshotIncludesCurrentProcessArchitectureAndDoesNotRetainHandle()
+	{
+		var result = new LiveProcessSnapshotSource().GetSnapshots();
+
+		var current = result.Processes.SingleOrDefault(process => process.ProcessId == Environment.ProcessId);
+
+		Assert.That(current, Is.Not.Null);
+		Assert.That(current!.Architecture, Is.Not.Null.And.Not.Empty);
+		Assert.That(current.TargetProcess, Is.Null);
 	}
 
 	private static ProcessSnapshot Process(int pid, string name, bool isWpf = false) =>

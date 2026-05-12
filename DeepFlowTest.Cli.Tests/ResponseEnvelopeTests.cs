@@ -48,11 +48,42 @@ public sealed class ResponseEnvelopeTests
 	}
 
 	[Test]
+	public void ResponseFactoryCanPopulateDiagnostics()
+	{
+		var envelope = CliResponseFactory.Success("ping", new { ok = true }, Stopwatch.StartNew(), new() { ["pipe"] = "p" });
+		var json = CliOutput.ToJson(envelope, pretty: false, hideEmpty: true);
+
+		Assert.That(json, Does.Contain("\"diagnostics\""));
+		Assert.That(json, Does.Contain("\"pipe\":\"p\""));
+	}
+
+	[Test]
+	public void HideEmptyPreservesRequiredArrays()
+	{
+		var envelope = CliResponseFactory.Success("processes", new ProcessListData(), Stopwatch.StartNew());
+		var json = CliOutput.ToJson(envelope, pretty: false, hideEmpty: true);
+
+		Assert.That(json, Does.Contain("\"processes\":[]"));
+	}
+
+	[Test]
 	public void TextOutputForVersionIsProductName()
 	{
 		var result = CliTestHost.Run(new[] { "version", "--format", "text" });
 
 		Assert.That(result.ExitCode, Is.EqualTo(0));
 		Assert.That(result.Stdout.Trim(), Is.EqualTo("DeepFlowTest"));
+	}
+
+	[Test]
+	public void TextOutputForPingAndPipeStatusIsStable()
+	{
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: new FakeAppSessionService());
+
+		var ping = CliTestHost.Run(new[] { "ping", "--pid", "1234", "--format", "text" }, services);
+		var status = CliTestHost.Run(new[] { "pipe", "status", "--pid", "1234", "--format", "text" }, services);
+
+		Assert.That(ping.Stdout, Does.Contain("process: 1234"));
+		Assert.That(status.Stdout, Does.Contain("pipe: fake-pipe"));
 	}
 }

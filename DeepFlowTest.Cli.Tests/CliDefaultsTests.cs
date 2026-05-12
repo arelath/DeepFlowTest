@@ -70,6 +70,33 @@ public sealed class CliDefaultsTests
 	}
 
 	[Test]
+	public void ConfigSetBindsPositionalsAfterOutputOptions()
+	{
+		var store = new CliDefaultsStore(CliTestHost.CreateTempConfigPath());
+		var services = CliTestHost.CreateServices(defaultsStore: store);
+
+		var result = CliTestHost.Run(new[] { "config", "set", "--pretty", "timeoutMs", "333" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(store.Load().TimeoutMs, Is.EqualTo(333));
+	}
+
+	[Test]
+	public void StringListConfigParsingErrorsMapToCliExceptionsAndNullClears()
+	{
+		var store = new CliDefaultsStore(CliTestHost.CreateTempConfigPath());
+
+		Assert.That(
+			() => store.Set("propertyNames", "[1]"),
+			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+
+		store.Set("timeoutMs", "333");
+		store.Set("timeoutMs", "null");
+
+		Assert.That(store.Load().TimeoutMs, Is.EqualTo(10_000));
+	}
+
+	[Test]
 	public void ConfigResetSucceedsAfterMalformedConfig()
 	{
 		var path = CliTestHost.CreateTempConfigPath();

@@ -13,6 +13,8 @@ public sealed class ExitCodeMapperTests
 	[TestCase(CliErrorCodes.TargetNotFound, 2)]
 	[TestCase(CliErrorCodes.AmbiguousTarget, 2)]
 	[TestCase(CliErrorCodes.UnsupportedTarget, 3)]
+	[TestCase(CliErrorCodes.UnsupportedFramework, 3)]
+	[TestCase(CliErrorCodes.UnsupportedArchitecture, 3)]
 	[TestCase(CliErrorCodes.AttachFailed, 4)]
 	[TestCase(CliErrorCodes.PipeFailed, 5)]
 	[TestCase(CliErrorCodes.ProtocolError, 5)]

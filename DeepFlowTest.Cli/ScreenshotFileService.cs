@@ -18,16 +18,35 @@ public sealed class ScreenshotFileService
 		_ = response ?? throw new ArgumentNullException(nameof(response));
 		_ = options ?? throw new ArgumentNullException(nameof(options));
 
+		if (!response.Success)
+			throw new CliException(MapProtocolError(response.ErrorCode), response.Error ?? "Screenshot command failed.", response);
+
 		var format = NormalizeFormat(response.Format);
-		var bytes = Convert.FromBase64String(response.BytesBase64 ?? string.Empty);
+		byte[] bytes;
+		try
+		{
+			bytes = Convert.FromBase64String(response.BytesBase64 ?? string.Empty);
+		}
+		catch (FormatException ex)
+		{
+			throw new CliException(CliErrorCodes.ProtocolError, $"Screenshot payload bytes were malformed: {ex.Message}", response);
+		}
+
 		string? outputPath = null;
 		if (!string.IsNullOrWhiteSpace(options.OutputPath))
 		{
 			outputPath = NormalizeOutputPath(options.OutputPath!, format);
-			var directory = Path.GetDirectoryName(outputPath);
-			if (!string.IsNullOrEmpty(directory))
-				Directory.CreateDirectory(directory);
-			File.WriteAllBytes(outputPath, bytes);
+			try
+			{
+				var directory = Path.GetDirectoryName(outputPath);
+				if (!string.IsNullOrEmpty(directory))
+					Directory.CreateDirectory(directory);
+				File.WriteAllBytes(outputPath, bytes);
+			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or System.Security.SecurityException)
+			{
+				throw new CliException(CliErrorCodes.InvalidArguments, $"Could not write screenshot output path: {ex.Message}");
+			}
 		}
 
 		return new ScreenshotResultData
@@ -68,6 +87,18 @@ public sealed class ScreenshotFileService
 		{
 			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid screenshot output path: {ex.Message}");
 		}
+	}
+
+	private static string MapProtocolError(string? errorCode)
+	{
+		return errorCode switch
+		{
+			ProtocolConstants.ErrorCodes.StaleTarget => CliErrorCodes.StaleTarget,
+			ProtocolConstants.ErrorCodes.TargetExited => CliErrorCodes.TargetExited,
+			ProtocolConstants.ErrorCodes.UnsupportedTarget => CliErrorCodes.UnsupportedTarget,
+			ProtocolConstants.ErrorCodes.CommandTimeout => CliErrorCodes.CommandTimeout,
+			_ => CliErrorCodes.ProtocolError,
+		};
 	}
 }
 

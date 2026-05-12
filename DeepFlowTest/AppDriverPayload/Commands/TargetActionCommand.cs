@@ -20,7 +20,7 @@ using Forms = System.Windows.Forms;
 internal static class TargetActionCommand
 {
 	public static object Click(ClickCommandRequest request, TreeService treeService) =>
-		WithTarget(request.TargetId, treeService, target =>
+		WithTarget(ProtocolConstants.Commands.Click, request.TargetId, treeService, target =>
 		{
 			var button = request.MouseButton?.Trim().ToLowerInvariant() ?? "left";
 			if (target is ButtonBase buttonBase && button == "left")
@@ -56,7 +56,7 @@ internal static class TargetActionCommand
 		});
 
 	public static object Focus(FocusCommandRequest request, TreeService treeService) =>
-		WithTarget(request.TargetId, treeService, target => FocusTarget(target)
+		WithTarget(ProtocolConstants.Commands.Focus, request.TargetId, treeService, target => FocusTarget(target)
 			? ActionResult.Ok()
 			: ActionResult.Unsupported($"Target type '{target.GetType().FullName}' cannot receive focus."));
 
@@ -64,7 +64,7 @@ internal static class TargetActionCommand
 	{
 		if (!string.IsNullOrWhiteSpace(request.TargetId))
 		{
-			return WithTarget(request.TargetId!, treeService, target => TypeTextIntoTarget(target, request.Text, request.ClearFirst));
+			return WithTarget(ProtocolConstants.Commands.TypeText, request.TargetId!, treeService, target => TypeTextIntoTarget(target, request.Text, request.ClearFirst));
 		}
 
 		var focusedElement = Keyboard.FocusedElement;
@@ -77,7 +77,7 @@ internal static class TargetActionCommand
 	public static object KeyPress(KeyPressCommandRequest request, TreeService treeService)
 	{
 		if (!string.IsNullOrWhiteSpace(request.TargetId))
-			return WithTarget(request.TargetId!, treeService, target => SendKeysToTarget(target, request.Keys, request.DelayMs, request.EnsureForeground));
+			return WithTarget(ProtocolConstants.Commands.KeyPress, request.TargetId!, treeService, target => SendKeysToTarget(target, request.Keys, request.DelayMs, request.EnsureForeground));
 
 		var focusedElement = Keyboard.FocusedElement;
 		if (focusedElement is null)
@@ -87,10 +87,10 @@ internal static class TargetActionCommand
 	}
 
 	public static object SetProperty(SetPropertyCommandRequest request, TreeService treeService) =>
-		WithTarget(request.TargetId, treeService, target => SetProperty(target, request.PropertyName, request.PropertyValue));
+		WithTarget(ProtocolConstants.Commands.SetProperty, request.TargetId, treeService, target => SetProperty(target, request.PropertyName, request.PropertyValue));
 
 	public static object RaiseEvent(RaiseEventCommandRequest request, TreeService treeService) =>
-		WithTarget(request.TargetId, treeService, target =>
+		WithTarget(ProtocolConstants.Commands.RaiseEvent, request.TargetId, treeService, target =>
 		{
 			var eventName = !string.IsNullOrWhiteSpace(request.EventName)
 				? request.EventName
@@ -99,17 +99,17 @@ internal static class TargetActionCommand
 		});
 
 	public static object KnownRoutedEvent(KnownRoutedEventCommandRequest request, TreeService treeService) =>
-		WithTarget(request.TargetId, treeService, target => RaiseKnownRoutedEvent(target, request.EventName));
+		WithTarget(ProtocolConstants.Commands.KnownRoutedEvent, request.TargetId, treeService, target => RaiseKnownRoutedEvent(target, request.EventName));
 
 	public static object KnownOperation(KnownOperationCommandRequest request, TreeService treeService) =>
-		WithTarget(request.TargetId, treeService, target => RunKnownOperation(target, request.Operation));
+		WithTarget(ProtocolConstants.Commands.KnownOperation, request.TargetId, treeService, target => RunKnownOperation(target, request.Operation));
 
 	public static object Invoke(InvokeCommandRequest request, TreeService treeService)
 	{
 		if (!request.AllowUnsafeCode)
 			return StandardIpcResponse.FromError("Invoke requires explicit unsafe-code opt-in.", ProtocolConstants.ErrorCodes.UnsupportedCommand, LogCorrelationId());
 
-		return WithTarget(request.TargetId, treeService, target =>
+		return WithTarget(ProtocolConstants.Commands.Invoke, request.TargetId, treeService, target =>
 		{
 			var methodName = Convert.ToString(UnwrapJsonValue(request.Code), CultureInfo.InvariantCulture);
 			if (string.IsNullOrWhiteSpace(methodName))
@@ -119,15 +119,23 @@ internal static class TargetActionCommand
 			if (method is null)
 				return ActionResult.Unsupported($"Method '{methodName}' was not found or is not parameterless.");
 
-			method.Invoke(target, null);
+			try
+			{
+				method.Invoke(target, null);
+			}
+			catch (TargetInvocationException ex) when (ex.InnerException is not null)
+			{
+				return ActionResult.Unsupported($"Invoke method '{methodName}' failed: {ex.InnerException.Message}");
+			}
+
 			return ActionResult.Ok();
 		});
 	}
 
-	private static object WithTarget(string targetId, TreeService treeService, Func<object, ActionResult> action)
+	private static object WithTarget(string commandName, string targetId, TreeService treeService, Func<object, ActionResult> action)
 	{
 		if (string.IsNullOrWhiteSpace(targetId))
-			return UnsupportedTarget("A target ID is required.");
+			return UnsupportedTarget($"{commandName}: a target ID is required.");
 
 		var resolution = treeService.ResolveTarget(targetId);
 		if (resolution.Status != TargetIdResolutionStatus.Found)
@@ -135,19 +143,37 @@ internal static class TargetActionCommand
 			var errorCode = resolution.Status == TargetIdResolutionStatus.Stale
 				? ProtocolConstants.ErrorCodes.StaleTarget
 				: ProtocolConstants.ErrorCodes.UnsupportedTarget;
-			return StandardIpcResponse.FromError($"Target '{targetId}' resolved as {resolution.Status}.", errorCode, LogCorrelationId());
+			return StandardIpcResponse.FromError($"{commandName}: target '{targetId}' resolved as {resolution.Status}.", errorCode, LogCorrelationId());
 		}
 
-		return ToResponse(action(resolution.Target!));
+		try
+		{
+			return ToResponse(action(resolution.Target!), commandName, targetId);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			return StandardIpcResponse.FromError(
+				$"{commandName}: action failed for target '{targetId}': {ex.Message}",
+				ProtocolConstants.ErrorCodes.UnsupportedTarget,
+				LogCorrelationId());
+		}
 	}
 
-	private static StandardIpcResponse ToResponse(ActionResult result) =>
+	private static StandardIpcResponse ToResponse(ActionResult result, string? commandName = null, string? targetId = null) =>
 		result.Success
 			? StandardIpcResponse.Ok()
-			: UnsupportedTarget(result.Error ?? "The requested action is not supported for this target.");
+			: UnsupportedTarget(FormatActionError(result.Error ?? "The requested action is not supported for this target.", commandName, targetId));
 
 	private static StandardIpcResponse UnsupportedTarget(string error) =>
 		StandardIpcResponse.FromError(error, ProtocolConstants.ErrorCodes.UnsupportedTarget, LogCorrelationId());
+
+	private static string FormatActionError(string error, string? commandName, string? targetId)
+	{
+		if (string.IsNullOrWhiteSpace(commandName) && string.IsNullOrWhiteSpace(targetId))
+			return error;
+
+		return $"{commandName ?? "action"}: target '{targetId ?? string.Empty}': {error}";
+	}
 
 	private static ActionResult TypeTextIntoTarget(object target, string text, bool clearFirst)
 	{
@@ -223,6 +249,15 @@ internal static class TargetActionCommand
 				if (formsTextBox.Text.Length != 0)
 					formsTextBox.Text = formsTextBox.Text.Substring(0, formsTextBox.Text.Length - 1);
 			}
+			else if (string.Equals(keyText, "Delete", StringComparison.OrdinalIgnoreCase) || string.Equals(keyText, "Del", StringComparison.OrdinalIgnoreCase))
+			{
+				if (formsTextBox.SelectionLength > 0)
+					formsTextBox.SelectedText = string.Empty;
+			}
+			else if (string.Equals(keyText, "Space", StringComparison.OrdinalIgnoreCase))
+			{
+				formsTextBox.SelectedText = " ";
+			}
 			else if (!IsNonTextKey(keyText))
 			{
 				formsTextBox.Text += keyText;
@@ -250,9 +285,16 @@ internal static class TargetActionCommand
 			return ActionResult.Ok();
 		}
 
+		if (string.Equals(keyText, "Delete", StringComparison.OrdinalIgnoreCase) || string.Equals(keyText, "Del", StringComparison.OrdinalIgnoreCase))
+		{
+			if (textBox.SelectionLength > 0)
+				textBox.SelectedText = string.Empty;
+			return ActionResult.Ok();
+		}
+
 		if (!IsNonTextKey(keyText))
 		{
-			textBox.SelectedText = keyText;
+			textBox.SelectedText = string.Equals(keyText, "Space", StringComparison.OrdinalIgnoreCase) ? " " : keyText;
 			textBox.CaretIndex = textBox.Text.Length;
 		}
 
@@ -262,7 +304,17 @@ internal static class TargetActionCommand
 	private static bool IsNonTextKey(string keyText) =>
 		string.Equals(keyText, "Enter", StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(keyText, "Tab", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Escape", StringComparison.OrdinalIgnoreCase);
+		|| string.Equals(keyText, "Escape", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "Esc", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "Home", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "End", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "PageUp", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "PageDown", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "Up", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "Down", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "Left", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "Right", StringComparison.OrdinalIgnoreCase)
+		|| (keyText.Length > 1 && keyText.StartsWith("F", StringComparison.OrdinalIgnoreCase) && int.TryParse(keyText[1..], out _));
 
 	private static bool IsSelectAllShortcut(string keyText) =>
 		string.Equals(keyText, "Control+A", StringComparison.OrdinalIgnoreCase)
@@ -326,6 +378,7 @@ internal static class TargetActionCommand
 		return eventName?.Trim() switch
 		{
 			"Click" => ButtonBase.ClickEvent,
+			"MouseDoubleClick" => Control.MouseDoubleClickEvent,
 			"Checked" => ToggleButton.CheckedEvent,
 			"Unchecked" => ToggleButton.UncheckedEvent,
 			"Expanded" => Expander.ExpandedEvent,

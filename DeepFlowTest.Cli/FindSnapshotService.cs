@@ -116,7 +116,7 @@ public sealed class FindSnapshotService
 			return false;
 
 		if (!string.IsNullOrWhiteSpace(options.Text)
-			&& !PropertyEqualsAny(node, options.Text!, comparison, "Text", "Content"))
+			&& !PropertyEqualsAny(node, options.Text!, comparison, "Text", "Content", "Header", "Title"))
 			return false;
 
 		if (options.PropertyEquals is { } equals

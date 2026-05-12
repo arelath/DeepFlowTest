@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using DeepFlowTest.Contracts;
 
 public static class CliOutput
 {

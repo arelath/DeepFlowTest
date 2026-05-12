@@ -47,6 +47,20 @@ public sealed class CliAppSessionTests
 	}
 
 	[Test]
+	public void PostInjectionConnectRetriesWithinTimeout()
+	{
+		var connector = new FakeConnector { SucceedOnAttempt = 4 };
+		var injector = new FakeInjector();
+		var service = new CliAppSessionService(connector, _ => injector);
+
+		using var session = service.Open(Target(), new CliAttachOptions { TimeoutMs = 500 });
+
+		Assert.That(session, Is.Not.Null);
+		Assert.That(connector.Attempts, Is.EqualTo(4));
+		Assert.That(injector.InjectCount, Is.EqualTo(1));
+	}
+
+	[Test]
 	public void ProtocolMismatchMapsToProtocolError()
 	{
 		var connector = new FakeConnector { ProtocolMismatch = true };

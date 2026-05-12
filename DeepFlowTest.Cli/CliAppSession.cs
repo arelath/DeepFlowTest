@@ -219,7 +219,7 @@ public sealed class NamedPipeCliAppSession : ICliAppSession
 	}
 
 	public ICliStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs) =>
-		NamedPipeCliStreamSession.Start(
+		NamedPipeCliStreamSession.Create(
 			connection.PipeName,
 			command,
 			() => connection.TargetProcess.HasExited ? 0 : null,
@@ -256,7 +256,7 @@ public sealed class NamedPipeCliStreamSession : ICliStreamSession
 
 	public StartSendingCommandResponse Start { get; }
 
-	public static NamedPipeCliStreamSession Start(
+	public static NamedPipeCliStreamSession Create(
 		string pipeName,
 		StartSendingCommandRequest command,
 		Func<int?> getTargetExitCode,
@@ -268,7 +268,10 @@ public sealed class NamedPipeCliStreamSession : ICliStreamSession
 			pipe.Connect(Math.Max(1, timeoutMs));
 			ThrowIfTargetExited(getTargetExitCode);
 			MessagePacker.WriteFrame(pipe, command);
-			var response = MessagePacker.ReadFrame(pipe);
+			var response = TimeoutAfter(MessagePacker.ReadFrameAsync(pipe), timeoutMs, CancellationToken.None)
+				.ConfigureAwait(false)
+				.GetAwaiter()
+				.GetResult();
 			if (!response.HasFrame || response.Message is null)
 				throw new CliException(CliErrorCodes.PipeFailed, "The stream pipe closed before the start response was received.");
 			if (response.Message is StandardIpcResponse standard && standard.Success == false)
@@ -279,10 +282,15 @@ public sealed class NamedPipeCliStreamSession : ICliStreamSession
 				getTargetExitCode,
 				MessagePacker.ConvertTo<StartSendingCommandResponse>(response.Message));
 		}
-		catch
+		catch (CliException)
 		{
 			pipe.Dispose();
 			throw;
+		}
+		catch (Exception ex) when (ex is TimeoutException or IOException or ProtocolException)
+		{
+			pipe.Dispose();
+			throw new CliException(CliErrorCodes.PipeFailed, ex.Message);
 		}
 	}
 

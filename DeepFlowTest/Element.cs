@@ -2,7 +2,10 @@ namespace DeepFlowTest;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Linq.Expressions;
+using System.Windows;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
@@ -17,6 +20,15 @@ public class Element
 		this.node = node ?? throw new ArgumentNullException(nameof(node));
 		Selector = selector;
 		Snapshot = snapshot;
+	}
+
+	protected Element(Element source)
+	{
+		_ = source ?? throw new ArgumentNullException(nameof(source));
+		driver = source.driver;
+		node = source.node;
+		Selector = source.Selector;
+		Snapshot = source.Snapshot;
 	}
 
 	public string TargetId => node.TargetId;
@@ -64,6 +76,10 @@ public class Element
 
 	public Element this[int childIndex] => Children[childIndex];
 
+	public Primitive this[string propertyName] => Primitive.FromProperty(this, propertyName);
+
+	public bool HasProperty(string propertyName) => Properties.ContainsKey(propertyName);
+
 	public T? GetProperty<T>(string propertyName)
 	{
 		if (!Properties.TryGetValue(propertyName, out var value) || value is null)
@@ -75,46 +91,84 @@ public class Element
 		return (T?)Convert.ChangeType(value, typeof(T), System.Globalization.CultureInfo.InvariantCulture);
 	}
 
-	public void Click() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId });
+	public Element Click() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId });
 
-	public void RightClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, MouseButton = "right" });
+	public Element RightClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, MouseButton = "right" });
 
-	public void DoubleClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, ClickCount = 2 });
+	public Element DoubleClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, ClickCount = 2 });
 
-	public void Focus() => SendTargetedWithRepair(() => new FocusCommandRequest { TargetId = TargetId });
+	public Element Focus() => SendTargetedWithRepair(() => new FocusCommandRequest { TargetId = TargetId });
 
-	public void Select() => KnownOperation("Select");
+	public Element Select() => KnownOperation("Select");
 
-	public void Expand() => KnownOperation("Expand");
+	public Element Expand() => KnownOperation("Expand");
 
-	public void Collapse() => KnownOperation("Collapse");
+	public Element Collapse() => KnownOperation("Collapse");
 
-	public void Check() => KnownOperation("Check");
+	public Element Check() => KnownOperation("Check");
 
-	public void Uncheck() => KnownOperation("Uncheck");
+	public Element Uncheck() => KnownOperation("Uncheck");
 
-	public void ScrollIntoView() => KnownOperation("BringIntoView");
+	public Element ScrollIntoView() => KnownOperation("BringIntoView");
 
-	public void AcceptDialog() => KnownOperation("AcceptDialog");
+	public Element AcceptDialog() => KnownOperation("AcceptDialog");
 
-	public void CancelDialog() => KnownOperation("CancelDialog");
+	public Element CancelDialog() => KnownOperation("CancelDialog");
 
-	public void Type(string text, bool clearFirst = false)
+	public Element Type(string text, bool clearFirst = false)
 	{
 		SendTargetedWithRepair(() => new TypeTextCommandRequest { TargetId = TargetId, Text = text, ClearFirst = clearFirst });
+		return this;
 	}
 
-	public ScreenshotCommandResponse Screenshot(string format = "png") =>
+	public ScreenshotCommandResponse CaptureScreenshot(string format = "png") =>
 		SendWithRepair<ScreenshotCommandResponse>(() => new ScreenshotCommandRequest { TargetId = TargetId, Format = format });
 
-	public void RaiseEvent(string eventName) =>
+	public byte[] Screenshot(ImageFormat format = ImageFormat.Jpeg) =>
+		Convert.FromBase64String(CaptureScreenshot(format.ToProtocolString()).BytesBase64 ?? string.Empty);
+
+	public Element Screenshot(string fileOutputPath)
+	{
+		_ = fileOutputPath ?? throw new ArgumentNullException(nameof(fileOutputPath));
+		var bytes = Screenshot(GetImageFormatFromPath(fileOutputPath));
+		var directory = Path.GetDirectoryName(Path.GetFullPath(fileOutputPath));
+		if (!string.IsNullOrEmpty(directory))
+			Directory.CreateDirectory(directory);
+		File.WriteAllBytes(fileOutputPath, bytes);
+		return this;
+	}
+
+	public Element Screenshot(out byte[] screenshotBytes, ImageFormat format = ImageFormat.Jpeg)
+	{
+		screenshotBytes = Screenshot(format);
+		return this;
+	}
+
+	public Element SelectText(string text) =>
+		SetProperty("SelectedText", text);
+
+	public Element RaiseEvent(string eventName) =>
 		SendTargetedWithRepair(() => new RaiseEventCommandRequest { TargetId = TargetId, EventName = eventName });
 
-	public void Invoke(string methodName, bool allowUnsafeCode = false) =>
+	public Element RaiseEvent<TInput>(Expression<Func<TInput, RoutedEventArgs>> code) =>
+		SendTargetedWithRepair(() => new RaiseEventCommandRequest { TargetId = TargetId, GetRoutedEventArgs = ExpressionPayloadSerializer.Serialize(code) });
+
+	public Element Invoke(string methodName, bool allowUnsafeCode = false) =>
 		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = methodName, AllowUnsafeCode = allowUnsafeCode });
 
-	public void SetProperty(string propertyName, object? value) =>
+	public Element Invoke<TInput>(Expression<Action<TInput>> code) =>
+		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true });
+
+	public Element SetProperty(string propertyName, object? value) =>
 		SendTargetedWithRepair(() => new SetPropertyCommandRequest { TargetId = TargetId, PropertyName = propertyName, PropertyValue = value });
+
+	public Element SetProperty<TInput, TOutput>(string propertyName, Expression<Func<TInput, TOutput>> getValue) =>
+		SendTargetedWithRepair(() => new SetPropertyCommandRequest
+		{
+			TargetId = TargetId,
+			PropertyName = propertyName,
+			PropertyValue = ExpressionPayloadSerializer.Serialize(getValue),
+		});
 
 	internal static Element FromMatch(AppDriver driver, FindElementMatchResponse match, ElementSelector? selector)
 	{
@@ -139,14 +193,15 @@ public class Element
 		Snapshot = null;
 	}
 
-	private void KnownOperation(string operation) =>
+	private Element KnownOperation(string operation) =>
 		SendTargetedWithRepair(() => new KnownOperationCommandRequest { TargetId = TargetId, Operation = operation });
 
-	private void SendTargetedWithRepair(Func<IpcCommand> commandFactory)
+	private Element SendTargetedWithRepair(Func<IpcCommand> commandFactory)
 	{
 		var response = SendWithRepair<StandardIpcResponse>(commandFactory);
 		if (response.Success != true)
 			throw new AppDriverException(response.ErrorCode ?? ProtocolConstants.ErrorCodes.ProtocolError, response.Error ?? "Command failed.");
+		return this;
 	}
 
 	private TResponse SendWithRepair<TResponse>(Func<IpcCommand> commandFactory)
@@ -189,10 +244,26 @@ public class Element
 		errorMessage = responseType.GetProperty(nameof(StandardIpcResponse.Error))?.GetValue(response)?.ToString();
 		return true;
 	}
+
+	private static ImageFormat GetImageFormatFromPath(string path)
+	{
+		return Path.GetExtension(path).ToLowerInvariant() switch
+		{
+			".bmp" => ImageFormat.Bmp,
+			".gif" => ImageFormat.Gif,
+			".jpg" or ".jpeg" => ImageFormat.Jpeg,
+			_ => ImageFormat.Png,
+		};
+	}
 }
 
-public sealed class Element<TNative> : Element
+public class Element<TNative> : Element
 {
+	public Element(Element source)
+		: base(source)
+	{
+	}
+
 	internal Element(AppDriver driver, VisualTreeNodeDto node, ElementSelector? selector = null, VisualTreeSnapshot? snapshot = null)
 		: base(driver, node, selector, snapshot)
 	{

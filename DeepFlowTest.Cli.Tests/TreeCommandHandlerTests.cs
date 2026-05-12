@@ -33,4 +33,17 @@ public sealed class TreeCommandHandlerTests
 		Assert.That(result.Stdout, Does.Contain("\"path\":\"/root-0001/button-0002\""));
 		Assert.That(result.Stdout, Does.Contain("\"Text\":\"Submit\""));
 	}
+
+	[Test]
+	public void TreeLimitIsUsedWhenRequestingSnapshotAndTextOutputIsReadable()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "tree", "--pid", "1234", "--limit", "1500", "--format", "text" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("shape: flat"));
+		Assert.That(session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().MaxNodeCount, Is.EqualTo(1500));
+	}
 }

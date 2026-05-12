@@ -33,6 +33,36 @@ public sealed class ScreenshotCommandHandlerTests
 	}
 
 	[Test]
+	public void ScreenshotCanResolveSelectorTarget()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "screenshot", "--pid", "1234", "--automation-id", "SubmitButton", "--base64" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("\"targetId\":\"button-0002\""));
+	}
+
+	[Test]
+	public void FailedAndMalformedScreenshotPayloadsMapToStableErrors()
+	{
+		var service = new ScreenshotFileService();
+
+		Assert.That(
+			() => service.Process(new DeepFlowTest.Contracts.ScreenshotCommandResponse
+			{
+				Success = false,
+				ErrorCode = DeepFlowTest.Contracts.ProtocolConstants.ErrorCodes.StaleTarget,
+				Error = "stale",
+			}, new ScreenshotFileOptions()),
+			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.StaleTarget));
+		Assert.That(
+			() => service.Process(new DeepFlowTest.Contracts.ScreenshotCommandResponse { BytesBase64 = "not-base64" }, new ScreenshotFileOptions()),
+			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ProtocolError));
+	}
+
+	[Test]
 	public void UnsupportedImageFormatMapsToInvalidArguments()
 	{
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: new FakeAppSessionService());

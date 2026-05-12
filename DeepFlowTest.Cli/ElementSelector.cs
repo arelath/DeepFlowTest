@@ -45,15 +45,20 @@ public sealed class ElementSelector
 		&& !Visible.HasValue
 		&& !Enabled.HasValue;
 
-	public static ElementSelector FromArgs(string[] args) =>
-		new()
+	public static ElementSelector FromArgs(string[] args)
+	{
+		int? index = CliArgumentReader.GetOption(args, "--index") is null ? null : CliArgumentReader.GetInt(args, "--index", 0);
+		if (index.HasValue && index.Value < 0)
+			throw new CliException(CliErrorCodes.InvalidArguments, "--index must be a non-negative zero-based index.");
+
+		return new ElementSelector
 		{
 			TargetId = CliArgumentReader.GetOption(args, "--target", "--target-id"),
 			TypeName = CliArgumentReader.GetOption(args, "--type"),
 			TypeContains = CliArgumentReader.GetOption(args, "--type-contains"),
 			Name = CliArgumentReader.GetOption(args, "--name"),
 			AutomationId = CliArgumentReader.GetOption(args, "--automation-id"),
-			Text = CliArgumentReader.GetOption(args, "--text"),
+			Text = CliArgumentReader.GetOption(args, "--selector-text", "--text"),
 			PropertyEquals = CliArgumentReader.GetKeyValue(args, "--match-property"),
 			PropertyContains = CliArgumentReader.GetKeyValue(args, "--property-contains"),
 			PropertyRegex = CliArgumentReader.GetKeyValue(args, "--property-regex"),
@@ -61,6 +66,7 @@ public sealed class ElementSelector
 			Enabled = CliArgumentReader.HasOption(args, "--enabled") ? true : null,
 			CaseSensitive = CliArgumentReader.HasOption(args, "--case-sensitive"),
 			First = CliArgumentReader.HasOption(args, "--first"),
-			Index = CliArgumentReader.GetOption(args, "--index") is null ? null : CliArgumentReader.GetInt(args, "--index", 0),
+			Index = index,
 		};
+	}
 }

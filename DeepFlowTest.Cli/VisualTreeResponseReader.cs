@@ -46,9 +46,14 @@ public sealed class VisualTreeResponseReader
 
 	private static VisualTreeSnapshot NormalizeSnapshot(VisualTreeSnapshot snapshot, IReadOnlyList<string>? requestedProperties)
 	{
+		var duplicateCheck = new HashSet<string>(StringComparer.Ordinal);
 		foreach (var node in snapshot.Nodes)
 		{
-			node.TargetId ??= string.Empty;
+			if (string.IsNullOrWhiteSpace(node.TargetId))
+				throw new CliException(CliErrorCodes.ProtocolError, "Visual tree response contained a blank target ID.");
+			if (!duplicateCheck.Add(node.TargetId))
+				throw new CliException(CliErrorCodes.ProtocolError, $"Visual tree response contained duplicate target ID '{node.TargetId}'.");
+
 			node.ChildIds ??= new List<string>();
 			node.Properties ??= new Dictionary<string, object?>();
 		}

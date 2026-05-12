@@ -338,7 +338,7 @@ public static class Program
 		throw new CliException(CliErrorCodes.CommandTimeout, $"Wait timed out after {commonOptions.TimeoutMs} ms.");
 	}
 
-	private static StreamCommandResult ExecuteStream(
+	private static CliResponseSequence ExecuteStream(
 		string[] args,
 		CliServices services,
 		CliDefaults defaults,
@@ -388,7 +388,7 @@ public static class Program
 		var stop = session.Send<StopSendingCommandResponse>(
 			new StopSendingCommandRequest
 			{
-				SubscriptionId = start.SubscriptionId,
+				SubscriptionId = stream.Start.SubscriptionId,
 				TimeoutMs = Math.Min(commonOptions.TimeoutMs, 2000),
 			},
 			Math.Min(commonOptions.TimeoutMs, 2000));
@@ -565,6 +565,9 @@ public static class Program
 		ValidateKeys(keys!);
 
 		var selector = ElementSelector.FromArgs(args);
+		if (selector.IsEmpty)
+			throw new CliException(CliErrorCodes.UnsupportedTarget, "Physical foreground key input without a target selector is not supported; provide a target selector.");
+
 		using var session = OpenSession(services, commonOptions);
 		return new ActionCommandSupport().Execute(
 			"key",
@@ -579,7 +582,7 @@ public static class Program
 				DelayMs = CliArgumentReader.GetInt(args, "--delay-ms", defaults.KeyDelayMs),
 				EnsureForeground = defaults.EnsureForeground,
 			},
-			requireElementTarget: !selector.IsEmpty,
+			requireElementTarget: true,
 			afterProperties: new[] { "Text", "Content", "IsKeyboardFocused", "IsKeyboardFocusWithin" });
 	}
 
