@@ -1,11 +1,14 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Threading;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Utility;
 using NUnit.Framework;
+using Forms = System.Windows.Forms;
 
 [TestFixture]
+[Apartment(ApartmentState.STA)]
 public sealed class TargetIdServiceTests
 {
 	[Test]
@@ -37,14 +40,32 @@ public sealed class TargetIdServiceTests
 	public void NativeWindowHandlesResolveWithStableValueIds()
 	{
 		var service = new TargetIdService();
-		var first = service.GetOrCreateId(new IntPtr(1234));
-		var second = service.GetOrCreateId(new IntPtr(1234));
+		using var form = new Forms.Form();
+		form.CreateControl();
+		var handle = form.Handle;
+
+		var first = service.GetOrCreateId(handle);
+		var second = service.GetOrCreateId(handle);
 
 		var resolution = service.Resolve(first);
 
 		Assert.That(second, Is.EqualTo(first));
 		Assert.That(resolution.Status, Is.EqualTo(TargetIdResolutionStatus.Found));
-		Assert.That(resolution.Target, Is.EqualTo(new IntPtr(1234)));
+		Assert.That(resolution.Target, Is.EqualTo(handle));
+	}
+
+	[Test]
+	public void DestroyedNativeWindowHandleBecomesStale()
+	{
+		var service = new TargetIdService();
+		var form = new Forms.Form();
+		form.CreateControl();
+		var targetId = service.GetOrCreateId(form.Handle);
+		form.Dispose();
+
+		var resolution = service.Resolve(targetId);
+
+		Assert.That(resolution.Status, Is.EqualTo(TargetIdResolutionStatus.Stale));
 	}
 
 	[Test]

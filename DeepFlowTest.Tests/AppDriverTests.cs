@@ -2,7 +2,10 @@ namespace DeepFlowTest.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using DeepFlowTest;
+using DeepFlowTest.Contracts;
+using DeepFlowTest.Interop;
 using NUnit.Framework;
 
 [TestFixture]
@@ -90,6 +93,53 @@ public sealed class AppDriverTests
 		Assert.That(options.Timeout, Is.EqualTo(TimeSpan.FromMilliseconds(1234)));
 	}
 
+	[Test]
+	public void GetElementPollsWithConfiguredBackoff()
+	{
+		var session = new FakeSession(
+			new FindElementCommandResponse { Status = ProtocolConstants.Statuses.NoMatch },
+			new FindElementCommandResponse
+			{
+				Matches = { new FindElementMatchResponse { TargetId = "target", TypeName = "Button" } },
+				MatchCount = 1,
+			});
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session,
+			new AppDriverOptions { ElementPollBackoffMs = new[] { 1 }, Timeout = TimeSpan.FromSeconds(1) });
+
+		var element = driver.GetElement(ElementSelector.ByName("late"));
+
+		Assert.That(element.TargetId, Is.EqualTo("target"));
+		Assert.That(session.SentCommands.Count, Is.EqualTo(2));
+	}
+
+	[Test]
+	public void DefaultInjectorLauncherPathUsesArchitectureResourceLayoutWhenPresent()
+	{
+		var architecture = Environment.Is64BitProcess ? "x64" : "x86";
+		var resourceDirectory = Path.Combine(AppContext.BaseDirectory, "DeepFlowTestResources", architecture);
+		var launcherPath = Path.Combine(resourceDirectory, $"DeepFlowTest.InjectorLauncher.{architecture}.exe");
+		var created = false;
+		if (!File.Exists(launcherPath))
+		{
+			Directory.CreateDirectory(resourceDirectory);
+			File.WriteAllText(launcherPath, string.Empty);
+			created = true;
+		}
+		try
+		{
+			var options = new AppDriverOptions();
+
+			Assert.That(options.InjectorLauncherPath, Is.EqualTo(launcherPath));
+		}
+		finally
+		{
+			if (created)
+				File.Delete(launcherPath);
+		}
+	}
+
 	private sealed class FakeBackend : IAppDriverBackend
 	{
 		public string? LaunchedExecutablePath { get; private set; }
@@ -156,6 +206,24 @@ public sealed class AppDriverTests
 
 		public void Dispose()
 		{
+		}
+	}
+
+	private sealed class FakeSession : IAppDriverCommandSession
+	{
+		private readonly Queue<object> responses;
+
+		public FakeSession(params object[] responses)
+		{
+			this.responses = new Queue<object>(responses);
+		}
+
+		public List<IpcCommand> SentCommands { get; } = new();
+
+		public TResponse Send<TResponse>(IpcCommand command)
+		{
+			SentCommands.Add(command);
+			return (TResponse)responses.Dequeue();
 		}
 	}
 }

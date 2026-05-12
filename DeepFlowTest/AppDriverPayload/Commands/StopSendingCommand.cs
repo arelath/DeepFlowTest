@@ -10,7 +10,7 @@ internal static class StopSendingCommand
 		{
 			return StandardIpcResponse.FromError(
 				"Stop stream request requires a subscription ID.",
-				ProtocolConstants.ErrorCodes.ProtocolError,
+				ProtocolConstants.ErrorCodes.InvalidArguments,
 				LogCorrelationId());
 		}
 
@@ -22,7 +22,7 @@ internal static class StopSendingCommand
 				LogCorrelationId());
 		}
 
-		var stopped = reusableSession.StopSubscription(request.SubscriptionId);
+		var stopped = reusableSession.StopSubscription(request.SubscriptionId, request.TimeoutMs ?? 2000);
 		return new StopSendingCommandResponse
 		{
 			SubscriptionId = request.SubscriptionId,

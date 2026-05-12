@@ -116,6 +116,12 @@ public sealed class ScreenshotCommandResponse
 
 	public string Status { get; set; } = ProtocolConstants.Statuses.Ok;
 
+	public string? ErrorCode { get; set; }
+
+	public string? Error { get; set; }
+
+	public string? LogCorrelationId { get; set; }
+
 	public string TargetId { get; set; } = string.Empty;
 
 	public string Format { get; set; } = "png";

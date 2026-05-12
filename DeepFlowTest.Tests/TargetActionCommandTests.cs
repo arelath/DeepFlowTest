@@ -19,12 +19,14 @@ public sealed class TargetActionCommandTests
 	public void ClickAndKnownRoutedEventChangeHarnessState()
 	{
 		var clickCount = 0;
+		var rightClickCount = 0;
 		var button = new Button { Name = "actionButton", Content = "Ready" };
 		button.Click += (_, _) =>
 		{
 			clickCount++;
 			button.Content = "Clicked";
 		};
+		button.MouseRightButtonUp += (_, _) => rightClickCount++;
 		var window = CreateWindow("Click actions", button);
 
 		try
@@ -36,8 +38,14 @@ public sealed class TargetActionCommandTests
 			Assert.That(clickCount, Is.EqualTo(1));
 			Assert.That(button.Content, Is.EqualTo("Clicked"));
 
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, ClickCount = 2 }));
+			Assert.That(clickCount, Is.EqualTo(3));
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, MouseButton = "right" }));
+			Assert.That(rightClickCount, Is.EqualTo(1));
+
 			AssertOk(CaptureResponse(new KnownRoutedEventCommandRequest { TargetId = targetId, EventName = "Click" }));
-			Assert.That(clickCount, Is.EqualTo(2));
+			Assert.That(clickCount, Is.EqualTo(4));
 		}
 		finally
 		{
@@ -64,6 +72,9 @@ public sealed class TargetActionCommandTests
 
 			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = targetId, Keys = "d" }));
 			Assert.That(textBox.Text, Is.EqualTo("abcd"));
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = targetId, Keys = "Control+A", DelayMs = 1, EnsureForeground = true }));
+			Assert.That(textBox.SelectionLength, Is.EqualTo(textBox.Text.Length));
 		}
 		finally
 		{

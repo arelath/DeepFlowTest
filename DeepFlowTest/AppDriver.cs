@@ -2,7 +2,9 @@ namespace DeepFlowTest;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Threading;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -68,23 +70,66 @@ public sealed class AppDriver : IDisposable
 	public static AppDriver CreateForTests(AppConnection connection, IAppDriverCommandSession session, AppDriverOptions? options = null) =>
 		new(connection, options ?? new AppDriverOptions(), session);
 
-	public Element GetElement(ElementSelector selector) =>
-		GetElements(selector, maxMatches: 1).SingleOrDefault()
-		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched selector '{selector}'.");
+	public Element GetElement(ElementSelector selector)
+	{
+		_ = selector ?? throw new ArgumentNullException(nameof(selector));
+		return PollForElement(
+			() => FindElements(selector, matcherPayload: null, maxMatches: 2),
+			selector.ToString());
+	}
+
+	public Element GetElement(Expression<Func<VisualTreeNodeDto, bool>> matcher) =>
+		GetElements(matcher, maxMatches: 1).SingleOrDefault()
+		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
 
 	public IReadOnlyList<Element> GetElements(ElementSelector selector, int maxMatches = 100)
 	{
 		_ = selector ?? throw new ArgumentNullException(nameof(selector));
+		return FindElements(selector, matcherPayload: null, maxMatches);
+	}
+
+	public IReadOnlyList<Element> GetElements(Expression<Func<VisualTreeNodeDto, bool>> matcher, int maxMatches = 100)
+	{
+		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
+		var payload = ExpressionPayloadSerializer.Serialize(matcher);
+		return FindElements(null, payload, maxMatches);
+	}
+
+	private IReadOnlyList<Element> FindElements(ElementSelector? selector, ExpressionMatcherPayload? matcherPayload, int maxMatches)
+	{
 		var response = Send<FindElementCommandResponse>(new FindElementCommandRequest
 		{
-			Selector = selector.ToDto(),
-			PropNames = selector.RequestedPropertyNames,
+			Selector = selector?.ToDto(),
+			PropNames = selector?.RequestedPropertyNames,
+			MatcherCode = matcherPayload,
+			MatcherHash = matcherPayload?.ExpressionHash,
 			MaxMatches = maxMatches,
 		});
 
 		return response.Matches
 			.Select(match => Element.FromMatch(this, match, selector))
 			.ToArray();
+	}
+
+	private Element PollForElement(Func<IReadOnlyList<Element>> find, string selectorDescription)
+	{
+		var stopwatch = Stopwatch.StartNew();
+		var delays = new[] { 0 }.Concat(Options.ElementPollBackoffMs ?? Array.Empty<int>());
+		foreach (var delay in delays)
+		{
+			if (delay > 0)
+				Thread.Sleep(delay);
+
+			var matches = find();
+			if (matches.Count == 1)
+				return matches[0];
+			if (matches.Count > 1)
+				throw new AppDriverException(AppDriverErrorCodes.AmbiguousTarget, $"More than one element matched selector '{selectorDescription}'.");
+			if (stopwatch.Elapsed >= Options.Timeout)
+				break;
+		}
+
+		throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched selector '{selectorDescription}'.");
 	}
 
 	public VisualTreeSnapshot GetVisualTree(string? rootTargetId = null)
@@ -116,7 +161,13 @@ public sealed class AppDriver : IDisposable
 		if (element.Selector is null)
 			throw new AppDriverException(ProtocolConstants.ErrorCodes.StaleTarget, $"Element '{element.TargetId}' is stale and cannot be repaired without a selector.");
 
-		return GetElement(element.Selector);
+		var matches = FindElements(element.Selector, matcherPayload: null, maxMatches: 2);
+		return matches.Count switch
+		{
+			1 => matches[0],
+			0 => throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"Element '{element.TargetId}' is stale and no replacement matched selector '{element.Selector}'."),
+			_ => throw new AppDriverException(AppDriverErrorCodes.AmbiguousTarget, $"Element '{element.TargetId}' is stale and selector '{element.Selector}' matched multiple replacements."),
+		};
 	}
 
 	public void Dispose()

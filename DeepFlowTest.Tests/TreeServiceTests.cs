@@ -16,6 +16,7 @@ public sealed class TreeServiceTests
 	[Test]
 	public void WpfRootDiscoveryBuildsSnapshotFromShownWindow()
 	{
+		_ = Application.Current ?? new Application();
 		var button = new Button { Name = "helloButton", Content = "Hello" };
 		var window = CreateWindow("Root discovery", button);
 
@@ -31,6 +32,7 @@ public sealed class TreeServiceTests
 
 			Assert.That(snapshot.RootIds, Is.Not.Empty);
 			Assert.That(snapshot.TargetFrameworkFamily, Is.EqualTo("wpf"));
+			Assert.That(snapshot.Nodes.Any(static node => node.TypeName == "Application"), Is.True);
 			Assert.That(snapshot.Nodes.Any(static node => node.TypeName == "Window"), Is.True);
 
 			var buttonNode = snapshot.Nodes.SingleOrDefault(node =>

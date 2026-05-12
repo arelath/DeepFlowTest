@@ -162,6 +162,8 @@ public sealed class KeyPressCommandRequest : IpcCommand
 	public string? TargetId { get; set; }
 
 	public int DelayMs { get; set; } = 50;
+
+	public bool EnsureForeground { get; set; } = true;
 }
 
 public sealed class SetPropertyCommandRequest : TargetedIpcCommand

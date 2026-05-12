@@ -52,6 +52,30 @@ public sealed class ExpressionPayloadSerializerTests
 		Assert.That(requestPayload.ExpressionHash, Is.EqualTo(payload.ExpressionHash));
 	}
 
+	[Test]
+	public void PublicExpressionGetElementsSendsMatcherPayload()
+	{
+		var session = new FakeSession(new FindElementCommandResponse
+		{
+			Matches =
+			{
+				new FindElementMatchResponse { TargetId = "target", TypeName = "Button" },
+			},
+			MatchCount = 1,
+		});
+		var driver = DeepFlowTest.AppDriver.CreateForTests(
+			DeepFlowTest.AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session);
+		Expression<Func<VisualTreeNodeDto, bool>> matcher = node => node.TypeName == "Button";
+
+		var elements = driver.GetElements(matcher);
+
+		Assert.That(elements.Single().TargetId, Is.EqualTo("target"));
+		var command = session.SentCommands.OfType<FindElementCommandRequest>().Single();
+		Assert.That(command.MatcherHash, Is.Not.Empty);
+		Assert.That(command.MatcherCode, Is.Not.Null);
+	}
+
 	private static ExpressionMatcherPayload CreatePayload(string expectedName, int minimumCount)
 	{
 		Expression<Func<MatcherTarget, bool>> matcher = target =>
@@ -66,5 +90,41 @@ public sealed class ExpressionPayloadSerializerTests
 		public int Count { get; set; }
 
 		public string[] Tags { get; set; } = Array.Empty<string>();
+	}
+
+	private sealed class FakeSession : DeepFlowTest.IAppDriverCommandSession
+	{
+		private readonly object response;
+
+		public FakeSession(object response)
+		{
+			this.response = response;
+		}
+
+		public System.Collections.Generic.List<IpcCommand> SentCommands { get; } = new();
+
+		public TResponse Send<TResponse>(IpcCommand command)
+		{
+			SentCommands.Add(command);
+			return (TResponse)response;
+		}
+	}
+
+	private sealed class FakeTargetProcess : DeepFlowTest.ITargetProcess
+	{
+		public int Id => 123;
+
+		public string ProcessName => "target";
+
+		public bool HasExited { get; private set; }
+
+		public void Kill()
+		{
+			HasExited = true;
+		}
+
+		public void Dispose()
+		{
+		}
 	}
 }

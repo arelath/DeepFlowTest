@@ -26,7 +26,7 @@ internal static class AppDriverCommandDispatcher
 		[ProtocolConstants.Commands.PipeStatus] = (command, options, reusableSession) =>
 			PipeStatusCommand.Process(MessagePacker.ConvertTo<PipeStatusCommandRequest>(command.Value), options, reusableSession),
 		[ProtocolConstants.Commands.StartSending] = (command, _, reusableSession) =>
-			StartSendingCommand.Process(MessagePacker.ConvertTo<StartSendingCommandRequest>(command.Value), command, reusableSession),
+			StartSendingCommand.Process(MessagePacker.ConvertTo<StartSendingCommandRequest>(command.Value), command, reusableSession, TreeService),
 		[ProtocolConstants.Commands.StopSending] = (command, _, reusableSession) =>
 			StopSendingCommand.Process(MessagePacker.ConvertTo<StopSendingCommandRequest>(command.Value), reusableSession),
 	};

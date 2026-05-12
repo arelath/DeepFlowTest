@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using DeepFlowTest.Contracts;
 
 public sealed class ReusableNamedPipeServer : IDisposable
@@ -34,6 +35,19 @@ public sealed class ReusableNamedPipeServer : IDisposable
 
 		foreach (var connection in connections)
 			ClosePipe(connection, clientDisconnected: true);
+	}
+
+	public void CloseConnection(string connectionId)
+	{
+		if (string.IsNullOrWhiteSpace(connectionId))
+			return;
+
+		ConnectionState? connection;
+		lock (sync)
+			connection = activeConnections.FirstOrDefault(item => string.Equals(item.ConnectionId, connectionId, StringComparison.Ordinal));
+
+		if (connection is not null)
+			ClosePipe(connection, clientDisconnected: false);
 	}
 
 	public NamedPipeServer.Command? WaitForNextCommand()

@@ -30,16 +30,27 @@ public sealed class CliError
 
 public static class CliResponseFactory
 {
-	public static CliResponseEnvelope Success(string command, object? data, Stopwatch stopwatch) =>
+	public static CliResponseEnvelope Success(
+		string command,
+		object? data,
+		Stopwatch stopwatch,
+		Dictionary<string, object?>? diagnostics = null) =>
 		new()
 		{
 			Ok = true,
 			Command = command,
 			Data = data,
+			Diagnostics = diagnostics ?? new Dictionary<string, object?>(),
 			DurationMs = stopwatch.ElapsedMilliseconds,
 		};
 
-	public static CliResponseEnvelope Error(string command, string errorCode, string message, Stopwatch stopwatch, object? details = null) =>
+	public static CliResponseEnvelope Error(
+		string command,
+		string errorCode,
+		string message,
+		Stopwatch stopwatch,
+		object? details = null,
+		Dictionary<string, object?>? diagnostics = null) =>
 		new()
 		{
 			Ok = false,
@@ -50,6 +61,7 @@ public static class CliResponseFactory
 				Message = message,
 				Details = details,
 			},
+			Diagnostics = diagnostics ?? new Dictionary<string, object?>(),
 			DurationMs = stopwatch.ElapsedMilliseconds,
 		};
 }

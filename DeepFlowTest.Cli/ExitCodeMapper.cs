@@ -18,6 +18,8 @@ public static class ExitCodeMapper
 			CliErrorCodes.TargetNotFound => 2,
 			CliErrorCodes.AmbiguousTarget => 2,
 			CliErrorCodes.UnsupportedTarget => 3,
+			CliErrorCodes.UnsupportedFramework => 3,
+			CliErrorCodes.UnsupportedArchitecture => 3,
 			CliErrorCodes.AttachFailed => 4,
 			CliErrorCodes.PipeFailed => 5,
 			CliErrorCodes.ProtocolError => 5,

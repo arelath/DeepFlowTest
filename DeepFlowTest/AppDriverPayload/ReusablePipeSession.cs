@@ -5,13 +5,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
+using DeepFlowTest.AppDriverPayload.Streaming;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
 public sealed class ReusablePipeSession
 {
 	private readonly Action<ReusablePipeSession> runCommandLoop;
-	private readonly Dictionary<string, ActiveSubscriptionResponse> subscriptions = new();
+	private readonly Dictionary<string, ActiveSubscriptionState> subscriptions = new();
 	private int started;
 	private int busyCount;
 	private int totalCommandsHandled;
@@ -45,7 +47,7 @@ public sealed class ReusablePipeSession
 		get
 		{
 			lock (subscriptions)
-				return subscriptions.Values.ToArray();
+				return subscriptions.Values.Select(static subscription => subscription.ToResponse()).ToArray();
 		}
 	}
 
@@ -66,6 +68,7 @@ public sealed class ReusablePipeSession
 	public void Stop()
 	{
 		stopRequested = true;
+		StopAllSubscriptions();
 		server?.Dispose();
 	}
 
@@ -75,20 +78,62 @@ public sealed class ReusablePipeSession
 		StopSubscriptionsForConnection(connectionId);
 	}
 
-	public ActiveSubscriptionResponse StartSubscription(string kind, string? connectionId, int intervalMs = 1000)
+	public ActiveSubscriptionResponse StartSubscription(
+		string kind,
+		string? connectionId,
+		int intervalMs,
+		Func<object, bool> send,
+		Func<long, object> capture,
+		bool deferStart = false)
 	{
-		var subscription = new ActiveSubscriptionResponse
-		{
-			SubscriptionId = Guid.NewGuid().ToString("N"),
-			Kind = kind,
-			ConnectionId = connectionId,
-			IntervalMs = intervalMs,
-		};
+		var subscriptionId = Guid.NewGuid().ToString("N");
+		var subscription = new DelegateStreamSubscription(
+			subscriptionId,
+			kind,
+			connectionId,
+			intervalMs,
+			send,
+			capture);
+		var state = new ActiveSubscriptionState(subscription);
 
 		lock (subscriptions)
-			subscriptions[subscription.SubscriptionId] = subscription;
+			subscriptions[subscription.SubscriptionId] = state;
 
-		return subscription;
+		if (!deferStart)
+			subscription.Start();
+
+		return state.ToResponse();
+	}
+
+	public bool StartStoredSubscription(string subscriptionId)
+	{
+		ActiveSubscriptionState? state;
+		lock (subscriptions)
+			subscriptions.TryGetValue(subscriptionId, out state);
+
+		if (state is null)
+			return false;
+
+		state.Subscription.Start();
+		return true;
+	}
+
+	public bool StopSubscription(string subscriptionId, int timeoutMs = 2000)
+	{
+		if (string.IsNullOrEmpty(subscriptionId))
+			return false;
+
+		ActiveSubscriptionState? state;
+		lock (subscriptions)
+		{
+			if (!subscriptions.Remove(subscriptionId, out state))
+				return false;
+		}
+
+		StopAndDispose(state, timeoutMs);
+		if (!string.IsNullOrEmpty(state.Subscription.ConnectionId))
+			server?.CloseConnection(state.Subscription.ConnectionId!);
+		return true;
 	}
 
 	public void StopSubscriptionsForConnection(string connectionId)
@@ -96,25 +141,33 @@ public sealed class ReusablePipeSession
 		if (string.IsNullOrEmpty(connectionId))
 			return;
 
+		List<ActiveSubscriptionState> removed;
 		lock (subscriptions)
 		{
-			foreach (var subscriptionId in subscriptions.Values
-				.Where(subscription => string.Equals(subscription.ConnectionId, connectionId, StringComparison.Ordinal))
-				.Select(subscription => subscription.SubscriptionId)
-				.ToArray())
+			removed = subscriptions.Values
+				.Where(subscription => string.Equals(subscription.Subscription.ConnectionId, connectionId, StringComparison.Ordinal))
+				.ToList();
+			foreach (var subscription in removed)
 			{
-				subscriptions.Remove(subscriptionId);
+				subscriptions.Remove(subscription.Subscription.SubscriptionId);
 			}
 		}
+
+		foreach (var subscription in removed)
+			StopAndDispose(subscription, timeoutMs: 500);
 	}
 
-	public bool StopSubscription(string subscriptionId)
+	private void StopAllSubscriptions()
 	{
-		if (string.IsNullOrEmpty(subscriptionId))
-			return false;
-
+		List<ActiveSubscriptionState> removed;
 		lock (subscriptions)
-			return subscriptions.Remove(subscriptionId);
+		{
+			removed = subscriptions.Values.ToList();
+			subscriptions.Clear();
+		}
+
+		foreach (var subscription in removed)
+			StopAndDispose(subscription, timeoutMs: 500);
 	}
 
 	public PipeStatusCommandResponse CreateStatusResponse()
@@ -232,5 +285,41 @@ public sealed class ReusablePipeSession
 	private static string LogCorrelationId()
 	{
 		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
+	}
+
+	private static void StopAndDispose(ActiveSubscriptionState state, int timeoutMs)
+	{
+		state.Subscription.Stop();
+		try
+		{
+			state.Subscription.Completion?.Wait(Math.Max(1, timeoutMs));
+		}
+		catch (AggregateException ex) when (ex.InnerExceptions.All(static inner => inner is TaskCanceledException or OperationCanceledException))
+		{
+		}
+		finally
+		{
+			state.Subscription.Dispose();
+		}
+	}
+
+	private sealed class ActiveSubscriptionState
+	{
+		public ActiveSubscriptionState(StreamSubscription subscription)
+		{
+			Subscription = subscription;
+		}
+
+		public StreamSubscription Subscription { get; }
+
+		public ActiveSubscriptionResponse ToResponse() =>
+			new()
+			{
+				SubscriptionId = Subscription.SubscriptionId,
+				Kind = Subscription.StreamKind,
+				ConnectionId = Subscription.ConnectionId,
+				IntervalMs = Subscription.IntervalMs,
+				LastSequenceNumber = Subscription.LastSequenceNumber,
+			};
 	}
 }

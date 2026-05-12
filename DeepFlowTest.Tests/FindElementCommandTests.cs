@@ -96,6 +96,38 @@ public sealed class FindElementCommandTests
 		}
 	}
 
+	[Test]
+	public void RepeatedExpressionMatcherUsesCommandCache()
+	{
+		var window = CreateWindow("Expression cache", new Button { Name = "cachedButton", Content = "Cached" });
+
+		try
+		{
+			window.Show();
+			Expression<Func<VisualTreeNodeDto, bool>> matcher = node => node.TypeName == "Button";
+			var payload = ExpressionPayloadSerializer.Serialize(matcher);
+			var request = new FindElementCommandRequest
+			{
+				MatcherCode = payload,
+				MatcherHash = payload.ExpressionHash,
+				PropNames = new[] { "Name", "Content" },
+				MaxMatches = 1,
+			};
+			var cache = new ExpressionCache();
+			var treeService = new DeepFlowTest.Utility.WpfUtility.Tree.TreeService();
+
+			_ = InvokeFindElementProcess(request, treeService, cache);
+			_ = InvokeFindElementProcess(request, treeService, cache);
+
+			Assert.That(cache.Stats.CompileCount, Is.EqualTo(1));
+			Assert.That(cache.Stats.HitCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
 	private static void AssertSingleMatch(ElementSelectorDto selector, string expectedName)
 	{
 		var response = Find(selector, maxMatches: 1);
@@ -161,6 +193,13 @@ public sealed class FindElementCommandTests
 		var method = dispatcherType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
 		method.Invoke(null, new object?[] { command, options, null });
 		return response;
+	}
+
+	private static object? InvokeFindElementProcess(FindElementCommandRequest request, DeepFlowTest.Utility.WpfUtility.Tree.TreeService treeService, ExpressionCache cache)
+	{
+		var commandType = Type.GetType("DeepFlowTest.AppDriverPayload.Commands.FindElementCommand, DeepFlowTest", throwOnError: true)!;
+		var method = commandType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
+		return method.Invoke(null, new object[] { request, treeService, cache });
 	}
 
 	private static Window CreateWindow(string title, object content)

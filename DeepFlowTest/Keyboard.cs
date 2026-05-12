@@ -45,6 +45,7 @@ public sealed class Keyboard
 			TargetId = targetId,
 			Keys = keys,
 			DelayMs = DelayMs,
+			EnsureForeground = EnsureForeground,
 		});
 		if (response.Success != true)
 			throw new AppDriverException(response.ErrorCode ?? ProtocolConstants.ErrorCodes.ProtocolError, response.Error ?? "Keyboard command failed.");

@@ -55,6 +55,7 @@ public static class ProtocolConstants
 	public static class ErrorCodes
 	{
 		public const string CommandTimeout = "command-timeout";
+		public const string InvalidArguments = "invalid-arguments";
 		public const string MalformedFrame = "malformed-frame";
 		public const string ProtocolError = "protocol-error";
 		public const string StartupError = "startup-error";

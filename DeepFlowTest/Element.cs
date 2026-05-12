@@ -50,6 +50,9 @@ public class Element
 			var snapshot = Snapshot ?? driver.GetVisualTree();
 			Snapshot = snapshot;
 			var byId = snapshot.Nodes.ToDictionary(static candidate => candidate.TargetId, StringComparer.Ordinal);
+			if (byId.TryGetValue(node.TargetId, out var refreshedNode))
+				node = refreshedNode;
+
 			return node.ChildIds
 				.Where(byId.ContainsKey)
 				.Select(childId => new Element(driver, byId[childId], snapshot: snapshot))
@@ -149,7 +152,7 @@ public class Element
 	private TResponse SendWithRepair<TResponse>(Func<IpcCommand> commandFactory)
 	{
 		var response = driver.Send<TResponse>(commandFactory());
-		if (response is StandardIpcResponse { Success: false, ErrorCode: ProtocolConstants.ErrorCodes.StaleTarget })
+		if (IsFailure(response, ProtocolConstants.ErrorCodes.StaleTarget))
 		{
 			var repaired = driver.Repair(this);
 			ReplaceNode(repaired.node);
@@ -158,8 +161,33 @@ public class Element
 
 		if (response is StandardIpcResponse { Success: false } error)
 			throw new AppDriverException(error.ErrorCode ?? ProtocolConstants.ErrorCodes.ProtocolError, error.Error ?? "Command failed.");
+		if (IsFailure(response, out var errorCode, out var errorMessage))
+			throw new AppDriverException(errorCode ?? ProtocolConstants.ErrorCodes.ProtocolError, errorMessage ?? "Command failed.");
 
 		return response;
+	}
+
+	private static bool IsFailure<TResponse>(TResponse response, string errorCode)
+	{
+		return IsFailure(response, out var actualErrorCode, out _) &&
+			string.Equals(actualErrorCode, errorCode, StringComparison.Ordinal);
+	}
+
+	private static bool IsFailure<TResponse>(TResponse response, out string? errorCode, out string? errorMessage)
+	{
+		errorCode = null;
+		errorMessage = null;
+		if (response is null)
+			return false;
+
+		var responseType = response.GetType();
+		var success = responseType.GetProperty(nameof(StandardIpcResponse.Success))?.GetValue(response);
+		if (success is not bool successValue || successValue)
+			return false;
+
+		errorCode = responseType.GetProperty(nameof(StandardIpcResponse.ErrorCode))?.GetValue(response)?.ToString();
+		errorMessage = responseType.GetProperty(nameof(StandardIpcResponse.Error))?.GetValue(response)?.ToString();
+		return true;
 	}
 }
 

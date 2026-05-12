@@ -9,6 +9,22 @@ using System.Text.Json.Nodes;
 
 public static class CliOutput
 {
+	private static readonly HashSet<string> RequiredEmptyFields = new(StringComparer.Ordinal)
+	{
+		"activeSubscriptions",
+		"ancestors",
+		"children",
+		"frames",
+		"matches",
+		"nodes",
+		"processes",
+		"requestedProperties",
+		"roots",
+		"subtree",
+		"suggestions",
+		"warnings",
+	};
+
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -65,6 +81,24 @@ public static class CliOutput
 			case "processes":
 				WriteProcessesText(envelope.Data, writer);
 				break;
+			case "ping":
+				WritePingText(envelope.Data, writer);
+				break;
+			case "pipe status":
+				WritePipeStatusText(envelope.Data, writer);
+				break;
+			case "tree":
+				WriteTreeText(envelope.Data, writer);
+				break;
+			case "node":
+				WriteNodeText(envelope.Data, writer);
+				break;
+			case "props":
+				WritePropsText(envelope.Data, writer);
+				break;
+			case "selectors":
+				WriteSelectorsText(envelope.Data, writer);
+				break;
 			default:
 				writer.WriteLine(ToJson(envelope, pretty: true, hideEmpty: true));
 				break;
@@ -94,6 +128,96 @@ public static class CliOutput
 			writer.WriteLine($"warning: {warning.Message}");
 	}
 
+	private static void WritePingText(object? data, TextWriter writer)
+	{
+		var ping = UnwrapProtocolData<PingCommandResponse>(data);
+		if (ping is null)
+		{
+			writer.WriteLine(ToJson(CliResponseFactory.Success("ping", data, System.Diagnostics.Stopwatch.StartNew()), pretty: true, hideEmpty: true));
+			return;
+		}
+
+		writer.WriteLine($"process: {ping.ProcessId}");
+		writer.WriteLine($"wpf: {FormatBool(ping.IsWpfAvailable)}");
+		writer.WriteLine($"winforms: {FormatBool(ping.IsWinFormsAvailable)}");
+		writer.WriteLine($"native: {FormatBool(ping.IsNativeFallbackAvailable)}");
+		writer.WriteLine($"dispatcher: {FormatBool(ping.IsDispatcherAvailable)}");
+		writer.WriteLine($"roots: {ping.RootCount}");
+	}
+
+	private static void WritePipeStatusText(object? data, TextWriter writer)
+	{
+		var status = UnwrapProtocolData<PipeStatusCommandResponse>(data);
+		if (status is null)
+		{
+			writer.WriteLine(ToJson(CliResponseFactory.Success("pipe status", data, System.Diagnostics.Stopwatch.StartNew()), pretty: true, hideEmpty: true));
+			return;
+		}
+
+		writer.WriteLine($"pipe: {status.PipeName}");
+		writer.WriteLine($"reusable: {FormatBool(status.IsReusable)}");
+		writer.WriteLine($"busy: {FormatBool(status.IsBusy)}");
+		writer.WriteLine($"sending: {FormatBool(status.IsSending)}");
+		writer.WriteLine($"subscriptions: {status.ActiveSubscriptionCount}");
+		writer.WriteLine($"commands: {status.TotalCommandsHandled}");
+		writer.WriteLine($"idle: {status.IdleMode}");
+	}
+
+	private static void WriteTreeText(object? data, TextWriter writer)
+	{
+		if (data is not TreeSnapshotData tree)
+		{
+			writer.WriteLine(ToJson(CliResponseFactory.Success("tree", data, System.Diagnostics.Stopwatch.StartNew()), pretty: true, hideEmpty: true));
+			return;
+		}
+
+		writer.WriteLine($"shape: {tree.Shape}");
+		writer.WriteLine($"nodes: {tree.NodeCount}/{tree.TotalNodeCount}");
+		if (tree.Truncated)
+			writer.WriteLine($"truncated: {tree.TruncationReason ?? "yes"}");
+		foreach (var node in tree.Nodes.Count != 0 ? tree.Nodes : FlattenRoots(tree.Roots))
+			writer.WriteLine($"{new string(' ', Math.Max(0, node.Depth) * 2)}{node.TargetId} {node.TypeName ?? node.FrameworkTypeName ?? string.Empty}".TrimEnd());
+	}
+
+	private static void WriteNodeText(object? data, TextWriter writer)
+	{
+		if (data is not NodeResultData node)
+		{
+			writer.WriteLine(ToJson(CliResponseFactory.Success("node", data, System.Diagnostics.Stopwatch.StartNew()), pretty: true, hideEmpty: true));
+			return;
+		}
+
+		WriteNodeLine(node.Node, writer);
+		foreach (var property in node.Node.Properties)
+			writer.WriteLine($"{property.Key}: {property.Value}");
+	}
+
+	private static void WritePropsText(object? data, TextWriter writer)
+	{
+		if (data is not PropsResultData props)
+		{
+			writer.WriteLine(ToJson(CliResponseFactory.Success("props", data, System.Diagnostics.Stopwatch.StartNew()), pretty: true, hideEmpty: true));
+			return;
+		}
+
+		writer.WriteLine(props.TargetId);
+		foreach (var property in props.Properties)
+			writer.WriteLine($"{property.Key}: {property.Value}");
+	}
+
+	private static void WriteSelectorsText(object? data, TextWriter writer)
+	{
+		if (data is not SelectorSuggestionData selectors)
+		{
+			writer.WriteLine(ToJson(CliResponseFactory.Success("selectors", data, System.Diagnostics.Stopwatch.StartNew()), pretty: true, hideEmpty: true));
+			return;
+		}
+
+		writer.WriteLine(selectors.TargetId);
+		foreach (var suggestion in selectors.Suggestions)
+			writer.WriteLine($"{suggestion.Confidence:0.00} {suggestion.Cli}");
+	}
+
 	private static void PruneEmpty(JsonNode? node)
 	{
 		if (node is JsonObject obj)
@@ -102,6 +226,9 @@ public static class CliOutput
 			foreach (var property in obj.ToArray())
 			{
 				PruneEmpty(property.Value);
+				if (RequiredEmptyFields.Contains(property.Key))
+					continue;
+
 				if (property.Value is null)
 				{
 					removals.Add(property.Key);
@@ -125,6 +252,30 @@ public static class CliOutput
 	}
 
 	private static string FormatBool(bool value) => value ? "yes" : "no";
+
+	private static T? UnwrapProtocolData<T>(object? data)
+	{
+		if (data is ProtocolCommandData<T> protocol)
+			return protocol.Response;
+
+		return data is T typed ? typed : default;
+	}
+
+	private static IEnumerable<TreeNodeData> FlattenRoots(IEnumerable<TreeNodeData> roots)
+	{
+		foreach (var root in roots)
+		{
+			yield return root;
+			foreach (var child in FlattenRoots(root.Children))
+				yield return child;
+		}
+	}
+
+	private static void WriteNodeLine(TreeNodeData node, TextWriter writer)
+	{
+		var typeName = node.TypeName ?? node.FrameworkTypeName ?? string.Empty;
+		writer.WriteLine($"{node.TargetId} {typeName}".TrimEnd());
+	}
 
 	private static string Truncate(string value, int length)
 	{

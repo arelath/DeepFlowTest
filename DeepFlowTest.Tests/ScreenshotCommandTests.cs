@@ -8,6 +8,8 @@ using System.Windows.Controls;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Utility;
+using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
 using DrawingPoint = System.Drawing.Point;
 using Forms = System.Windows.Forms;
@@ -100,6 +102,24 @@ public sealed class ScreenshotCommandTests
 	}
 
 	[Test]
+	public void StaleTargetReturnsStaleTarget()
+	{
+		var targetIds = new TargetIdService();
+		var targetId = CreateCollectableTargetId(targetIds, out var weakReference);
+		ForceCollection(weakReference);
+		var treeService = new TreeService(targetIds);
+
+		var response = (StandardIpcResponse)InvokeScreenshotProcess(new ScreenshotCommandRequest
+		{
+			TargetId = targetId,
+			Format = "png",
+		}, treeService)!;
+
+		Assert.That(response.Success, Is.False);
+		Assert.That(response.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.StaleTarget));
+	}
+
+	[Test]
 	public void WinFormsAppScreenshotReturnsNonEmptyBytes()
 	{
 		using var form = new Forms.Form
@@ -164,6 +184,31 @@ public sealed class ScreenshotCommandTests
 		var method = dispatcherType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
 		method.Invoke(null, new object?[] { command, options, null });
 		return response;
+	}
+
+	private static object? InvokeScreenshotProcess(ScreenshotCommandRequest request, TreeService treeService)
+	{
+		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
+		var commandType = Type.GetType("DeepFlowTest.AppDriverPayload.Commands.ScreenshotCommand, DeepFlowTest", throwOnError: true)!;
+		var method = commandType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
+		return method.Invoke(null, new object[] { request, treeService });
+	}
+
+	private static string CreateCollectableTargetId(TargetIdService service, out WeakReference weakReference)
+	{
+		var target = new object();
+		weakReference = new WeakReference(target);
+		return service.GetOrCreateId(target);
+	}
+
+	private static void ForceCollection(WeakReference weakReference)
+	{
+		for (var i = 0; i < 10 && weakReference.IsAlive; i++)
+		{
+			GC.Collect();
+			GC.WaitForPendingFinalizers();
+			GC.Collect();
+		}
 	}
 
 	private static Window CreateWindow(string title, object content)

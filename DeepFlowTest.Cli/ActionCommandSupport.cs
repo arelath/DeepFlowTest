@@ -1,6 +1,8 @@
 namespace DeepFlowTest.Cli;
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
@@ -20,7 +22,8 @@ public sealed class ActionCommandSupport
 		CliDefaults defaults,
 		ElementSelector selector,
 		Func<string?, IpcCommand> createCommand,
-		bool requireElementTarget)
+		bool requireElementTarget,
+		IReadOnlyList<string>? afterProperties = null)
 	{
 		_ = session ?? throw new ArgumentNullException(nameof(session));
 		_ = commonOptions ?? throw new ArgumentNullException(nameof(commonOptions));
@@ -28,11 +31,22 @@ public sealed class ActionCommandSupport
 		_ = selector ?? throw new ArgumentNullException(nameof(selector));
 		_ = createCommand ?? throw new ArgumentNullException(nameof(createCommand));
 
-		VisualTreeSnapshot? beforeSnapshot = null;
 		ElementResolution? resolution = null;
-		if (requireElementTarget || !selector.IsEmpty)
+		if (!string.IsNullOrWhiteSpace(selector.TargetId) && LooksLikeFullTargetId(selector.TargetId!))
 		{
-			beforeSnapshot = ReadSnapshot(session, commonOptions, defaults);
+			resolution = new ElementResolution
+			{
+				TargetId = selector.TargetId!,
+				Summary = new TreeNodeData
+				{
+					TargetId = selector.TargetId!,
+					ShortId = new CliTargetIdService().GetShortId(selector.TargetId!),
+				},
+			};
+		}
+		else if (requireElementTarget || !selector.IsEmpty)
+		{
+			var beforeSnapshot = ReadSnapshot(session, commonOptions, defaults);
 			resolution = resolver.Resolve(beforeSnapshot, selector);
 		}
 
@@ -44,23 +58,29 @@ public sealed class ActionCommandSupport
 			Action = actionName,
 			Target = resolution?.Summary,
 			Payload = payload,
-			After = CreateAfterSnapshot(session, commonOptions, defaults, resolution?.TargetId),
+			After = CreateAfterSnapshot(session, commonOptions, defaults, resolution?.TargetId, afterProperties),
 		};
 	}
 
-	private static object? CreateAfterSnapshot(ICliAppSession session, CliCommonOptions commonOptions, CliDefaults defaults, string? targetId)
+	private static object? CreateAfterSnapshot(
+		ICliAppSession session,
+		CliCommonOptions commonOptions,
+		CliDefaults defaults,
+		string? targetId,
+		IReadOnlyList<string>? afterProperties)
 	{
 		if (string.Equals(commonOptions.After, "none", StringComparison.Ordinal))
 			return null;
 
-		var snapshot = ReadSnapshot(session, commonOptions, defaults);
+		var properties = MergeProperties(defaults.PropertyNames, afterProperties);
+		var snapshot = ReadSnapshot(session, commonOptions, defaults, properties);
 		if (string.Equals(commonOptions.After, "tree", StringComparison.Ordinal))
 		{
 			return new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions
 			{
 				Shape = defaults.TreeShape,
 				Limit = defaults.TreeLimit,
-				Properties = defaults.PropertyNames,
+				Properties = properties,
 				UseShortIds = commonOptions.UseShortIds,
 			});
 		}
@@ -70,7 +90,7 @@ public sealed class ActionCommandSupport
 			return new NodeSnapshotService().GetNode(snapshot, new NodeSnapshotOptions
 			{
 				TargetId = targetId!,
-				Properties = defaults.PropertyNames,
+				Properties = properties,
 				UseShortIds = commonOptions.UseShortIds,
 			});
 		}
@@ -80,17 +100,38 @@ public sealed class ActionCommandSupport
 
 	private static VisualTreeSnapshot ReadSnapshot(ICliAppSession session, CliCommonOptions commonOptions, CliDefaults defaults)
 	{
+		return ReadSnapshot(session, commonOptions, defaults, defaults.PropertyNames);
+	}
+
+	private static VisualTreeSnapshot ReadSnapshot(
+		ICliAppSession session,
+		CliCommonOptions commonOptions,
+		CliDefaults defaults,
+		IReadOnlyList<string> properties)
+	{
 		var response = session.Send<object>(
 			new GetVisualTreeCommandRequest
 			{
-				PropNames = defaults.PropertyNames,
+				PropNames = properties,
 				AsSnapshot = true,
 				IncludeHidden = true,
 				MaxNodeCount = defaults.TreeLimit,
 				TimeoutMs = commonOptions.TimeoutMs,
 			},
 			commonOptions.TimeoutMs);
-		return new VisualTreeResponseReader().Read(response, defaults.PropertyNames);
+		return new VisualTreeResponseReader().Read(response, properties);
+	}
+
+	private static IReadOnlyList<string> MergeProperties(
+		IEnumerable<string> defaults,
+		IEnumerable<string>? extras)
+	{
+		var result = new List<string>();
+		foreach (var property in defaults.Concat(extras ?? Array.Empty<string>()))
+			if (!string.IsNullOrWhiteSpace(property) && !result.Contains(property, StringComparer.Ordinal))
+				result.Add(property);
+
+		return result;
 	}
 
 	private static void EnsurePayloadSucceeded(object payload)
@@ -100,6 +141,9 @@ public sealed class ActionCommandSupport
 
 		throw new CliException(MapProtocolError(standard.ErrorCode), standard.Error ?? "Payload action failed.", standard);
 	}
+
+	private static bool LooksLikeFullTargetId(string targetId) =>
+		targetId.Length > 8 && targetId.Contains('-', StringComparison.Ordinal);
 
 	private static string MapProtocolError(string? errorCode)
 	{

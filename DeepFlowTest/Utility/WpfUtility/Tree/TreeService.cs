@@ -8,6 +8,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -111,6 +112,7 @@ public sealed class TreeService
 		{
 			if (Application.Current is not null)
 			{
+				AddRoot(Application.Current);
 				foreach (Window? window in Application.Current.Windows)
 					AddRoot(window);
 			}
@@ -207,6 +209,12 @@ public sealed class TreeService
 
 	private static IEnumerable<object?> EnumerateChildren(object target, TargetObjectMetadata metadata)
 	{
+		if (target is Application application)
+		{
+			foreach (Window? window in application.Windows)
+				yield return window;
+		}
+
 		if (target is DependencyObject dependencyObject)
 		{
 			foreach (var visualChild in EnumerateVisualChildren(dependencyObject))
@@ -231,14 +239,25 @@ public sealed class TreeService
 
 		if (metadata.Hwnd.HasValue)
 		{
-			foreach (var childHwnd in EnumerateNativeChildWindows(new IntPtr(metadata.Hwnd.Value)))
+			var metadataHwnd = new IntPtr(metadata.Hwnd.Value);
+			foreach (var childHwnd in EnumerateNativeChildWindows(metadataHwnd))
 				yield return childHwnd;
 		}
 
 		if (target is IntPtr hwnd)
 		{
+			var automationElement = TryGetAutomationElement(hwnd);
+			if (automationElement is not null)
+				yield return automationElement;
+
 			foreach (var childHwnd in EnumerateNativeChildWindows(hwnd))
 				yield return childHwnd;
+		}
+
+		if (target is AutomationElement automationTarget)
+		{
+			foreach (var child in EnumerateAutomationChildren(automationTarget))
+				yield return child;
 		}
 	}
 
@@ -393,6 +412,59 @@ public sealed class TreeService
 
 		foreach (var child in children)
 			yield return child;
+	}
+
+	private static AutomationElement? TryGetAutomationElement(IntPtr hwnd)
+	{
+		if (hwnd == IntPtr.Zero)
+			return null;
+
+		try
+		{
+			return AutomationElement.FromHandle(hwnd);
+		}
+		catch (ElementNotAvailableException)
+		{
+			return null;
+		}
+		catch (InvalidOperationException)
+		{
+			return null;
+		}
+	}
+
+	private static IEnumerable<AutomationElement> EnumerateAutomationChildren(AutomationElement element)
+	{
+		AutomationElement? child;
+		try
+		{
+			child = TreeWalker.ControlViewWalker.GetFirstChild(element);
+		}
+		catch (ElementNotAvailableException)
+		{
+			yield break;
+		}
+		catch (InvalidOperationException)
+		{
+			yield break;
+		}
+
+		while (child is not null)
+		{
+			yield return child;
+			try
+			{
+				child = TreeWalker.ControlViewWalker.GetNextSibling(child);
+			}
+			catch (ElementNotAvailableException)
+			{
+				yield break;
+			}
+			catch (InvalidOperationException)
+			{
+				yield break;
+			}
+		}
 	}
 
 	[DllImport("user32.dll")]

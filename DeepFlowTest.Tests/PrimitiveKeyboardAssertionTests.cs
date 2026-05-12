@@ -37,6 +37,7 @@ public sealed class PrimitiveKeyboardAssertionTests
 		var element = driver.GetElement(ElementSelector.ByName("inputBox"));
 		var keyboard = driver.Keyboard;
 		keyboard.DelayMs = 12;
+		keyboard.EnsureForeground = false;
 
 		keyboard.Type(element, "hello", clearFirst: true);
 		keyboard.Press(element, "Enter");
@@ -49,6 +50,7 @@ public sealed class PrimitiveKeyboardAssertionTests
 		Assert.That(typeCommand.ClearFirst, Is.True);
 		Assert.That(keyCommands.Select(static command => command.Keys), Is.EqualTo(new object?[] { "Enter", "Control+A" }));
 		Assert.That(keyCommands.All(command => command.DelayMs == 12), Is.True);
+		Assert.That(keyCommands.All(command => command.EnsureForeground == false), Is.True);
 	}
 
 	[Test]

@@ -66,6 +66,13 @@ public static class Program
 				commonOptions.ValidateTargetSelectorRequired();
 
 			var data = Execute(commandPath, args, services, defaults, commonOptions, stderr);
+			if (data is CliResponseSequence sequence)
+			{
+				foreach (var envelope in sequence.Envelopes)
+					CliOutput.Write(envelope, commonOptions, stdout);
+				return 0;
+			}
+
 			CliOutput.Write(CliResponseFactory.Success(commandName, data, stopwatch), commonOptions, stdout);
 			return 0;
 		}
@@ -104,20 +111,23 @@ public static class Program
 			case "version":
 				return new ProductVersionData { ProductName = DeepFlowTest.ProductInfo.Name };
 			case "config get":
-				return services.DefaultsStore.Get(GetOptionalPositional(args, 2));
+				return services.DefaultsStore.Get(GetConfigPositional(args, 0));
 			case "config set":
-				services.DefaultsStore.Set(GetRequiredPositional(args, 2, "key"), GetRequiredPositional(args, 3, "value"));
+				var setKey = GetRequiredConfigPositional(args, 0, "key");
+				var setValue = GetRequiredConfigPositional(args, 1, "value");
+				services.DefaultsStore.Set(setKey, setValue);
 				return new
 				{
-					key = GetRequiredPositional(args, 2, "key"),
-					value = services.DefaultsStore.Get(GetRequiredPositional(args, 2, "key")),
+					key = setKey,
+					value = services.DefaultsStore.Get(setKey),
 				};
 			case "config clear":
-				services.DefaultsStore.Clear(GetRequiredPositional(args, 2, "key"));
+				var clearKey = GetRequiredConfigPositional(args, 0, "key");
+				services.DefaultsStore.Clear(clearKey);
 				return new
 				{
-					key = GetRequiredPositional(args, 2, "key"),
-					value = services.DefaultsStore.Get(GetRequiredPositional(args, 2, "key")),
+					key = clearKey,
+					value = services.DefaultsStore.Get(clearKey),
 				};
 			case "config reset":
 				services.DefaultsStore.Reset();
@@ -205,14 +215,15 @@ public static class Program
 		if (!CliArgumentReader.HasOption(args, "--include-hidden") && !properties.Contains("IsVisible", StringComparer.Ordinal))
 			properties = properties.Concat(new[] { "IsVisible" }).ToArray();
 
+		var limit = CliArgumentReader.GetInt(args, "--limit", defaults.TreeLimit);
 		using var session = OpenSession(services, commonOptions);
-		var snapshot = ReadSnapshot(session, commonOptions, properties, defaults.TreeLimit);
+		var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.TreeLimit, limit));
 		var options = new TreeSnapshotOptions
 		{
 			Shape = CliArgumentReader.GetOption(args, "--shape") ?? defaults.TreeShape,
 			RootTargetId = CliArgumentReader.GetOption(args, "--root", "--target-id"),
 			MaxDepth = CliArgumentReader.GetInt(args, "--max-depth", defaults.TreeMaxDepth),
-			Limit = CliArgumentReader.GetInt(args, "--limit", defaults.TreeLimit),
+			Limit = limit,
 			IncludeHidden = CliArgumentReader.HasOption(args, "--include-hidden"),
 			IncludeTypeNames = CliArgumentReader.HasOption(args, "--type-names"),
 			IncludePath = CliArgumentReader.HasOption(args, "--include-path"),
@@ -226,8 +237,8 @@ public static class Program
 	{
 		var properties = GetRequestedProperties(args, defaults);
 		using var session = OpenSession(services, commonOptions);
-		var snapshot = ReadSnapshot(session, commonOptions, properties, defaults.TreeLimit);
 		var options = CreateFindOptions(args, defaults, commonOptions, properties);
+		var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.TreeLimit, options.Limit));
 		var result = new FindSnapshotService().Find(snapshot, options);
 		if (result.MatchCount == 0 && CliArgumentReader.HasOption(args, "--require-match"))
 			throw new CliException(CliErrorCodes.NoMatch, "No matching nodes were found.");
@@ -267,7 +278,10 @@ public static class Program
 		using var session = OpenSession(services, commonOptions);
 		var format = ScreenshotFileService.NormalizeFormat(CliArgumentReader.GetOption(args, "--image-format") ?? defaults.ScreenshotFormat);
 		var targetId = CliArgumentReader.GetOption(args, "--target", "--target-id");
-		if (!string.IsNullOrWhiteSpace(targetId))
+		var selector = ElementSelector.FromArgs(args);
+		if (string.IsNullOrWhiteSpace(targetId) && !selector.IsEmpty)
+			targetId = new ElementResolver().Resolve(ReadSnapshot(session, commonOptions, defaults.PropertyNames, defaults.TreeLimit), selector).TargetId;
+		else if (!string.IsNullOrWhiteSpace(targetId))
 		{
 			var snapshot = ReadSnapshot(session, commonOptions, defaults.PropertyNames, defaults.TreeLimit);
 			targetId = new CliTargetIdService().Resolve(targetId!, snapshot);
@@ -300,10 +314,16 @@ public static class Program
 
 		var interval = CliArgumentReader.GetInt(args, "--interval-ms", defaults.WaitIntervalMs);
 		var requiredMatches = CliArgumentReader.GetInt(args, "--match-count", defaults.WaitMatchCount);
+		if (interval <= 0)
+			throw new CliException(CliErrorCodes.InvalidArguments, "Wait interval must be greater than zero.");
+		if (requiredMatches <= 0)
+			throw new CliException(CliErrorCodes.InvalidArguments, "Wait match count must be greater than zero.");
+
 		var stopwatch = Stopwatch.StartNew();
 		while (stopwatch.ElapsedMilliseconds <= commonOptions.TimeoutMs)
 		{
-			var snapshot = ReadSnapshot(session, commonOptions, properties, defaults.TreeLimit);
+			WaitCancellationToken.ThrowIfCancellationRequested();
+			var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.TreeLimit, options.Limit));
 			var result = new FindSnapshotService().Find(snapshot, options);
 			if (result.MatchCount >= requiredMatches)
 				return result;
@@ -330,36 +350,39 @@ public static class Program
 			throw new CliException(CliErrorCodes.InvalidArguments, "Stream interval must be at least 50 ms.");
 
 		var duration = CliArgumentReader.GetInt(args, "--duration-ms", interval);
+		if (duration < 0)
+			throw new CliException(CliErrorCodes.InvalidArguments, "Stream duration must be zero or greater.");
+
 		var format = streamKind == ProtocolConstants.StreamKinds.Screenshot
 			? ScreenshotFileService.NormalizeFormat(CliArgumentReader.GetOption(args, "--image-format") ?? defaults.ScreenshotFormat)
 			: defaults.ScreenshotFormat;
 		var properties = GetRequestedProperties(args, defaults);
 		using var session = OpenSession(services, commonOptions);
-		var start = session.Send<StartSendingCommandResponse>(
-			new StartSendingCommandRequest
-			{
-				StreamKind = streamKind,
-				IntervalMs = interval,
-				PropNames = properties,
-				TargetId = CliArgumentReader.GetOption(args, "--target", "--target-id"),
-				Format = format,
-				TimeoutMs = commonOptions.TimeoutMs,
-			},
-			commonOptions.TimeoutMs);
-
-		var frameCount = Math.Max(1, Math.Min(3, (duration + interval - 1) / interval));
-		var frames = new List<StreamMessage>();
-		VisualTreeSnapshot? previous = null;
-		for (var i = 0; i < frameCount; i++)
+		var request = new StartSendingCommandRequest
 		{
-			var sequence = i + 1;
-			frames.Add(new StreamMessage
-			{
-				SubscriptionId = start.SubscriptionId,
-				StreamKind = streamKind,
-				SequenceNumber = sequence,
-				Data = CreateStreamFrameData(session, commonOptions, defaults, streamKind, properties, format, ref previous),
-			});
+			StreamKind = streamKind,
+			IntervalMs = interval,
+			PropNames = properties,
+			TargetId = CliArgumentReader.GetOption(args, "--target", "--target-id"),
+			Format = format,
+			TimeoutMs = commonOptions.TimeoutMs,
+		};
+		using var stream = session.StartStream(request, commonOptions.TimeoutMs);
+		var envelopes = new List<CliResponseEnvelope>
+		{
+			CliResponseFactory.Success($"stream {streamKind} start", stream.Start, Stopwatch.StartNew()),
+		};
+
+		var stopwatch = Stopwatch.StartNew();
+		while (stopwatch.ElapsedMilliseconds <= duration)
+		{
+			var remaining = duration - (int)stopwatch.ElapsedMilliseconds;
+			var readTimeout = Math.Max(interval, Math.Min(commonOptions.TimeoutMs, remaining + interval));
+			var frame = stream.ReadFrame(readTimeout, StreamCancellationToken);
+			if (frame is null)
+				break;
+
+			envelopes.Add(CliResponseFactory.Success($"stream {streamKind} frame", frame, Stopwatch.StartNew()));
 		}
 
 		var stop = session.Send<StopSendingCommandResponse>(
@@ -369,57 +392,9 @@ public static class Program
 				TimeoutMs = Math.Min(commonOptions.TimeoutMs, 2000),
 			},
 			Math.Min(commonOptions.TimeoutMs, 2000));
+		envelopes.Add(CliResponseFactory.Success($"stream {streamKind} stop", stop, Stopwatch.StartNew()));
 
-		return new StreamCommandResult
-		{
-			Start = start,
-			Frames = frames,
-			Stop = stop,
-		};
-	}
-
-	private static object CreateStreamFrameData(
-		ICliAppSession session,
-		CliCommonOptions commonOptions,
-		CliDefaults defaults,
-		string streamKind,
-		IReadOnlyList<string> properties,
-		string format,
-		ref VisualTreeSnapshot? previous)
-	{
-		switch (streamKind)
-		{
-			case ProtocolConstants.StreamKinds.VisualTree:
-				return ReadSnapshot(session, commonOptions, properties, defaults.TreeLimit);
-			case ProtocolConstants.StreamKinds.VisualTreeDelta:
-				var current = ReadSnapshot(session, commonOptions, properties, defaults.TreeLimit);
-				if (previous is null)
-				{
-					previous = current;
-					return new { isFullSnapshot = true, snapshot = current };
-				}
-
-				var delta = VisualTreeSnapshotDelta.Create(previous, current);
-				previous = current;
-				return new { isFullSnapshot = false, delta };
-			case ProtocolConstants.StreamKinds.Screenshot:
-				return session.Send<ScreenshotCommandResponse>(
-					new ScreenshotCommandRequest
-					{
-						Format = format,
-						TimeoutMs = commonOptions.TimeoutMs,
-					},
-					commonOptions.TimeoutMs);
-			case ProtocolConstants.StreamKinds.EventLog:
-				return new
-				{
-					status = "heartbeat",
-					processId = session.Hello.ProcessId,
-					rootCount = session.Hello.IsReusable ? 1 : 0,
-				};
-			default:
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported stream kind '{streamKind}'.");
-		}
+		return new CliResponseSequence(envelopes);
 	}
 
 	private static ICliAppSession OpenSession(CliServices services, CliCommonOptions commonOptions)
@@ -504,6 +479,11 @@ public static class Program
 		new ActionGate().Demand("click", commonOptions);
 		var button = (CliArgumentReader.GetOption(args, "--button") ?? "left").ToLowerInvariant();
 		var count = CliArgumentReader.GetInt(args, "--count", 1);
+		if (count <= 0)
+			throw new CliException(CliErrorCodes.InvalidArguments, "Click count must be greater than zero.");
+		if (button is not ("left" or "right" or "double"))
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported click button '{button}'.");
+
 		using var session = OpenSession(services, commonOptions);
 		return new ActionCommandSupport().Execute(
 			"click",
@@ -513,7 +493,7 @@ public static class Program
 			ElementSelector.FromArgs(args),
 			targetId =>
 			{
-				if (button == "double" || count >= 2)
+				if (button == "double")
 				{
 					return new KnownRoutedEventCommandRequest
 					{
@@ -521,9 +501,6 @@ public static class Program
 						EventName = "MouseDoubleClick",
 					};
 				}
-
-				if (button is not ("left" or "right"))
-					throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported click button '{button}'.");
 
 				return new ClickCommandRequest
 				{
@@ -546,18 +523,22 @@ public static class Program
 			defaults,
 			ElementSelector.FromArgs(args),
 			targetId => new FocusCommandRequest { TargetId = targetId ?? string.Empty },
-			requireElementTarget: true);
+			requireElementTarget: true,
+			afterProperties: new[] { "IsFocused", "IsKeyboardFocused", "IsKeyboardFocusWithin" });
 	}
 
 	private static ActionCommandResult ExecuteType(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("type", commonOptions);
-		var text = CliArgumentReader.GetOption(args, "--text");
+		var text = CliArgumentReader.GetOption(args, "--value", "--text");
 		if (text is null)
-			throw new CliException(CliErrorCodes.InvalidArguments, "The type command requires --text.");
+			throw new CliException(CliErrorCodes.InvalidArguments, "The type command requires --value or --text.");
 
 		var selector = ElementSelector.FromArgs(args);
-		selector.Text = null;
+		selector.Text = CliArgumentReader.GetOption(args, "--selector-text");
+		if (selector.IsEmpty)
+			throw new CliException(CliErrorCodes.UnsupportedTarget, "Physical foreground typing without a target selector is not supported; provide a target selector.");
+
 		using var session = OpenSession(services, commonOptions);
 		return new ActionCommandSupport().Execute(
 			"type",
@@ -571,7 +552,8 @@ public static class Program
 				TargetId = targetId,
 				ClearFirst = CliArgumentReader.HasOption(args, "--clear-first"),
 			},
-			requireElementTarget: !selector.IsEmpty);
+			requireElementTarget: true,
+			afterProperties: new[] { "Text", "Content" });
 	}
 
 	private static ActionCommandResult ExecuteKey(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
@@ -595,8 +577,10 @@ public static class Program
 				Keys = keys,
 				TargetId = targetId,
 				DelayMs = CliArgumentReader.GetInt(args, "--delay-ms", defaults.KeyDelayMs),
+				EnsureForeground = defaults.EnsureForeground,
 			},
-			requireElementTarget: !selector.IsEmpty);
+			requireElementTarget: !selector.IsEmpty,
+			afterProperties: new[] { "Text", "Content", "IsKeyboardFocused", "IsKeyboardFocusWithin" });
 	}
 
 	private static ActionCommandResult ExecuteSet(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
@@ -623,7 +607,8 @@ public static class Program
 				PropertyName = property!,
 				PropertyValue = ParseJsonScalar(rawValue),
 			},
-			requireElementTarget: true);
+			requireElementTarget: true,
+			afterProperties: new[] { property! });
 	}
 
 	private static ActionCommandResult ExecuteRaise(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
@@ -658,6 +643,8 @@ public static class Program
 		new ActionGate().Demand("invoke", commonOptions, arbitraryInvoke: arbitrary);
 		if (string.IsNullOrWhiteSpace(operation) && string.IsNullOrWhiteSpace(code))
 			throw new CliException(CliErrorCodes.InvalidArguments, "The invoke command requires --operation or --code.");
+		if (!string.IsNullOrWhiteSpace(operation) && !string.IsNullOrWhiteSpace(code))
+			throw new CliException(CliErrorCodes.InvalidArguments, "The invoke command accepts either --operation or --code, not both.");
 
 		if (!string.IsNullOrWhiteSpace(operation) && !KnownOperations.Contains(operation!))
 			throw new CliException(CliErrorCodes.InvalidArguments, $"Known operation '{operation}' is not allow-listed.");
@@ -721,7 +708,13 @@ public static class Program
 
 	private static void ValidateKeys(string keys)
 	{
-		var known = new[] { "Enter", "Tab", "Escape", "Esc", "Space", "Backspace", "Delete", "Ctrl", "Control", "Shift", "Alt", "A", "C", "V", "X", "Z" };
+		var known = new[]
+		{
+			"Enter", "Return", "Tab", "Escape", "Esc", "Space", "Backspace", "Delete", "Del",
+			"Insert", "Ins", "Home", "End", "PageUp", "PageDown", "Up", "Down", "Left", "Right",
+			"Ctrl", "Control", "Shift", "Alt", "A", "C", "V", "X", "Y", "Z",
+			"F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+		};
 		foreach (var token in keys.Split(new[] { '+', ',', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
 		{
 			if (token.Length == 1 && char.IsLetterOrDigit(token[0]))
@@ -735,13 +728,10 @@ public static class Program
 	{
 		"Click",
 		"MouseDoubleClick",
-		"MouseDown",
-		"MouseUp",
-		"KeyDown",
-		"KeyUp",
-		"GotFocus",
-		"LostFocus",
-		"SelectionChanged",
+		"Checked",
+		"Unchecked",
+		"Expanded",
+		"Collapsed",
 	};
 
 	private static readonly HashSet<string> KnownOperations = new(StringComparer.Ordinal)
@@ -799,6 +789,44 @@ public static class Program
 	private static bool HasOption(string[] args, string option) =>
 		args.Any(arg => string.Equals(arg, option, StringComparison.Ordinal) || arg.StartsWith(option + "=", StringComparison.Ordinal));
 
+	private static string? GetConfigPositional(string[] args, int index)
+	{
+		var positionals = GetConfigPositionals(args);
+		return index >= 0 && index < positionals.Count ? positionals[index] : null;
+	}
+
+	private static string GetRequiredConfigPositional(string[] args, int index, string name)
+	{
+		var value = GetConfigPositional(args, index);
+		if (string.IsNullOrWhiteSpace(value))
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Missing required argument '{name}'.");
+
+		return value!;
+	}
+
+	private static IReadOnlyList<string> GetConfigPositionals(string[] args)
+	{
+		var result = new List<string>();
+		for (var i = 2; i < args.Length; i++)
+		{
+			var arg = args[i];
+			if (arg.StartsWith("--", StringComparison.Ordinal))
+			{
+				var optionName = arg.Split('=', 2)[0];
+				if (OptionHasSeparateValue(optionName) && !arg.Contains('=', StringComparison.Ordinal) && i + 1 < args.Length)
+					i++;
+				continue;
+			}
+
+			result.Add(arg);
+		}
+
+		return result;
+	}
+
+	private static bool OptionHasSeparateValue(string optionName) =>
+		optionName is "--format" or "--after";
+
 	private static string? GetOptionalPositional(string[] args, int index)
 	{
 		if (args.Length <= index || args[index].StartsWith("-", StringComparison.Ordinal))
@@ -815,6 +843,10 @@ public static class Program
 
 		return value;
 	}
+
+	private static CancellationToken WaitCancellationToken => CancellationToken.None;
+
+	private static CancellationToken StreamCancellationToken => CancellationToken.None;
 }
 
 public sealed class ProtocolCommandData<TResponse>
@@ -833,4 +865,14 @@ public sealed class StreamCommandResult
 	public IReadOnlyList<StreamMessage> Frames { get; set; } = Array.Empty<StreamMessage>();
 
 	public StopSendingCommandResponse Stop { get; set; } = new();
+}
+
+public sealed class CliResponseSequence
+{
+	public CliResponseSequence(IReadOnlyList<CliResponseEnvelope> envelopes)
+	{
+		Envelopes = envelopes ?? throw new ArgumentNullException(nameof(envelopes));
+	}
+
+	public IReadOnlyList<CliResponseEnvelope> Envelopes { get; }
 }

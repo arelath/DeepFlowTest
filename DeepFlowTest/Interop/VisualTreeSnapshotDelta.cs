@@ -3,7 +3,7 @@ namespace DeepFlowTest.Interop;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 public sealed class VisualTreeSnapshotDelta
 {
@@ -50,6 +50,33 @@ public sealed class VisualTreeSnapshotDelta
 			string.Equals(left.FrameworkTypeName, right.FrameworkTypeName, StringComparison.Ordinal) &&
 			left.Hwnd == right.Hwnd &&
 			left.ChildIds.SequenceEqual(right.ChildIds, StringComparer.Ordinal) &&
-			string.Equals(JsonConvert.SerializeObject(left.Properties), JsonConvert.SerializeObject(right.Properties), StringComparison.Ordinal);
+			PropertiesEqual(left.Properties, right.Properties);
+	}
+
+	private static bool PropertiesEqual(IReadOnlyDictionary<string, object?> left, IReadOnlyDictionary<string, object?> right)
+	{
+		if (left.Count != right.Count)
+			return false;
+
+		foreach (var item in left)
+		{
+			if (!right.TryGetValue(item.Key, out var rightValue))
+				return false;
+
+			if (!JToken.DeepEquals(ToToken(item.Value), ToToken(rightValue)))
+				return false;
+		}
+
+		return true;
+	}
+
+	private static JToken ToToken(object? value)
+	{
+		return value switch
+		{
+			null => JValue.CreateNull(),
+			JToken token => token,
+			_ => JToken.FromObject(value),
+		};
 	}
 }

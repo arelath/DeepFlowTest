@@ -34,5 +34,7 @@ public static class CliErrorCodes
 	public const string TargetExited = "target-exited";
 	public const string TargetNotFound = "target-not-found";
 	public const string UnexpectedError = "unexpected-error";
+	public const string UnsupportedArchitecture = "unsupported-architecture";
+	public const string UnsupportedFramework = "unsupported-framework";
 	public const string UnsupportedTarget = "unsupported-target";
 }

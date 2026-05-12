@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -24,20 +25,31 @@ internal static class TargetActionCommand
 			var button = request.MouseButton?.Trim().ToLowerInvariant() ?? "left";
 			if (target is ButtonBase buttonBase && button == "left")
 			{
-				buttonBase.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, buttonBase));
+				for (var i = 0; i < Math.Max(1, request.ClickCount); i++)
+					buttonBase.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, buttonBase));
+				return ActionResult.Ok();
+			}
+
+			if (target is UIElement uiElement && button == "right")
+			{
+				RaiseMouseButtonEvent(uiElement, UIElement.MouseRightButtonUpEvent, MouseButton.Right);
 				return ActionResult.Ok();
 			}
 
 			if (target is Forms.Button formsButton && button == "left")
 			{
-				formsButton.PerformClick();
+				for (var i = 0; i < Math.Max(1, request.ClickCount); i++)
+					formsButton.PerformClick();
 				return ActionResult.Ok();
 			}
 
-			if (target is AutomationElement automationElement && button == "left" && TryInvokeAutomation(automationElement))
+			if (target is Forms.Control formsControl && TryClickNativeWindow(formsControl.Handle, button, request.ClickCount))
 				return ActionResult.Ok();
 
-			if (target is IntPtr hwnd && TryClickNativeWindow(hwnd, button))
+			if (target is AutomationElement automationElement && button == "left" && TryInvokeAutomation(automationElement, request.ClickCount))
+				return ActionResult.Ok();
+
+			if (target is IntPtr hwnd && TryClickNativeWindow(hwnd, button, request.ClickCount))
 				return ActionResult.Ok();
 
 			return ActionResult.Unsupported($"Target type '{target.GetType().FullName}' does not support {button} click.");
@@ -65,13 +77,13 @@ internal static class TargetActionCommand
 	public static object KeyPress(KeyPressCommandRequest request, TreeService treeService)
 	{
 		if (!string.IsNullOrWhiteSpace(request.TargetId))
-			return WithTarget(request.TargetId!, treeService, target => SendKeysToTarget(target, request.Keys));
+			return WithTarget(request.TargetId!, treeService, target => SendKeysToTarget(target, request.Keys, request.DelayMs, request.EnsureForeground));
 
 		var focusedElement = Keyboard.FocusedElement;
 		if (focusedElement is null)
 			return UnsupportedTarget("No focused WPF element is available for key input.");
 
-		return ToResponse(SendKeysToTarget(focusedElement, request.Keys));
+		return ToResponse(SendKeysToTarget(focusedElement, request.Keys, request.DelayMs, request.EnsureForeground));
 	}
 
 	public static object SetProperty(SetPropertyCommandRequest request, TreeService treeService) =>
@@ -185,18 +197,28 @@ internal static class TargetActionCommand
 		return ActionResult.Unsupported($"Target type '{target.GetType().FullName}' does not support text input.");
 	}
 
-	private static ActionResult SendKeysToTarget(object target, object? keys)
+	private static ActionResult SendKeysToTarget(object target, object? keys, int delayMs, bool ensureForeground)
 	{
 		var keyText = Convert.ToString(UnwrapJsonValue(keys), CultureInfo.InvariantCulture) ?? string.Empty;
 		if (string.IsNullOrEmpty(keyText))
 			return ActionResult.Unsupported("Key input cannot be empty.");
+
+		if (ensureForeground)
+			FocusTarget(target);
+
+		if (delayMs > 0)
+			Thread.Sleep(delayMs);
 
 		if (target is TextBox textBox)
 			return SendKeysToTextBox(textBox, keyText);
 
 		if (target is Forms.TextBoxBase formsTextBox)
 		{
-			if (string.Equals(keyText, "Backspace", StringComparison.OrdinalIgnoreCase))
+			if (IsSelectAllShortcut(keyText))
+			{
+				formsTextBox.SelectAll();
+			}
+			else if (string.Equals(keyText, "Backspace", StringComparison.OrdinalIgnoreCase))
 			{
 				if (formsTextBox.Text.Length != 0)
 					formsTextBox.Text = formsTextBox.Text.Substring(0, formsTextBox.Text.Length - 1);
@@ -214,6 +236,12 @@ internal static class TargetActionCommand
 
 	private static ActionResult SendKeysToTextBox(TextBox textBox, string keyText)
 	{
+		if (IsSelectAllShortcut(keyText))
+		{
+			textBox.SelectAll();
+			return ActionResult.Ok();
+		}
+
 		if (string.Equals(keyText, "Backspace", StringComparison.OrdinalIgnoreCase))
 		{
 			if (textBox.Text.Length != 0)
@@ -235,6 +263,20 @@ internal static class TargetActionCommand
 		string.Equals(keyText, "Enter", StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(keyText, "Tab", StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(keyText, "Escape", StringComparison.OrdinalIgnoreCase);
+
+	private static bool IsSelectAllShortcut(string keyText) =>
+		string.Equals(keyText, "Control+A", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "Ctrl+A", StringComparison.OrdinalIgnoreCase);
+
+	private static void RaiseMouseButtonEvent(UIElement target, RoutedEvent routedEvent, MouseButton button)
+	{
+		var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, button)
+		{
+			RoutedEvent = routedEvent,
+			Source = target,
+		};
+		target.RaiseEvent(args);
+	}
 
 	private static ActionResult SetProperty(object target, string propertyName, object? rawValue)
 	{
@@ -412,13 +454,14 @@ internal static class TargetActionCommand
 		}
 	}
 
-	private static bool TryInvokeAutomation(AutomationElement automationElement)
+	private static bool TryInvokeAutomation(AutomationElement automationElement, int clickCount = 1)
 	{
 		try
 		{
 			if (automationElement.TryGetCurrentPattern(InvokePattern.Pattern, out var pattern) && pattern is InvokePattern invokePattern)
 			{
-				invokePattern.Invoke();
+				for (var i = 0; i < Math.Max(1, clickCount); i++)
+					invokePattern.Invoke();
 				return true;
 			}
 		}
@@ -429,13 +472,10 @@ internal static class TargetActionCommand
 		return false;
 	}
 
-	private static bool TryClickNativeWindow(IntPtr hwnd, string mouseButton)
+	private static bool TryClickNativeWindow(IntPtr hwnd, string mouseButton, int clickCount)
 	{
 		if (hwnd == IntPtr.Zero || !NativeMethods.GetClientRect(hwnd, out var rect))
 			return false;
-
-		if (string.Equals(mouseButton, "left", StringComparison.OrdinalIgnoreCase))
-			NativeMethods.SendMessage(hwnd, NativeMethods.BM_CLICK, IntPtr.Zero, IntPtr.Zero);
 
 		var x = Math.Max(0, (rect.Right - rect.Left) / 2);
 		var y = Math.Max(0, (rect.Bottom - rect.Top) / 2);
@@ -446,8 +486,20 @@ internal static class TargetActionCommand
 		var upMessage = string.Equals(mouseButton, "right", StringComparison.OrdinalIgnoreCase)
 			? NativeMethods.WM_RBUTTONUP
 			: NativeMethods.WM_LBUTTONUP;
-		return NativeMethods.PostMessage(hwnd, downMessage, IntPtr.Zero, lParam)
-			&& NativeMethods.PostMessage(hwnd, upMessage, IntPtr.Zero, lParam);
+		var count = Math.Max(1, clickCount);
+		for (var i = 0; i < count; i++)
+		{
+			if (string.Equals(mouseButton, "left", StringComparison.OrdinalIgnoreCase))
+				NativeMethods.SendMessage(hwnd, NativeMethods.BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+
+			if (!NativeMethods.PostMessage(hwnd, downMessage, IntPtr.Zero, lParam) ||
+				!NativeMethods.PostMessage(hwnd, upMessage, IntPtr.Zero, lParam))
+			{
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	private static bool TrySetNativeWindowText(IntPtr hwnd, string text, bool clearFirst)

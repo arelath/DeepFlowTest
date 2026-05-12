@@ -83,6 +83,24 @@ public sealed class VisualTreeSnapshotTests
 		Assert.That(delta.HasChanges, Is.True);
 	}
 
+	[Test]
+	public void DeltaComparesPropertiesStructurally()
+	{
+		var previousNode = Node("target", null, "Button");
+		previousNode.Properties["First"] = 1;
+		previousNode.Properties["Second"] = "two";
+		var currentNode = Node("target", null, "Button");
+		currentNode.Properties["Second"] = "two";
+		currentNode.Properties["First"] = 1;
+		var previous = VisualTreeSnapshot.Create(1, new[] { previousNode });
+		var current = VisualTreeSnapshot.Create(2, new[] { currentNode });
+
+		var delta = VisualTreeSnapshotDelta.Create(previous, current);
+
+		Assert.That(delta.Changed, Is.Empty);
+		Assert.That(delta.HasChanges, Is.False);
+	}
+
 	private static VisualTreeNodeDto Node(string targetId, string? parentId, string typeName, params (string Name, object? Value)[] properties)
 	{
 		var node = new VisualTreeNodeDto

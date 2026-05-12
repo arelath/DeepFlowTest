@@ -22,21 +22,23 @@ public static class ExpressionPayloadSerializer
 
 		var closureValues = ClosureValueCollector.Collect(expression);
 		var expressionText = expression.ToString();
-		var canonicalPayload = CreateCanonicalPayload(expression, expressionText, closureValues);
+		var expressionJson = expression.ToJson(new FactorySettings { AllowPrivateFieldAccess = true });
+		var canonicalPayload = CreateCanonicalPayload(expression, expressionText, expressionJson, closureValues);
 
 		return new ExpressionMatcherPayload
 		{
-			ExpressionJson = expression.ToJson(new FactorySettings { AllowPrivateFieldAccess = true }),
+			ExpressionJson = expressionJson,
 			ExpressionText = expressionText,
 			ExpressionHash = ComputeSha256(canonicalPayload),
 			ClosureValues = closureValues,
 		};
 	}
 
-	private static string CreateCanonicalPayload(LambdaExpression expression, string expressionText, Dictionary<string, object?> closureValues)
+	private static string CreateCanonicalPayload(LambdaExpression expression, string expressionText, string expressionJson, Dictionary<string, object?> closureValues)
 	{
 		var payload = new JObject
 		{
+			["ExpressionJson"] = expressionJson,
 			["ExpressionText"] = expressionText,
 			["ReturnType"] = expression.ReturnType.AssemblyQualifiedName,
 			["ParameterTypes"] = new JArray(expression.Parameters.Select(static parameter => parameter.Type.AssemblyQualifiedName)),

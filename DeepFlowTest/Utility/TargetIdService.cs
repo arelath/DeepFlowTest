@@ -3,6 +3,7 @@ namespace DeepFlowTest.Utility;
 using System;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 public sealed class TargetIdService
@@ -40,7 +41,15 @@ public sealed class TargetIdService
 		if (!targetsById.TryGetValue(targetId, out var weakReference))
 		{
 			if (valueTargetsById.TryGetValue(targetId, out var valueTarget))
+			{
+				if (valueTarget is IntPtr hwnd && !IsWindow(hwnd))
+				{
+					valueTargetsById.TryRemove(targetId, out _);
+					return TargetIdResolution.Stale(targetId);
+				}
+
 				return TargetIdResolution.Found(targetId, valueTarget);
+			}
 
 			return TargetIdResolution.NotFound(targetId);
 		}
@@ -67,6 +76,9 @@ public sealed class TargetIdService
 
 		public string TargetId { get; }
 	}
+
+	[DllImport("user32.dll")]
+	private static extern bool IsWindow(IntPtr hWnd);
 }
 
 public sealed class TargetIdResolution

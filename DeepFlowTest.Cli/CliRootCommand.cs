@@ -259,7 +259,7 @@ public static class CliRootCommand
 
 	private static void AddScreenshotOptions(Command command)
 	{
-		AddTargetIdOption(command);
+		AddActionTargetOptions(command);
 		command.Add(CreateOption<string>("--image-format", "Image format."));
 		command.Add(CreateOption<string>("--output", "Output image path."));
 		command.Add(CreateOption<bool>("--base64", "Include base64 bytes in JSON output."));
@@ -310,7 +310,8 @@ public static class CliRootCommand
 	private static void AddTypeOptions(Command command)
 	{
 		AddActionTargetOptions(command);
-		command.Add(CreateOption<string>("--text", "Text to type."));
+		command.Add(CreateOption<string>("--value", "Text to type."));
+		command.Add(CreateOption<string>("--selector-text", "Text selector."));
 		command.Add(CreateOption<bool>("--clear-first", "Clear existing text first."));
 	}
 

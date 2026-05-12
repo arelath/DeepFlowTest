@@ -3,6 +3,8 @@ namespace DeepFlowTest.Tests;
 using System;
 using System.Linq;
 using System.Threading;
+using System.Windows;
+using System.Windows.Forms.Integration;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -110,6 +112,48 @@ public sealed class WinFormsSupportTests
 		finally
 		{
 			form.Close();
+		}
+	}
+
+	[Test]
+	public void HybridWpfWinFormsHostAppearsInSnapshots()
+	{
+		var host = new WindowsFormsHost
+		{
+			Child = new Forms.Button { Name = "hostedFormsButton", Text = "Hosted", Width = 90, Height = 28 },
+		};
+		var window = new Window
+		{
+			Title = "Hybrid host",
+			Content = host,
+			Width = 220,
+			Height = 140,
+			ShowInTaskbar = false,
+			WindowStartupLocation = WindowStartupLocation.Manual,
+			Left = -20000,
+			Top = -20000,
+		};
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			host.Child.CreateControl();
+			Forms.Application.DoEvents();
+
+			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
+			{
+				AsSnapshot = true,
+				PropNames = new[] { "Name", "Text", "Title" },
+				MaxNodeCount = 300,
+			})!;
+
+			Assert.That(snapshot.Nodes.Any(node => node.Properties.TryGetValue("Name", out var value) && Equals(value, "hostedFormsButton")), Is.True);
+			Assert.That(snapshot.TargetFrameworkFamily, Is.EqualTo("mixed"));
+		}
+		finally
+		{
+			window.Close();
 		}
 	}
 

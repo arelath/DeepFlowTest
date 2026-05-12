@@ -66,6 +66,26 @@ public sealed class ElementApiTests
 	}
 
 	[Test]
+	public void ChildrenRefreshNodeFromCurrentSnapshotForFindResults()
+	{
+		var snapshot = VisualTreeSnapshot.Create(
+			1,
+			new[]
+			{
+				Node("parent", null, "StackPanel", "Parent"),
+				Node("child", "parent", "Button", "Child"),
+			});
+		snapshot.Nodes[0].ChildIds.Add("child");
+		var session = new FakeSession(FindMatch("parent", "parent"), snapshot);
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(ElementSelector.ByName("parent"));
+
+		var child = element.Children.Single();
+
+		Assert.That(child.TargetId, Is.EqualTo("child"));
+	}
+
+	[Test]
 	public void StaleElementRepairsByRerunningOriginalSelector()
 	{
 		var session = new FakeSession(
@@ -81,6 +101,61 @@ public sealed class ElementApiTests
 		var clicks = session.SentCommands.OfType<ClickCommandRequest>().ToArray();
 		Assert.That(clicks.Select(static command => command.TargetId), Is.EqualTo(new[] { "old-target", "new-target" }));
 		Assert.That(element.TargetId, Is.EqualTo("new-target"));
+	}
+
+	[Test]
+	public void TypedStaleScreenshotRepairsBeforeReturning()
+	{
+		var session = new FakeSession(
+			FindMatch("old-target", "image"),
+			new ScreenshotCommandResponse
+			{
+				Success = false,
+				Status = ProtocolConstants.Statuses.Error,
+				ErrorCode = ProtocolConstants.ErrorCodes.StaleTarget,
+				Error = "stale",
+			},
+			FindMatch("new-target", "image"),
+			new ScreenshotCommandResponse
+			{
+				TargetId = "new-target",
+				Format = "png",
+				Width = 10,
+				Height = 20,
+				ByteCount = 3,
+				BytesBase64 = Convert.ToBase64String(new byte[] { 1, 2, 3 }),
+			});
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(ElementSelector.ByName("image"));
+
+		var screenshot = element.Screenshot();
+
+		Assert.That(screenshot.TargetId, Is.EqualTo("new-target"));
+		Assert.That(element.TargetId, Is.EqualTo("new-target"));
+	}
+
+	[Test]
+	public void AmbiguousStaleRepairFailsClearly()
+	{
+		var ambiguous = new FindElementCommandResponse
+		{
+			Matches =
+			{
+				new FindElementMatchResponse { TargetId = "new-1", TypeName = "Button" },
+				new FindElementMatchResponse { TargetId = "new-2", TypeName = "Button" },
+			},
+			MatchCount = 2,
+		};
+		var session = new FakeSession(
+			FindMatch("old-target", "submit"),
+			StandardIpcResponse.FromError("stale", ProtocolConstants.ErrorCodes.StaleTarget),
+			ambiguous);
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(ElementSelector.ByName("submit"));
+
+		var exception = Assert.Throws<AppDriverException>(() => element.Click());
+
+		Assert.That(exception!.ErrorCode, Is.EqualTo(AppDriverErrorCodes.AmbiguousTarget));
 	}
 
 	[Test]
