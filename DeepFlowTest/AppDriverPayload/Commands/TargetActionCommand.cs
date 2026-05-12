@@ -15,9 +15,12 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
+using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
+using DeepFlowTest.Utility.WpfUtility.SelectionHighlight;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using Serialize.Linq;
 using Serialize.Linq.Factories;
@@ -27,6 +30,7 @@ using SerializeJsonSerializer = Serialize.Linq.Serializers.JsonSerializer;
 
 internal static partial class TargetActionCommand
 {
+	private const BindingFlags InvokeCommandBindings = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;
 	private static readonly FactorySettings ExpressionFactorySettings = new() { AllowPrivateFieldAccess = true };
 
 	public static object Click(ClickCommandRequest request, TreeService treeService) =>
@@ -72,7 +76,10 @@ internal static partial class TargetActionCommand
 
 		var focusedElement = Keyboard.FocusedElement;
 		if (focusedElement is null)
-			return UnsupportedTarget("No focused WPF element is available for typing.");
+		{
+			KeyboardInput.TypePhysical(request.Text);
+			return StandardIpcResponse.Ok();
+		}
 
 		return ToResponse(TypeTextIntoTarget(focusedElement, request.Text, request.ClearFirst));
 	}
@@ -82,11 +89,7 @@ internal static partial class TargetActionCommand
 		if (!string.IsNullOrWhiteSpace(request.TargetId))
 			return WithTarget(ProtocolConstants.Commands.KeyPress, request.TargetId!, treeService, target => SendKeysToTarget(target, request.Keys, request.DelayMs, request.EnsureForeground));
 
-		var focusedElement = Keyboard.FocusedElement;
-		if (focusedElement is null)
-			return UnsupportedTarget("No focused WPF element is available for key input.");
-
-		return ToResponse(SendKeysToTarget(focusedElement, request.Keys, request.DelayMs, request.EnsureForeground));
+		return ToResponse(SendKeysToForeground(request.Keys, request.DelayMs));
 	}
 
 	public static object SetProperty(SetPropertyCommandRequest request, TreeService treeService) =>
@@ -230,26 +233,12 @@ internal static partial class TargetActionCommand
 
 	private static ActionResult TypeTextIntoTarget(object target, string text, bool clearFirst)
 	{
-		if (target is TextBox textBox)
+		if (target is UIElement uiElement)
 		{
+			uiElement.Focus();
 			if (clearFirst)
-				textBox.Clear();
-			textBox.SelectedText = text ?? string.Empty;
-			textBox.CaretIndex = textBox.Text.Length;
-			return ActionResult.Ok();
-		}
-
-		if (target is PasswordBox passwordBox)
-		{
-			if (clearFirst)
-				passwordBox.Clear();
-			passwordBox.Password += text ?? string.Empty;
-			return ActionResult.Ok();
-		}
-
-		if (target is ComboBox comboBox)
-		{
-			comboBox.Text = clearFirst ? text ?? string.Empty : comboBox.Text + (text ?? string.Empty);
+				ClearWpfText(target);
+			KeyboardInput.TypeTextComposition(text ?? string.Empty);
 			return ActionResult.Ok();
 		}
 
@@ -274,6 +263,25 @@ internal static partial class TargetActionCommand
 			return ActionResult.Ok();
 
 		return ActionResult.Unsupported($"Target type '{target.GetType().FullName}' does not support text input.");
+	}
+
+	private static void ClearWpfText(object target)
+	{
+		switch (target)
+		{
+			case TextBox textBox:
+				textBox.Clear();
+				break;
+			case PasswordBox passwordBox:
+				passwordBox.Clear();
+				break;
+			case System.Windows.Controls.Primitives.TextBoxBase textBoxBase:
+				textBoxBase.SelectAll();
+				break;
+			case ComboBox comboBox:
+				comboBox.Text = string.Empty;
+				break;
+		}
 	}
 
 	private static ActionResult SendKeysToTarget(object target, object? keys, int delayMs, bool ensureForeground)
@@ -319,7 +327,24 @@ internal static partial class TargetActionCommand
 			return ActionResult.Ok();
 		}
 
+		if (target is UIElement or ContentElement or Forms.Control or AutomationElement or IntPtr)
+		{
+			return SendKeysToForeground(keys, delayMs);
+		}
+
 		return ActionResult.Unsupported($"Target type '{target.GetType().FullName}' does not support key input.");
+	}
+
+	private static ActionResult SendKeysToForeground(object? keys, int delayMs)
+	{
+		var groups = KeyboardInput.ParseKeyGroups(UnwrapJsonValue(keys));
+		if (groups.Count == 0)
+			return ActionResult.Unsupported("Key input cannot be empty.");
+
+		foreach (var group in groups)
+			KeyboardInput.PressPhysical(group, delayMs);
+
+		return ActionResult.Ok();
 	}
 
 	private static ActionResult SendKeysToTextBox(TextBox textBox, string keyText)
@@ -377,22 +402,35 @@ internal static partial class TargetActionCommand
 	{
 		var mouseButton = button == "right" ? MouseButton.Right : MouseButton.Left;
 		var count = Math.Max(1, clickCount);
-		for (var i = 0; i < count; i++)
+		UIHighlight.Select(target);
+		TryEnsureAppHooks();
+		try
 		{
-			RaiseMouseButtonEvent(target, UIElement.PreviewMouseDownEvent, mouseButton);
-			RaiseMouseButtonEvent(target, UIElement.MouseDownEvent, mouseButton);
-			RaiseMouseButtonEvent(target, UIElement.PreviewMouseUpEvent, mouseButton);
-			RaiseMouseButtonEvent(target, UIElement.MouseUpEvent, mouseButton);
+			var targets = GetAscendingVisualTree(target);
+			for (var i = 0; i < count; i++)
+			{
+				AppHooks.SetButton(mouseButton, isPressed: true);
+				RaiseMouseButtonEvent(target, UIElement.PreviewMouseDownEvent, mouseButton, targets);
+				RaiseMouseButtonEvent(target, UIElement.MouseDownEvent, mouseButton, targets);
 
-			if (target is ButtonBase buttonBase && mouseButton == MouseButton.Left)
-				buttonBase.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, buttonBase));
+				AppHooks.SetButton(mouseButton, isPressed: false);
+				RaiseMouseButtonEvent(target, UIElement.PreviewMouseUpEvent, mouseButton, targets);
+				RaiseMouseButtonEvent(target, UIElement.MouseUpEvent, mouseButton, targets);
 
-			if (target is MenuItem menuItem && mouseButton == MouseButton.Left)
-				menuItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, menuItem));
+				if (target is ButtonBase buttonBase && mouseButton == MouseButton.Left)
+					buttonBase.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, buttonBase));
+
+				if (target is MenuItem menuItem && mouseButton == MouseButton.Left)
+					menuItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, menuItem));
+			}
+
+			if (count > 1 && mouseButton == MouseButton.Left && target is Control control)
+				RaiseMouseButtonEvent(control, Control.MouseDoubleClickEvent, MouseButton.Left, targets);
 		}
-
-		if (count > 1 && mouseButton == MouseButton.Left && target is Control control)
-			RaiseMouseButtonEvent(control, Control.MouseDoubleClickEvent, MouseButton.Left);
+		finally
+		{
+			AppHooks.ResetMouseState();
+		}
 
 		if (mouseButton == MouseButton.Right)
 			OpenContextMenu(target);
@@ -400,14 +438,84 @@ internal static partial class TargetActionCommand
 		return ActionResult.Ok();
 	}
 
-	private static void RaiseMouseButtonEvent(UIElement target, RoutedEvent routedEvent, MouseButton button)
+	private static void TryEnsureAppHooks()
+	{
+		try
+		{
+			AppHooks.EnsureHooked();
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+		}
+	}
+
+	private static bool RaiseMouseButtonEvent(UIElement target, RoutedEvent routedEvent, MouseButton button, IReadOnlyList<UIElement> targets)
 	{
 		var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, button)
 		{
 			RoutedEvent = routedEvent,
 			Source = target,
 		};
+		AppHooks.MouseOverElement?.SetValue(Mouse.PrimaryDevice, target);
+		foreach (var hoveredTarget in targets)
+			AppHooks.WriteElementOverElement?.Invoke(hoveredTarget, new object[] { AppHooks.CoreFlags.IsMouseOverCache, true });
+
+		if (TryRaiseTrustedEvent(target, args))
+			return true;
+
 		target.RaiseEvent(args);
+		return false;
+	}
+
+	private static bool TryRaiseTrustedEvent(UIElement target, RoutedEventArgs args)
+	{
+		var methods = target.GetType() == typeof(UIElement)
+			? typeof(UIElement).GetMethods(InvokeCommandBindings)
+			: typeof(UIElement).GetMethods(InvokeCommandBindings);
+		var argsArray = new object[] { args };
+		var method = methods
+			.Where(static method => method.Name == "RaiseTrustedEvent")
+			.FirstOrDefault(method => ParametersMatch(method.GetParameters(), argsArray));
+		if (method is null)
+			return false;
+
+		try
+		{
+			method.Invoke(target, argsArray);
+			return true;
+		}
+		catch (TargetInvocationException ex) when (ex.InnerException is not null)
+		{
+			throw ex.InnerException;
+		}
+	}
+
+	private static bool ParametersMatch(ParameterInfo[] parameterInfos, object[] args)
+	{
+		if (parameterInfos.Length != args.Length)
+			return false;
+
+		for (var i = 0; i < parameterInfos.Length; i++)
+		{
+			var parameterType = parameterInfos[i].ParameterType;
+			if (!parameterType.IsAssignableFrom(args[i].GetType()))
+				return false;
+		}
+
+		return true;
+	}
+
+	private static IReadOnlyList<UIElement> GetAscendingVisualTree(DependencyObject element)
+	{
+		var targets = new List<DependencyObject>();
+		DependencyObject? current = element;
+		while (current is not null)
+		{
+			targets.Add(current);
+			current = VisualTreeHelper.GetParent(current) ?? LogicalTreeHelper.GetParent(current);
+		}
+
+		return targets.OfType<UIElement>().ToArray();
 	}
 
 	private static void OpenContextMenu(UIElement target)

@@ -1,5 +1,6 @@
 namespace DeepFlowTest.Tests;
 
+using System.Collections.Generic;
 using System.Linq;
 using DeepFlowTest.Interop;
 using NUnit.Framework;
@@ -50,7 +51,39 @@ public sealed class VisualTreeSnapshotTests
 		Assert.That(roundTripped.RootIds, Is.EqualTo(new[] { "target-1" }));
 		Assert.That(roundTripped.NodeCount, Is.EqualTo(2));
 		Assert.That(roundTripped.RequestedPropertyNames, Is.EqualTo(new[] { "Name", "Content", "IsVisible" }));
+		Assert.That(roundTripped.RequestedProperties, Is.EqualTo(new[] { "Name", "Content", "IsVisible" }));
+		Assert.That(roundTripped.Metadata["nodeCount"], Is.EqualTo(2));
 		Assert.That(roundTripped.Nodes[0].ChildIds, Is.EqualTo(new[] { "target-2" }));
+	}
+
+	[Test]
+	public void CompatibilityFromNodesFactoryBuildsSnapshotAliases()
+	{
+		var snapshot = VisualTreeSnapshot.FromNodes(
+			new[]
+			{
+				new Dictionary<string, object?>
+				{
+					["TargetId"] = "root",
+					["TypeName"] = "Window",
+					["ChildIds"] = new[] { "button" },
+					["Properties"] = new Dictionary<string, object?> { ["Name"] = new { Value = "Main" } },
+					["Framework"] = "System.Windows.Window",
+				},
+				new Dictionary<string, object?>
+				{
+					["TargetId"] = "button",
+					["TypeName"] = "Button",
+					["ParentId"] = "root",
+					["Properties"] = new Dictionary<string, object?> { ["Content"] = "OK" },
+				},
+			},
+			new[] { "Content", "Name" });
+
+		Assert.That(snapshot.RootIds, Is.EqualTo(new[] { "root" }));
+		Assert.That(snapshot.RequestedProperties, Is.EqualTo(new[] { "Content", "Name" }));
+		Assert.That(snapshot.Nodes[0].Properties["Name"], Is.EqualTo("Main"));
+		Assert.That(snapshot.Nodes[0].FrameworkTypeName, Is.EqualTo("System.Windows.Window"));
 	}
 
 	[Test]

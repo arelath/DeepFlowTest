@@ -3,6 +3,7 @@ namespace DeepFlowTest.AppDriverPayload.Patching;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using DeepFlowTest.AppDriverPayload;
 
 public sealed class NetFrameworkWpfPatcher : WpfPatcherBase
 {
@@ -54,11 +55,7 @@ internal static class DefaultWpfPatchCatalog
 		return new OptionalWpfPatch(
 			name,
 			() => TryFindMember(typeName, memberName),
-			() =>
-			{
-				// The actual Harmony hook is intentionally optional and isolated.
-				// The current milestone establishes selection and diagnostics first.
-			});
+			AppHooks.EnsureHooked);
 	}
 
 	private static bool TryFindMember(string typeName, string memberName)

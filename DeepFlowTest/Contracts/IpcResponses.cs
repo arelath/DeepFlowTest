@@ -20,6 +20,9 @@ public sealed class StandardIpcResponse
 	public static StandardIpcResponse Ok() =>
 		new() { Success = true, Status = ProtocolConstants.Statuses.Ok };
 
+	public static StandardIpcResponse PendingResult(string? logCorrelationId = null) =>
+		new() { Success = true, Status = ProtocolConstants.Statuses.PendingResult, LogCorrelationId = logCorrelationId };
+
 	public static StandardIpcResponse UnserializableResult() =>
 		new() { Success = true, Status = ProtocolConstants.Statuses.UnserializableResult };
 

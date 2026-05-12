@@ -228,7 +228,7 @@ public static class CliRootCommand
 		command.Add(CreateOption<string>("--shape", "Tree shape: flat or nested."));
 		command.Add(CreateOption<string>("--props", "Comma-separated property names."));
 		command.Add(CreateOption<bool>("--include-hidden", "Include hidden nodes."));
-		command.Add(CreateOption<bool>("--type-names", "Include type names."));
+		command.Add(CreateOption<string>("--type-names", "Comma-separated type names to include."));
 		command.Add(CreateOption<bool>("--include-path", "Include slash-style node paths."));
 	}
 
@@ -323,6 +323,7 @@ public static class CliRootCommand
 	{
 		AddActionTargetOptions(command);
 		command.Add(CreateOption<string>("--keys", "Keys to send."));
+		command.Add(CreateOption<bool>("--foreground", "Bring the target main window to foreground first."));
 		command.Add(CreateOption<int>("--delay-ms", "Delay between keys."));
 	}
 
@@ -368,11 +369,31 @@ public static class CliRootCommand
 		CreateOption<T>(name, description, recursive: false, aliases);
 
 	private static Option<T> CreateOption<T>(string name, string description, bool recursive, params string[] aliases) =>
-		new(name, aliases)
+		ConfigureOption(new Option<T>(name, aliases)
 		{
 			Description = description,
 			Recursive = recursive,
-		};
+		}, name);
+
+	private static Option<T> ConfigureOption<T>(Option<T> option, string name)
+	{
+		if (typeof(T) == typeof(bool))
+		{
+			option.Arity = ArgumentArity.ZeroOrOne;
+			option.CustomParser = result =>
+			{
+				if (result.Tokens.Count == 0)
+					return (T)(object)true;
+				if (bool.TryParse(result.Tokens[0].Value, out var value))
+					return (T)(object)value;
+
+				result.AddError($"Option `{name}` expects `true` or `false`.");
+				return default!;
+			};
+		}
+
+		return option;
+	}
 
 	private static bool OptionHasSeparateValue(string optionName) =>
 		optionName is "--pid"
@@ -389,6 +410,7 @@ public static class CliRootCommand
 			or "--limit"
 			or "--shape"
 			or "--props"
+			or "--type-names"
 			or "--name"
 			or "--automation-id"
 			or "--text"

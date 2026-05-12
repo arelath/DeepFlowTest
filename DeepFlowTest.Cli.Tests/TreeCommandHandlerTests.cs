@@ -46,4 +46,20 @@ public sealed class TreeCommandHandlerTests
 		Assert.That(result.Stdout, Does.Contain("shape: flat"));
 		Assert.That(session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().MaxNodeCount, Is.EqualTo(1500));
 	}
+
+	[Test]
+	public void TreeSupportsCompatTypeNameFilterAndNoProperties()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "tree", "--pid", "1234", "--type-names", "Button", "--props", "none" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("button-0002"));
+		Assert.That(result.Stdout, Does.Not.Contain("root-0001"));
+		Assert.That(result.Stdout, Does.Contain("\"typeName\":\"Button\""));
+		Assert.That(result.Stdout, Does.Not.Contain("SubmitButton"));
+		Assert.That(session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().PropNames, Is.EqualTo(new[] { "IsVisible" }));
+	}
 }

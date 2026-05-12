@@ -36,6 +36,7 @@ public sealed class ElementApiTests
 		Assert.That(child.Parent!.TargetId, Is.EqualTo("root"));
 		Assert.That(grandchild.Parent!.TargetId, Is.EqualTo("child"));
 		Assert.That(root.Children.Select(static element => element.TargetId), Is.EqualTo(new[] { "child" }));
+		Assert.That(root.Child.Select(static element => element.TargetId), Is.EqualTo(new[] { "child" }));
 	}
 
 	[Test]

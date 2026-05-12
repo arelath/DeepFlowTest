@@ -38,6 +38,11 @@ public sealed class AppDriver : IDisposable
 
 	public AppConnection Connection { get; }
 
+	public Process Process =>
+		Connection.TargetProcess is TargetProcess targetProcess
+			? targetProcess.Process
+			: System.Diagnostics.Process.GetProcessById(Connection.TargetProcess.Id);
+
 	public AppDriverOptions Options { get; }
 
 	public IAppDriverCommandSession Session { get; }

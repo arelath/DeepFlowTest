@@ -2,6 +2,7 @@ namespace DeepFlowTest.AppDriverPayload;
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.AppDriverPayload.Commands;
 using DeepFlowTest.Contracts;
@@ -78,11 +79,7 @@ internal static class AppDriverCommandDispatcher
 			if (UiHandlers.TryGetValue(kind, out var uiHandler))
 			{
 				var timeoutMs = GetTimeoutMs(command.Value, kind);
-				var result = ThreadUtility.RunCommandWithTimeoutAsync(
-						() => RunUiHandlerAsync(kind, uiHandler, context),
-						timeoutMs,
-						(message, exception) => PayloadLog.Write(message, exception),
-						context.LogCorrelationId)
+				var result = RunUiHandlerWithModalWatchAsync(kind, uiHandler, context, timeoutMs)
 					.ConfigureAwait(false)
 					.GetAwaiter()
 					.GetResult();
@@ -131,6 +128,59 @@ internal static class AppDriverCommandDispatcher
 			return result ?? StandardIpcResponse.Ok();
 
 		return UnsupportedUiCommand.Process(kind);
+	}
+
+	private static async Task<object> RunUiHandlerWithModalWatchAsync(
+		string kind,
+		AsyncCommandHandler handler,
+		CommandContext context,
+		int timeoutMs)
+	{
+		AppHooks.ShowDialogCalled = false;
+		using var cancellation = new CancellationTokenSource();
+		var commandTask = ThreadUtility.RunCommandWithTimeoutAsync(
+			() => RunUiHandlerAsync(kind, handler, context),
+			timeoutMs,
+			(message, exception) => PayloadLog.Write(message, exception),
+			context.LogCorrelationId);
+		var modalTask = WaitForShowDialogAsync(timeoutMs, cancellation.Token);
+
+		var completed = await Task.WhenAny(commandTask, modalTask).ConfigureAwait(false);
+		if (completed == modalTask && await modalTask.ConfigureAwait(false) == UiThreadRunResult.Pending)
+		{
+			cancellation.Cancel();
+			AppHooks.ShowDialogCalled = false;
+			return StandardIpcResponse.PendingResult(context.LogCorrelationId);
+		}
+
+		cancellation.Cancel();
+		try
+		{
+			await modalTask.ConfigureAwait(false);
+		}
+		catch (OperationCanceledException)
+		{
+		}
+		finally
+		{
+			AppHooks.ShowDialogCalled = false;
+		}
+
+		return await commandTask.ConfigureAwait(false);
+	}
+
+	internal static async Task<UiThreadRunResult> WaitForShowDialogAsync(int timeoutMs, CancellationToken token)
+	{
+		var start = DateTime.UtcNow;
+		while (!AppHooks.ShowDialogCalled && (DateTime.UtcNow - start).TotalMilliseconds < timeoutMs)
+		{
+			if (token.IsCancellationRequested)
+				return UiThreadRunResult.Finished;
+
+			await Task.Delay(50, token).ConfigureAwait(false);
+		}
+
+		return AppHooks.ShowDialogCalled ? UiThreadRunResult.Pending : UiThreadRunResult.Finished;
 	}
 
 	private static int GetTimeoutMs(object command, string kind)

@@ -97,6 +97,8 @@ public class Element
 		}
 	}
 
+	public IReadOnlyList<Element> Child => Children;
+
 	public IReadOnlyList<Element> Descendants => Children.SelectMany(static child => new[] { child }.Concat(child.Descendants)).ToArray();
 
 	public Element this[int childIndex] => Children[childIndex];

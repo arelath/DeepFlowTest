@@ -109,6 +109,18 @@ public sealed class ActionCommandHandlerTests
 	}
 
 	[Test]
+	public void KeyForegroundOptionOverridesDefault()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "key", "--pid", "1234", "--keys", "Enter", "--foreground", "false" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(session.Session.Commands.OfType<KeyPressCommandRequest>().Single().EnsureForeground, Is.False);
+	}
+
+	[Test]
 	public void TypeAndKeyCanTargetForegroundWithoutElementSelector()
 	{
 		var session = new FakeAppSessionService();

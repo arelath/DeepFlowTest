@@ -213,9 +213,10 @@ public static class Program
 
 	private static TreeSnapshotData ExecuteTree(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		var properties = CliArgumentReader.GetStringList(args, "--props", defaults.Commands.Tree.Props);
-		if (!CliArgumentReader.HasOption(args, "--include-hidden") && !properties.Contains("IsVisible", StringComparer.Ordinal))
-			properties = properties.Concat(new[] { "IsVisible" }).ToArray();
+		var includeHidden = CliArgumentReader.HasOption(args, "--include-hidden") || defaults.Commands.Tree.IncludeHidden;
+		var propertySelection = GetTreePropertySelection(args, defaults, includeHidden);
+		var properties = propertySelection.RequestProperties;
+		var typeNames = GetTreeTypeNames(args, defaults);
 
 		var limit = CliArgumentReader.GetInt(args, "--limit", defaults.Commands.Tree.Limit);
 		using var session = OpenSession(services, commonOptions);
@@ -226,11 +227,13 @@ public static class Program
 			RootTargetId = CliArgumentReader.GetOption(args, "--root", "--target-id") ?? defaults.Commands.Tree.Root,
 			MaxDepth = CliArgumentReader.GetInt(args, "--max-depth", defaults.Commands.Tree.MaxDepth),
 			Limit = limit,
-			IncludeHidden = CliArgumentReader.HasOption(args, "--include-hidden") || defaults.Commands.Tree.IncludeHidden,
-			IncludeTypeNames = CliArgumentReader.HasOption(args, "--type-names") || defaults.Commands.Tree.TypeNames is { Count: > 0 },
+			IncludeHidden = includeHidden,
+			IncludeTypeNames = typeNames.Count != 0,
+			TypeNames = typeNames,
 			IncludePath = CliArgumentReader.HasOption(args, "--include-path") || defaults.Commands.Tree.IncludePath,
 			UseShortIds = commonOptions.UseShortIds,
-			Properties = properties,
+			Properties = propertySelection.OutputProperties,
+			SuppressProperties = propertySelection.SuppressProperties,
 		};
 		return new TreeSnapshotService().Shape(snapshot, options);
 	}
@@ -442,6 +445,38 @@ public static class Program
 	private static IReadOnlyList<string> GetRequestedProperties(string[] args, CliDefaults defaults) =>
 		CliArgumentReader.GetStringList(args, "--props", defaults.PropertyNames);
 
+	private static TreePropertySelection GetTreePropertySelection(string[] args, CliDefaults defaults, bool includeHidden)
+	{
+		var rawProperties = CliArgumentReader.GetOption(args, "--props");
+		IReadOnlyList<string> outputProperties = rawProperties is null
+			? defaults.Commands.Tree.Props.ToArray()
+			: string.Equals(rawProperties, "default", StringComparison.OrdinalIgnoreCase)
+				? CliDefaults.CreateDefaultPropertyList()
+				: string.Equals(rawProperties, "none", StringComparison.OrdinalIgnoreCase)
+					? Array.Empty<string>()
+					: CliArgumentReader.SplitCsv(rawProperties);
+
+		var requestProperties = outputProperties.ToList();
+		if (!includeHidden && !requestProperties.Contains("IsVisible", StringComparer.Ordinal))
+			requestProperties.Add("IsVisible");
+
+		return new TreePropertySelection(
+			requestProperties.Distinct(StringComparer.Ordinal).ToArray(),
+			outputProperties,
+			string.Equals(rawProperties, "none", StringComparison.OrdinalIgnoreCase));
+	}
+
+	private static IReadOnlyList<string> GetTreeTypeNames(string[] args, CliDefaults defaults)
+	{
+		var rawTypeNames = CliArgumentReader.GetOption(args, "--type-names");
+		if (rawTypeNames is not null)
+			return CliArgumentReader.SplitCsv(rawTypeNames);
+
+		return defaults.Commands.Tree.TypeNames is { } configuredTypeNames
+			? configuredTypeNames
+			: Array.Empty<string>();
+	}
+
 	private static FindSnapshotOptions CreateFindOptions(
 		string[] args,
 		CliDefaults defaults,
@@ -610,7 +645,7 @@ public static class Program
 				Keys = keys,
 				TargetId = targetId,
 				DelayMs = CliArgumentReader.GetInt(args, "--delay-ms", defaults.KeyDelayMs),
-				EnsureForeground = defaults.Commands.Key.Foreground,
+				EnsureForeground = CliArgumentReader.GetBool(args, "--foreground", defaults.Commands.Key.Foreground),
 			},
 			requireElementTarget: false,
 			afterProperties: new[] { "Text", "Content", "IsKeyboardFocused", "IsKeyboardFocusWithin" });
@@ -907,6 +942,8 @@ public sealed class CliResponseSequence
 
 	public IReadOnlyList<CliResponseEnvelope> Envelopes { get; }
 }
+
+internal sealed record TreePropertySelection(IReadOnlyList<string> RequestProperties, IReadOnlyList<string> OutputProperties, bool SuppressProperties);
 
 internal sealed class ConsoleCancellationSource : IDisposable
 {

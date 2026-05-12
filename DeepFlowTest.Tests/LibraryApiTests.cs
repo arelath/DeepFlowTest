@@ -185,6 +185,33 @@ public sealed class LibraryApiTests
 	}
 
 	[Test]
+	public void CompatibilityAppDriverProcessExposesRawProcess()
+	{
+		using var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new TargetProcess(Process.GetCurrentProcess()), "pipe"),
+			new FakeSession());
+
+		Assert.That(driver.Process.Id, Is.EqualTo(Process.GetCurrentProcess().Id));
+	}
+
+	[Test]
+	public void CompatibilityReflectionAndIpcHelpersWork()
+	{
+		var target = new ReflectionTarget();
+		typeof(ReflectionTarget).InvokeOn(target, "SetSecret", "value");
+		target.SetField("field", 42);
+		target.SetProperty("Name", "updated");
+		var dictionary = new ClickCommandRequest { TargetId = "button", MouseButton = "right" }.ToDictionary();
+
+		Assert.That(target.Property<string>("Name"), Is.EqualTo("updated"));
+		Assert.That(target.Field<int>("field"), Is.EqualTo(42));
+		Assert.That(target.Invoke<string>("ReadSecret"), Is.EqualTo("value"));
+		Assert.That(dictionary["Kind"], Is.EqualTo(ProtocolConstants.Commands.Click));
+		Assert.That(dictionary["TargetId"], Is.EqualTo("button"));
+		Assert.That(dictionary["MouseButton"], Is.EqualTo("right"));
+	}
+
+	[Test]
 	public void CompatibilityElementExpressionLookupSupportsPropertyIndexer()
 	{
 		var snapshot = VisualTreeSnapshot.Create(1, new[]
@@ -282,6 +309,22 @@ public sealed class LibraryApiTests
 			: base(source)
 		{
 		}
+	}
+
+	private sealed class ReflectionTarget
+	{
+		private string secret = string.Empty;
+
+		public int field = -1;
+
+		public string Name { get; private set; } = "initial";
+
+		private void SetSecret(string value)
+		{
+			secret = value;
+		}
+
+		private string ReadSecret() => secret;
 	}
 
 	private sealed class FakeRecordingProcess : IRecordingProcess

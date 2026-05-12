@@ -54,6 +54,26 @@ internal static class CliArgumentReader
 		return parsed;
 	}
 
+	public static bool GetBool(IReadOnlyList<string> args, string name, bool defaultValue)
+	{
+		for (var i = 0; i < args.Count; i++)
+		{
+			var arg = args[i];
+			if (arg.StartsWith(name + "=", StringComparison.Ordinal))
+				return ParseBool(name, arg[(name.Length + 1)..]);
+
+			if (!string.Equals(arg, name, StringComparison.Ordinal))
+				continue;
+
+			if (i + 1 < args.Count && !args[i + 1].StartsWith("-", StringComparison.Ordinal))
+				return ParseBool(name, args[i + 1]);
+
+			return true;
+		}
+
+		return defaultValue;
+	}
+
 	public static IReadOnlyList<string> GetStringList(IReadOnlyList<string> args, string name, IReadOnlyList<string> defaultValue)
 	{
 		var value = GetOption(args, name);
@@ -61,6 +81,16 @@ internal static class CliArgumentReader
 			return defaultValue;
 
 		return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+	}
+
+	public static IReadOnlyList<string> SplitCsv(string? value)
+	{
+		if (string.IsNullOrWhiteSpace(value))
+			return Array.Empty<string>();
+
+		return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+			.Distinct(StringComparer.Ordinal)
+			.ToArray();
 	}
 
 	public static KeyValuePair<string, string>? GetKeyValue(IReadOnlyList<string> args, params string[] names)
@@ -79,5 +109,13 @@ internal static class CliArgumentReader
 		}
 
 		return null;
+	}
+
+	private static bool ParseBool(string name, string value)
+	{
+		if (bool.TryParse(value, out var parsed))
+			return parsed;
+
+		throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid boolean value for '{name}'.");
 	}
 }

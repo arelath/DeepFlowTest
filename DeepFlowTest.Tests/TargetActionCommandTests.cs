@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
@@ -131,6 +132,57 @@ public sealed class TargetActionCommandTests
 		{
 			window.Close();
 		}
+	}
+
+	[Test]
+	public void TypeTextUsesTextCompositionForCustomWpfTargets()
+	{
+		var target = new TextCompositionCaptureControl { Name = "customInput" };
+		var window = CreateWindow("Custom text input", target);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("customInput");
+
+			AssertOk(CaptureResponse(new TypeTextCommandRequest { TargetId = targetId, Text = "abc" }));
+
+			Assert.That(target.ReceivedText, Is.EqualTo("abc"));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void KeyPressAcceptsArbitraryWpfTargets()
+	{
+		var button = new Button { Name = "keyButton", Content = "Keys" };
+		var window = CreateWindow("Custom key input", button);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("keyButton");
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = targetId, Keys = "Enter", DelayMs = 1, EnsureForeground = false }));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void ModalDialogWatcherReturnsPendingWhenShowDialogHookFires()
+	{
+		AppHooks.ShowDialogCalled = true;
+
+		var result = AppDriverCommandDispatcher.WaitForShowDialogAsync(1000, CancellationToken.None).GetAwaiter().GetResult();
+
+		Assert.That(result, Is.EqualTo(DeepFlowTest.Utility.UiThreadRunResult.Pending));
+		AppHooks.ShowDialogCalled = false;
 	}
 
 	[Test]
@@ -503,6 +555,18 @@ public sealed class TargetActionCommandTests
 		{
 			await Task.Delay(250);
 			return "late";
+		}
+	}
+
+	private sealed class TextCompositionCaptureControl : Control
+	{
+		public string ReceivedText { get; private set; } = string.Empty;
+
+		protected override void OnPreviewTextInput(TextCompositionEventArgs e)
+		{
+			ReceivedText += e.Text;
+			e.Handled = true;
+			base.OnPreviewTextInput(e);
 		}
 	}
 

@@ -19,11 +19,15 @@ public sealed class TreeSnapshotOptions
 
 	public bool IncludeTypeNames { get; set; }
 
+	public IReadOnlyList<string> TypeNames { get; set; } = Array.Empty<string>();
+
 	public bool IncludePath { get; set; }
 
 	public bool UseShortIds { get; set; } = true;
 
 	public IReadOnlyList<string> Properties { get; set; } = Array.Empty<string>();
+
+	public bool SuppressProperties { get; set; }
 }
 
 public sealed class TreeSnapshotService
@@ -46,6 +50,7 @@ public sealed class TreeSnapshotService
 		var flattened = Flatten(snapshot, relationships, rootIds)
 			.Where(item => options.MaxDepth < 0 || item.Depth <= options.MaxDepth)
 			.Where(item => options.IncludeHidden || IsVisible(item.Node))
+			.Where(item => options.TypeNames.Count == 0 || options.TypeNames.Contains(item.Node.TypeName, StringComparer.Ordinal))
 			.ToList();
 
 		var truncated = snapshot.IsTruncated;
@@ -63,8 +68,9 @@ public sealed class TreeSnapshotService
 			truncationReason ??= "max-depth";
 		}
 
+		var projectedRelationships = ProjectRelationships(flattened.Select(static item => item.Node).ToArray(), relationships);
 		var nodeOutputs = flattened
-			.Select(item => ToNodeOutput(item.Node, relationships, item.Depth, options))
+			.Select(item => ToNodeOutput(item.Node, projectedRelationships, item.Depth, options))
 			.ToList();
 
 		return new TreeSnapshotData
@@ -76,8 +82,8 @@ public sealed class TreeSnapshotService
 			TruncationReason = truncationReason,
 			RequestedProperties = options.Properties,
 			Roots = shape == "nested"
-				? BuildNested(nodeOutputs, rootIds)
-				: nodeOutputs.Where(node => node.ParentId is null || rootIds.Contains(node.TargetId, StringComparer.Ordinal)).ToList(),
+				? BuildNested(nodeOutputs)
+				: nodeOutputs.Where(static node => node.ParentId is null).ToList(),
 			Nodes = shape == "flat" ? nodeOutputs : Array.Empty<TreeNodeData>(),
 		};
 	}
@@ -85,7 +91,8 @@ public sealed class TreeSnapshotService
 	public TreeNodeData ShapeOne(VisualTreeNodeDto node, VisualTreeSnapshot snapshot, TreeSnapshotOptions options)
 	{
 		var relationships = SnapshotRelationships.Create(snapshot);
-		return ToNodeOutput(node, relationships, relationships.DepthOf(node.TargetId), options);
+		var projectedRelationships = ProjectRelationships(new[] { node }, relationships);
+		return ToNodeOutput(node, projectedRelationships, relationships.DepthOf(node.TargetId), options);
 	}
 
 	private IReadOnlyList<string> ResolveRootIds(VisualTreeSnapshot snapshot, TreeSnapshotOptions options)
@@ -122,30 +129,70 @@ public sealed class TreeSnapshotService
 		return Flatten(snapshot, relationships, rootIds).Any(item => item.Depth > maxDepth);
 	}
 
-	private TreeNodeData ToNodeOutput(VisualTreeNodeDto node, SnapshotRelationships relationships, int depth, TreeSnapshotOptions options)
+	private TreeNodeData ToNodeOutput(VisualTreeNodeDto node, ProjectedRelationships relationships, int depth, TreeSnapshotOptions options)
 	{
 		return new TreeNodeData
 		{
 			TargetId = node.TargetId,
 			ShortId = options.UseShortIds ? targetIds.GetShortId(node.TargetId) : null,
-			ParentId = node.ParentId,
-			ChildIds = node.ChildIds,
+			ParentId = relationships.ParentIds.TryGetValue(node.TargetId, out var parentId) ? parentId : null,
+			ChildIds = relationships.ChildIds.TryGetValue(node.TargetId, out var childIds) ? childIds : Array.Empty<string>(),
 			Depth = depth,
-			SiblingIndex = relationships.SiblingIndexOf(node.TargetId),
-			Path = options.IncludePath ? relationships.PathOf(node.TargetId) : null,
+			SiblingIndex = relationships.SourceRelationships.SiblingIndexOf(node.TargetId),
+			Path = options.IncludePath ? relationships.SourceRelationships.PathOf(node.TargetId) : null,
 			TypeName = options.IncludeTypeNames ? node.TypeName : null,
 			FrameworkTypeName = options.IncludeTypeNames ? node.FrameworkTypeName : null,
-			Properties = SelectProperties(node, options.Properties),
+			Properties = options.SuppressProperties ? new Dictionary<string, object?>(StringComparer.Ordinal) : SelectProperties(node, options.Properties),
 		};
 	}
 
-	private static IReadOnlyList<TreeNodeData> BuildNested(IReadOnlyList<TreeNodeData> flatNodes, IReadOnlyList<string> rootIds)
+	private static IReadOnlyList<TreeNodeData> BuildNested(IReadOnlyList<TreeNodeData> flatNodes)
 	{
 		var byId = flatNodes.ToDictionary(static node => node.TargetId, StringComparer.Ordinal);
 		foreach (var node in flatNodes)
 			node.Children = node.ChildIds.Where(byId.ContainsKey).Select(childId => byId[childId]).ToList();
 
-		return rootIds.Where(byId.ContainsKey).Select(rootId => byId[rootId]).ToList();
+		return flatNodes.Where(static node => node.ParentId is null).ToList();
+	}
+
+	private static ProjectedRelationships ProjectRelationships(IReadOnlyList<VisualTreeNodeDto> includedNodes, SnapshotRelationships relationships)
+	{
+		var includedIds = new HashSet<string>(includedNodes.Select(static node => node.TargetId), StringComparer.Ordinal);
+		var parentIds = new Dictionary<string, string?>(StringComparer.Ordinal);
+		var childIds = includedNodes.ToDictionary(
+			static node => node.TargetId,
+			_ => new List<string>(),
+			StringComparer.Ordinal);
+
+		foreach (var node in includedNodes)
+		{
+			var parentId = FindNearestIncludedParentId(node, relationships, includedIds);
+			parentIds[node.TargetId] = parentId;
+			if (parentId is not null && childIds.TryGetValue(parentId, out var children))
+				children.Add(node.TargetId);
+		}
+
+		return new ProjectedRelationships(
+			relationships,
+			parentIds,
+			childIds.ToDictionary(
+				static item => item.Key,
+				static item => (IReadOnlyList<string>)item.Value.ToArray(),
+				StringComparer.Ordinal));
+	}
+
+	private static string? FindNearestIncludedParentId(VisualTreeNodeDto node, SnapshotRelationships relationships, HashSet<string> includedIds)
+	{
+		var parentId = node.ParentId;
+		while (parentId is not null && relationships.Nodes.TryGetValue(parentId, out var parent))
+		{
+			if (includedIds.Contains(parentId))
+				return parentId;
+
+			parentId = parent.ParentId;
+		}
+
+		return null;
 	}
 
 	private static Dictionary<string, object?> SelectProperties(VisualTreeNodeDto node, IReadOnlyList<string> properties)
@@ -196,6 +243,11 @@ public sealed class TreeSnapshotService
 	}
 
 	private sealed record TreeNodeTraversalItem(VisualTreeNodeDto Node, int Depth);
+
+	private sealed record ProjectedRelationships(
+		SnapshotRelationships SourceRelationships,
+		IReadOnlyDictionary<string, string?> ParentIds,
+		IReadOnlyDictionary<string, IReadOnlyList<string>> ChildIds);
 }
 
 public sealed class TreeSnapshotData
