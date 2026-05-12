@@ -301,24 +301,23 @@ internal sealed class Build
 		Console.WriteLine($"NuGet package produced at {nupkgPath} ({new FileInfo(nupkgPath).Length:N0} bytes).");
 	}
 
-	private string BuildNupkg(string packageDirectory, string nuspecPath, string artifactsRoot, string packageVersion)
+	private static string BuildNupkg(string packageDirectory, string nuspecPath, string artifactsRoot, string packageVersion)
 	{
-		var packagingProject = Path.Combine(rootDirectory, ".build", "Packaging.proj");
-		RunDotNet(
-			"pack",
-			packagingProject,
-			"--configuration",
-			configuration,
-			$"/p:NuspecFile={nuspecPath}",
-			$"/p:NuspecBasePath={packageDirectory}",
-			$"/p:PackageOutputPath={artifactsRoot}",
-			$"/p:PackageVersion={packageVersion}",
-			"/p:IncludeBuildOutput=false",
-			"--nologo");
-
+		Directory.CreateDirectory(artifactsRoot);
 		var nupkgPath = Path.Combine(artifactsRoot, $"DeepFlowTest.{packageVersion}.nupkg");
-		if (!File.Exists(nupkgPath))
-			throw new FileNotFoundException("Expected nupkg was not produced.", nupkgPath);
+		if (File.Exists(nupkgPath))
+			File.Delete(nupkgPath);
+
+		NuGet.Packaging.Manifest manifest;
+		using (var nuspecStream = File.OpenRead(nuspecPath))
+			manifest = NuGet.Packaging.Manifest.ReadFrom(nuspecStream, validateSchema: true);
+
+		var builder = new NuGet.Packaging.PackageBuilder();
+		builder.Populate(manifest.Metadata);
+		builder.PopulateFiles(packageDirectory, manifest.Files);
+
+		using (var output = File.Create(nupkgPath))
+			builder.Save(output);
 
 		return nupkgPath;
 	}
@@ -335,12 +334,18 @@ internal sealed class Build
 		if (!File.Exists(primaryAssembly))
 			throw new FileNotFoundException($"Compile-time library assembly was not found for target framework '{targetFramework}'.", primaryAssembly);
 
-		var libDirectory = Path.Combine(packageDirectory, "lib", targetFramework);
+		var libDirectory = Path.Combine(packageDirectory, "lib", MapToLibFolderName(targetFramework));
 		Directory.CreateDirectory(libDirectory);
 		File.Copy(primaryAssembly, Path.Combine(libDirectory, "DeepFlowTest.dll"), overwrite: true);
 		CopyIfExists(Path.Combine(source, "DeepFlowTest.pdb"), Path.Combine(libDirectory, "DeepFlowTest.pdb"));
 		CopyIfExists(Path.Combine(source, "DeepFlowTest.xml"), Path.Combine(libDirectory, "DeepFlowTest.xml"));
 	}
+
+	private static string MapToLibFolderName(string targetFramework) => targetFramework switch
+	{
+		"net5.0-windows" => "net5.0-windows7.0",
+		_ => targetFramework,
+	};
 
 	private static void WritePackageBuildTargets(string packageDirectory)
 	{
@@ -372,8 +377,15 @@ internal sealed class Build
 
 	private string ResolvePackageVersion()
 	{
-		var fromEnvironment = Environment.GetEnvironmentVariable("DEEPFLOWTEST_PACKAGE_VERSION");
-		return string.IsNullOrWhiteSpace(fromEnvironment) ? "0.0.0-local" : fromEnvironment;
+		var versionFile = Path.Combine(rootDirectory, "version.txt");
+		if (!File.Exists(versionFile))
+			throw new FileNotFoundException("Package version file 'version.txt' was not found at the repository root.", versionFile);
+
+		var version = File.ReadAllText(versionFile).Trim();
+		if (string.IsNullOrEmpty(version))
+			throw new InvalidOperationException("Package version file 'version.txt' is empty.");
+
+		return version;
 	}
 
 	private string WritePackageNuspec(string packageDirectory, string packageVersion)

@@ -10,5 +10,6 @@
 
   <ItemGroup>
     <PackageReference Include="ILRepack.Lib.MSBuild.Task" />
+    <PackageReference Include="NuGet.Packaging" />
   </ItemGroup>
 </Project>
