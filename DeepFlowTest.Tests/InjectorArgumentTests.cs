@@ -3,6 +3,7 @@ namespace DeepFlowTest.Tests;
 using System;
 using System.IO;
 using DeepFlowTest.AppDriverPayload;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.InjectorLauncher;
 using DeepFlowTest.Shared;
 using NUnit.Framework;
@@ -34,7 +35,7 @@ public sealed class InjectorArgumentTests
 	[Test]
 	public void StartupOptionsRejectMalformedAndUnknownMode()
 	{
-		Assert.That(() => AppDriverPayloadStartupOptions.Decode("not-encoded"), Throws.ArgumentException);
+		Assert.That(() => AppDriverPayloadStartupOptions.Decode("not-encoded"), Throws.TypeOf<ProtocolException>());
 
 		var options = new AppDriverPayloadStartupOptions
 		{
@@ -44,7 +45,7 @@ public sealed class InjectorArgumentTests
 			ProtocolVersion = "1",
 		};
 
-		Assert.That(() => options.Encode(), Throws.InvalidOperationException);
+		Assert.That(() => options.Encode(), Throws.TypeOf<ProtocolException>());
 	}
 
 	[Test]
