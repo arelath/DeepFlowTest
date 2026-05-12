@@ -64,13 +64,14 @@ public sealed class ReusablePipeSession
 		StopSubscriptionsForConnection(connectionId);
 	}
 
-	public ActiveSubscriptionResponse StartSubscription(string kind, string? connectionId)
+	public ActiveSubscriptionResponse StartSubscription(string kind, string? connectionId, int intervalMs = 1000)
 	{
 		var subscription = new ActiveSubscriptionResponse
 		{
 			SubscriptionId = Guid.NewGuid().ToString("N"),
 			Kind = kind,
 			ConnectionId = connectionId,
+			IntervalMs = intervalMs,
 		};
 
 		lock (subscriptions)
@@ -96,6 +97,15 @@ public sealed class ReusablePipeSession
 		}
 	}
 
+	public bool StopSubscription(string subscriptionId)
+	{
+		if (string.IsNullOrEmpty(subscriptionId))
+			return false;
+
+		lock (subscriptions)
+			return subscriptions.Remove(subscriptionId);
+	}
+
 	public PipeStatusCommandResponse CreateStatusResponse()
 	{
 		var activeSubscriptions = ActiveSubscriptions;
@@ -110,6 +120,12 @@ public sealed class ReusablePipeSession
 			TotalCommandsHandled = TotalCommandsHandled,
 			DisconnectedClientCount = DisconnectedClientCount,
 			IdleMode = IsBusy ? "busy" : "waiting-for-client-or-command",
+			Counters = new Dictionary<string, long>
+			{
+				["commandsHandled"] = TotalCommandsHandled,
+				["activeSubscriptions"] = activeSubscriptions.Count,
+				["disconnectedClients"] = DisconnectedClientCount,
+			},
 		};
 	}
 

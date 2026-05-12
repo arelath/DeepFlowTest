@@ -2,8 +2,10 @@ namespace DeepFlowTest.Tests;
 
 using System;
 using System.IO;
+using System.Text;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 [TestFixture]
@@ -20,8 +22,14 @@ public sealed class PayloadStartupTests
 	{
 		var options = CreateOptions(PayloadStartupModes.OneShotDriver);
 
-		var decoded = AppDriverPayloadStartupOptions.Decode(options.Encode());
+		var encoded = options.Encode();
+		var decoded = AppDriverPayloadStartupOptions.Decode(encoded);
+		var json = DecodeStartupJson(encoded);
+		var parsed = JObject.Parse(json);
 
+		Assert.That(parsed["pipeName"]?.Value<string>(), Is.EqualTo(options.PipeName));
+		Assert.That(parsed["payloadRoot"]?.Value<string>(), Is.EqualTo(options.PayloadRoot));
+		Assert.That(parsed["PipeName"], Is.Null);
 		Assert.That(decoded.PipeName, Is.EqualTo(options.PipeName));
 		Assert.That(decoded.Mode, Is.EqualTo(PayloadStartupModes.OneShotDriver));
 		Assert.That(decoded.PayloadRoot, Is.EqualTo(options.PayloadRoot));
@@ -129,6 +137,23 @@ public sealed class PayloadStartupTests
 			PayloadRoot = AppContext.BaseDirectory,
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
 		};
+	}
+
+	private static string DecodeStartupJson(string encoded)
+	{
+		const string prefix = "dft:";
+		var base64 = encoded.Substring(prefix.Length).Replace('-', '+').Replace('_', '/');
+		switch (base64.Length % 4)
+		{
+			case 2:
+				base64 += "==";
+				break;
+			case 3:
+				base64 += "=";
+				break;
+		}
+
+		return Encoding.UTF8.GetString(Convert.FromBase64String(base64));
 	}
 
 	private sealed class FakeRuntime : IAppDriverPayloadRuntime

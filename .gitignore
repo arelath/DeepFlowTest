@@ -56,4 +56,4 @@ nunit-*.xml
 *.tmp
 *.temp
 
-/Docs
+/Docs/*

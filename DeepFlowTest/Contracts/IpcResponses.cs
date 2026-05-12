@@ -82,6 +82,51 @@ public sealed class PipeStatusCommandResponse
 	public int DisconnectedClientCount { get; set; }
 
 	public string IdleMode { get; set; } = "waiting-for-client-or-command";
+
+	public Dictionary<string, long> Counters { get; set; } = new();
+}
+
+public sealed class FindElementCommandResponse
+{
+	public bool Success { get; set; } = true;
+
+	public string Status { get; set; } = ProtocolConstants.Statuses.Ok;
+
+	public List<FindElementMatchResponse> Matches { get; set; } = new();
+
+	public int MatchCount { get; set; }
+
+	public int MaxMatches { get; set; }
+}
+
+public sealed class FindElementMatchResponse
+{
+	public string TargetId { get; set; } = string.Empty;
+
+	public string TypeName { get; set; } = string.Empty;
+
+	public string? FrameworkTypeName { get; set; }
+
+	public Dictionary<string, object?> Properties { get; set; } = new();
+}
+
+public sealed class ScreenshotCommandResponse
+{
+	public bool Success { get; set; } = true;
+
+	public string Status { get; set; } = ProtocolConstants.Statuses.Ok;
+
+	public string TargetId { get; set; } = string.Empty;
+
+	public string Format { get; set; } = "png";
+
+	public int Width { get; set; }
+
+	public int Height { get; set; }
+
+	public int ByteCount { get; set; }
+
+	public string BytesBase64 { get; set; } = string.Empty;
 }
 
 public sealed class ActiveSubscriptionResponse
@@ -91,4 +136,52 @@ public sealed class ActiveSubscriptionResponse
 	public string Kind { get; set; } = string.Empty;
 
 	public string? ConnectionId { get; set; }
+
+	public int IntervalMs { get; set; }
+
+	public long LastSequenceNumber { get; set; }
+}
+
+public sealed class StartSendingCommandResponse
+{
+	public string SubscriptionId { get; set; } = string.Empty;
+
+	public string StreamKind { get; set; } = string.Empty;
+
+	public string Status { get; set; } = ProtocolConstants.Statuses.Started;
+
+	public int IntervalMs { get; set; }
+
+	public long SequenceStart { get; set; }
+}
+
+public sealed class StopSendingCommandResponse
+{
+	public string SubscriptionId { get; set; } = string.Empty;
+
+	public string Status { get; set; } = ProtocolConstants.Statuses.Stopped;
+}
+
+public sealed class StreamMessage
+{
+	public string MessageKind { get; set; } = "stream";
+
+	public string SubscriptionId { get; set; } = string.Empty;
+
+	public string StreamKind { get; set; } = string.Empty;
+
+	public long SequenceNumber { get; set; }
+
+	public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
+
+	public object? Data { get; set; }
+
+	public CliStreamError? Error { get; set; }
+}
+
+public sealed class CliStreamError
+{
+	public string Code { get; set; } = string.Empty;
+
+	public string Message { get; set; } = string.Empty;
 }

@@ -6,10 +6,10 @@ using DeepFlowTest.Utility;
 
 internal static class PingCommand
 {
-	public static void Process(PingCommandRequest request, NamedPipeServer.Command command)
+	public static object Process(PingCommandRequest request)
 	{
 		var availability = ThreadUtility.GetAvailability();
-		command.Respond(new PingCommandResponse
+		return new PingCommandResponse
 		{
 			ProcessId = PayloadEnvironment.ProcessId,
 			IsWpfAvailable = availability.IsWpfAvailable,
@@ -17,6 +17,6 @@ internal static class PingCommand
 			IsNativeFallbackAvailable = availability.IsNativeFallbackAvailable,
 			IsDispatcherAvailable = availability.IsDispatcherAvailable,
 			RootCount = availability.RootCount,
-		});
+		};
 	}
 }

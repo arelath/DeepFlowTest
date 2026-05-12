@@ -53,6 +53,13 @@ public static class PayloadLog
 		return text.Length <= maxCharacters ? text : text.Substring(text.Length - maxCharacters);
 	}
 
+	public static bool TryReadTailForPipe(string pipeName, int processId, out string tail, int maxCharacters = 4096)
+	{
+		var logPath = GetLogPath(pipeName, processId);
+		tail = ReadTail(logPath, maxCharacters);
+		return tail.Length != 0;
+	}
+
 	public static void ResetForTests()
 	{
 		activeLogPath = null;

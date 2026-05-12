@@ -5,9 +5,9 @@ using DeepFlowTest.Interop;
 
 internal static class PipeStatusCommand
 {
-	public static void Process(PipeStatusCommandRequest request, NamedPipeServer.Command command, AppDriverPayloadStartupOptions options, ReusablePipeSession? reusableSession)
+	public static object Process(PipeStatusCommandRequest request, AppDriverPayloadStartupOptions options, ReusablePipeSession? reusableSession)
 	{
-		command.Respond(reusableSession?.CreateStatusResponse() ?? new PipeStatusCommandResponse
+		return reusableSession?.CreateStatusResponse() ?? new PipeStatusCommandResponse
 		{
 			PipeName = options.PipeName,
 			IsReusable = false,
@@ -17,6 +17,6 @@ internal static class PipeStatusCommand
 			TotalCommandsHandled = 1,
 			DisconnectedClientCount = 0,
 			IdleMode = "one-shot-command",
-		});
+		};
 	}
 }

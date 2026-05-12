@@ -98,6 +98,9 @@ internal static class Injector
 			if (File.Exists(nativeLogPath))
 				InjectorLog.Write(File.ReadAllText(nativeLogPath));
 
+			if (nativeResult != IntPtr.Zero && PayloadLogLocator.TryReadTail(injectorData.StartupArgument, processWrapper.Id, out var payloadLogTail))
+				InjectorLog.Write($"Payload log tail:{Environment.NewLine}{payloadLogTail}");
+
 			if (nativeResult != IntPtr.Zero)
 				throw Marshal.GetExceptionForHR((int)nativeResult.ToInt64()) ?? new InjectorLauncherException(InjectorExitCode.NativeInjectionFailed, "Unknown native injector failure.");
 		}

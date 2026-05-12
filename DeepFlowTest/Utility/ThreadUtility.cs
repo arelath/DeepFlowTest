@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using DeepFlowTest.Contracts;
 using WinForms = System.Windows.Forms;
 
 public static class ThreadUtility
@@ -106,6 +107,33 @@ public static class ThreadUtility
 		}
 
 		throw new TimeoutException($"Command did not finish within {timeout.TotalMilliseconds:0} ms.");
+	}
+
+	public static async Task<object> RunCommandWithTimeoutAsync(
+		Func<Task<object>> action,
+		int timeoutMs,
+		Action<string, Exception?>? log = null,
+		string? logCorrelationId = null)
+	{
+		_ = action ?? throw new ArgumentNullException(nameof(action));
+
+		try
+		{
+			return await TimeoutAfter(action(), TimeSpan.FromMilliseconds(timeoutMs)).ConfigureAwait(false);
+		}
+		catch (TimeoutException ex)
+		{
+			log?.Invoke("Command timed out.", ex);
+			return StandardIpcResponse.FromError(
+				$"Command timed out after {timeoutMs} ms.",
+				ProtocolConstants.ErrorCodes.CommandTimeout,
+				logCorrelationId);
+		}
+		catch (Exception ex)
+		{
+			log?.Invoke("Command failed.", ex);
+			return StandardIpcResponse.FromError(ex.ToString(), ProtocolConstants.ErrorCodes.ProtocolError, logCorrelationId);
+		}
 	}
 
 	private static async Task RunDispatchedAsync(Dispatcher dispatcher, Func<Task> action)

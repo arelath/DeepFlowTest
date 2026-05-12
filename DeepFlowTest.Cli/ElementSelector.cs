@@ -1,0 +1,66 @@
+namespace DeepFlowTest.Cli;
+
+using System.Collections.Generic;
+
+public sealed class ElementSelector
+{
+	public string? TargetId { get; set; }
+
+	public string? TypeName { get; set; }
+
+	public string? TypeContains { get; set; }
+
+	public string? Name { get; set; }
+
+	public string? AutomationId { get; set; }
+
+	public string? Text { get; set; }
+
+	public KeyValuePair<string, string>? PropertyEquals { get; set; }
+
+	public KeyValuePair<string, string>? PropertyContains { get; set; }
+
+	public KeyValuePair<string, string>? PropertyRegex { get; set; }
+
+	public bool? Visible { get; set; }
+
+	public bool? Enabled { get; set; }
+
+	public bool CaseSensitive { get; set; }
+
+	public bool First { get; set; }
+
+	public int? Index { get; set; }
+
+	public bool IsEmpty =>
+		string.IsNullOrWhiteSpace(TargetId)
+		&& string.IsNullOrWhiteSpace(TypeName)
+		&& string.IsNullOrWhiteSpace(TypeContains)
+		&& string.IsNullOrWhiteSpace(Name)
+		&& string.IsNullOrWhiteSpace(AutomationId)
+		&& string.IsNullOrWhiteSpace(Text)
+		&& PropertyEquals is null
+		&& PropertyContains is null
+		&& PropertyRegex is null
+		&& !Visible.HasValue
+		&& !Enabled.HasValue;
+
+	public static ElementSelector FromArgs(string[] args) =>
+		new()
+		{
+			TargetId = CliArgumentReader.GetOption(args, "--target", "--target-id"),
+			TypeName = CliArgumentReader.GetOption(args, "--type"),
+			TypeContains = CliArgumentReader.GetOption(args, "--type-contains"),
+			Name = CliArgumentReader.GetOption(args, "--name"),
+			AutomationId = CliArgumentReader.GetOption(args, "--automation-id"),
+			Text = CliArgumentReader.GetOption(args, "--text"),
+			PropertyEquals = CliArgumentReader.GetKeyValue(args, "--match-property"),
+			PropertyContains = CliArgumentReader.GetKeyValue(args, "--property-contains"),
+			PropertyRegex = CliArgumentReader.GetKeyValue(args, "--property-regex"),
+			Visible = CliArgumentReader.HasOption(args, "--visible") ? true : null,
+			Enabled = CliArgumentReader.HasOption(args, "--enabled") ? true : null,
+			CaseSensitive = CliArgumentReader.HasOption(args, "--case-sensitive"),
+			First = CliArgumentReader.HasOption(args, "--first"),
+			Index = CliArgumentReader.GetOption(args, "--index") is null ? null : CliArgumentReader.GetInt(args, "--index", 0),
+		};
+}

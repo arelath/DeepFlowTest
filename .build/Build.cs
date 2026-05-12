@@ -120,21 +120,103 @@ internal sealed class Build
 		{
 			var source = Path.Combine(rootDirectory, "bin", configuration, mapping.TargetFramework);
 			var destination = Path.Combine(payloadRoot, mapping.PayloadFamily);
-			Directory.CreateDirectory(destination);
 
 			if (!Directory.Exists(source))
 				continue;
 
-			foreach (var file in Directory.EnumerateFiles(source, "DeepFlowTest.*", SearchOption.TopDirectoryOnly))
-			{
-				var destinationFile = Path.Combine(destination, Path.GetFileName(file));
-				File.Copy(file, destinationFile, overwrite: true);
-			}
+			ResetDirectory(destination, payloadRoot);
+			Directory.CreateDirectory(destination);
+
+			var primaryAssembly = Path.Combine(source, "DeepFlowTest.dll");
+			if (!File.Exists(primaryAssembly))
+				throw new FileNotFoundException("Primary payload assembly was not found.", primaryAssembly);
+
+			var dependencies = GetPayloadDependencies(source).ToArray();
+			var outputAssembly = Path.Combine(destination, "DeepFlowTest.dll");
+			RunILRepack(primaryAssembly, dependencies, outputAssembly);
+			CopyIfExists(Path.Combine(source, "DeepFlowTest.pdb"), Path.Combine(destination, "DeepFlowTest.pdb"));
+			CopyIfExists(Path.Combine(source, "DeepFlowTest.xml"), Path.Combine(destination, "DeepFlowTest.xml"));
+			WritePayloadManifest(destination, mapping, dependencies);
 		}
 
 		File.WriteAllText(
 			Path.Combine(payloadRoot, "REPACKING.md"),
-			"Payload repacking is scaffolded. Third-party dependency internalization will be implemented with ILRepack when payload dependencies are finalized." + Environment.NewLine);
+			"Payload assemblies are generated with ILRepack and internalize payload third-party dependencies. Loose third-party payload DLLs are not expected in framework-family folders." + Environment.NewLine);
+	}
+
+	private void RunILRepack(string primaryAssembly, IReadOnlyList<string> dependencies, string outputAssembly)
+	{
+		var project = Path.Combine(rootDirectory, ".build", "PayloadRepack.proj");
+		var packageVersion = ReadCentralPackageVersion("ILRepack.Lib.MSBuild.Task");
+		var dependencyListFile = Path.Combine(rootDirectory, "output", "repack", $"{Path.GetFileName(Path.GetDirectoryName(outputAssembly))}-dependencies.txt");
+		Directory.CreateDirectory(Path.GetDirectoryName(dependencyListFile)!);
+		File.WriteAllLines(dependencyListFile, dependencies);
+		RunProcess(
+			FindMsBuild(),
+			project,
+			"/t:Repack",
+			"/nologo",
+			$"/p:ILRepackVersion={packageVersion}",
+			$"/p:PrimaryAssembly={primaryAssembly}",
+			$"/p:DependencyAssemblyListFile={dependencyListFile}",
+			$"/p:OutputFile={outputAssembly}");
+	}
+
+	private IEnumerable<string> GetPayloadDependencies(string sourceDirectory)
+	{
+		var dependencyNames = new[]
+		{
+			"Newtonsoft.Json.dll",
+			"Serialize.Linq.dll",
+			"0Harmony.dll",
+			"System.Buffers.dll",
+			"System.Memory.dll",
+			"System.Numerics.Vectors.dll",
+			"System.Runtime.CompilerServices.Unsafe.dll",
+			"System.ValueTuple.dll",
+		};
+
+		foreach (var dependencyName in dependencyNames)
+		{
+			var path = Path.Combine(sourceDirectory, dependencyName);
+			if (File.Exists(path))
+				yield return path;
+		}
+	}
+
+	private static void ResetDirectory(string directory, string expectedRoot)
+	{
+		var fullDirectory = Path.GetFullPath(directory);
+		var fullRoot = Path.GetFullPath(expectedRoot);
+		if (!fullDirectory.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+			throw new InvalidOperationException($"Refusing to reset directory outside payload root: {fullDirectory}");
+
+		if (Directory.Exists(fullDirectory))
+			Directory.Delete(fullDirectory, recursive: true);
+	}
+
+	private static void CopyIfExists(string source, string destination)
+	{
+		if (!File.Exists(source))
+			return;
+
+		Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+		File.Copy(source, destination, overwrite: true);
+	}
+
+	private static void WritePayloadManifest(string destination, PayloadMapping mapping, IReadOnlyList<string> dependencies)
+	{
+		var lines = new List<string>
+		{
+			"# DeepFlowTest Payload",
+			string.Empty,
+			$"- targetFramework: {mapping.TargetFramework}",
+			$"- payloadFamily: {mapping.PayloadFamily}",
+			$"- repacker: ILRepack",
+			"- internalizedDependencies:",
+		};
+		lines.AddRange(dependencies.Select(path => $"  - {Path.GetFileName(path)}"));
+		File.WriteAllLines(Path.Combine(destination, "DeepFlowTest.payload.md"), lines);
 	}
 
 	private void TestFast()
@@ -286,6 +368,23 @@ internal sealed class Build
 			targets.Add("Compile");
 
 		return new BuildOptions(configuration, targets);
+	}
+
+	private string ReadCentralPackageVersion(string packageName)
+	{
+		var propsPath = Path.Combine(rootDirectory, "Directory.Packages.props");
+		var marker = $"PackageVersion Include=\"{packageName}\" Version=\"";
+		var text = File.ReadAllText(propsPath);
+		var start = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+		if (start < 0)
+			throw new InvalidOperationException($"Package '{packageName}' is not declared in Directory.Packages.props.");
+
+		start += marker.Length;
+		var end = text.IndexOf('"', start);
+		if (end < 0)
+			throw new InvalidOperationException($"Package '{packageName}' version declaration is malformed.");
+
+		return text.Substring(start, end - start);
 	}
 
 	private string MainSolution => Path.Combine(rootDirectory, "DeepFlowTest.sln");

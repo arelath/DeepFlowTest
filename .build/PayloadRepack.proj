@@ -1,0 +1,36 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <NuGetPackageRoot Condition="'$(NuGetPackageRoot)' == ''">$(UserProfile)\.nuget\packages\</NuGetPackageRoot>
+    <ILRepackVersion Condition="'$(ILRepackVersion)' == ''">2.0.44</ILRepackVersion>
+    <ILRepackTaskAssembly>$(NuGetPackageRoot)ilrepack.lib.msbuild.task\$(ILRepackVersion)\build\ILRepack.Lib.MSBuild.Task.dll</ILRepackTaskAssembly>
+  </PropertyGroup>
+
+  <UsingTask AssemblyFile="$(ILRepackTaskAssembly)" TaskName="ILRepack" />
+
+  <Target Name="Repack">
+    <Error Condition="'$(PrimaryAssembly)' == ''" Text="PrimaryAssembly is required." />
+    <Error Condition="'$(OutputFile)' == ''" Text="OutputFile is required." />
+    <Error Condition="!Exists('$(ILRepackTaskAssembly)')" Text="ILRepack task assembly was not found at $(ILRepackTaskAssembly)." />
+    <Error Condition="!Exists('$(PrimaryAssembly)')" Text="Primary assembly was not found at $(PrimaryAssembly)." />
+
+    <ItemGroup>
+      <InputAssemblies Include="$(PrimaryAssembly)" />
+    </ItemGroup>
+    <ReadLinesFromFile File="$(DependencyAssemblyListFile)" Condition="'$(DependencyAssemblyListFile)' != '' and Exists('$(DependencyAssemblyListFile)')">
+      <Output TaskParameter="Lines" ItemName="DependencyAssembly" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <InputAssemblies Include="@(DependencyAssembly)" />
+    </ItemGroup>
+
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(OutputFile)'))" />
+    <ILRepack
+      Parallel="true"
+      DebugInfo="true"
+      Internalize="true"
+      AllowDuplicateResources="false"
+      InputAssemblies="@(InputAssemblies)"
+      TargetKind="SameAsPrimaryAssembly"
+      OutputFile="$(OutputFile)" />
+  </Target>
+</Project>

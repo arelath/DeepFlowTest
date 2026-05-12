@@ -1,0 +1,39 @@
+name: DeepFlowTest CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  fast:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore
+        run: .\build.ps1 Restore
+        shell: pwsh
+      - name: Fast tests
+        run: .\build.ps1 TestFast
+        shell: pwsh
+
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Publish CLI
+        run: .\build.ps1 PublishCli
+        shell: pwsh
+      - name: Pack
+        run: .\build.ps1 Pack
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeepFlowTest-artifacts
+          path: artifacts/**

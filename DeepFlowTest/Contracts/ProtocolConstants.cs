@@ -31,9 +31,14 @@ public static class ProtocolConstants
 	{
 		public const string Error = "Error";
 		public const string ErrorCode = "ErrorCode";
+		public const string Format = "Format";
 		public const string Kind = "Kind";
+		public const string MatcherHash = "MatcherHash";
+		public const string StreamKind = "StreamKind";
+		public const string SubscriptionId = "SubscriptionId";
 		public const string Status = "Status";
 		public const string Success = "Success";
+		public const string TargetId = "TargetId";
 		public const string TimeoutMs = "TimeoutMs";
 	}
 
@@ -41,6 +46,7 @@ public static class ProtocolConstants
 	{
 		public const string Ok = "ok";
 		public const string Error = "error";
+		public const string NoMatch = "no-match";
 		public const string Started = "started";
 		public const string Stopped = "stopped";
 		public const string UnknownSubscription = "unknown-subscription";
@@ -52,9 +58,18 @@ public static class ProtocolConstants
 		public const string MalformedFrame = "malformed-frame";
 		public const string ProtocolError = "protocol-error";
 		public const string StartupError = "startup-error";
+		public const string StaleTarget = "stale-target";
 		public const string TargetExited = "target-exited";
 		public const string UnsupportedCommand = "unsupported-command";
 		public const string UnsupportedProtocol = "unsupported-protocol";
 		public const string UnsupportedTarget = "unsupported-target";
+	}
+
+	public static class StreamKinds
+	{
+		public const string EventLog = "event-log";
+		public const string Screenshot = "screenshot";
+		public const string VisualTree = "visual-tree";
+		public const string VisualTreeDelta = "visual-tree-delta";
 	}
 }

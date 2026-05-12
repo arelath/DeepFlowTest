@@ -27,6 +27,9 @@ public static class AppDriverPayload
 
 		try
 		{
+			var patchResult = AppHooks.Apply((message, exception) => PayloadLog.Write(message, exception));
+			PayloadLog.Write($"Runtime patch diagnostics: {patchResult.Summary}.");
+
 			if (!runtime.HasSupportedTarget())
 			{
 				PayloadLog.Write("Unsupported target: no WPF dispatcher or WinForms message loop was detected.");
@@ -63,5 +66,6 @@ public static class AppDriverPayload
 		runtime = new DefaultAppDriverPayloadRuntime();
 		PayloadLog.ResetForTests();
 		ReusablePipeSessionRegistry.ClearForTests();
+		AppHooks.ResetForTests();
 	}
 }

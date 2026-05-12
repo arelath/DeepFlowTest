@@ -7,4 +7,8 @@
     <IsPackable>false</IsPackable>
     <EnableSourceLink>false</EnableSourceLink>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task" />
+  </ItemGroup>
 </Project>

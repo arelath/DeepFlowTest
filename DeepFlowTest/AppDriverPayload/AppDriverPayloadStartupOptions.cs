@@ -10,12 +10,16 @@ public sealed class AppDriverPayloadStartupOptions
 	private const string Prefix = "dft:";
 	private const string FilePrefix = "dftfile:";
 
+	[JsonProperty("pipeName")]
 	public string PipeName { get; set; } = string.Empty;
 
+	[JsonProperty("mode")]
 	public string Mode { get; set; } = PayloadStartupModes.OneShotDriver;
 
+	[JsonProperty("payloadRoot")]
 	public string PayloadRoot { get; set; } = string.Empty;
 
+	[JsonProperty("protocolVersion")]
 	public string ProtocolVersion { get; set; } = Contracts.ProtocolConstants.ProtocolVersion;
 
 	public string Encode()

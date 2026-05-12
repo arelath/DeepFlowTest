@@ -7,18 +7,17 @@ using DeepFlowTest.Interop;
 
 internal static class HelloCommand
 {
-	public static void Process(HelloCommandRequest request, NamedPipeServer.Command command, AppDriverPayloadStartupOptions options, ReusablePipeSession? reusableSession)
+	public static object Process(HelloCommandRequest request, AppDriverPayloadStartupOptions options, ReusablePipeSession? reusableSession)
 	{
 		if (!string.Equals(request.ProtocolVersion, ProtocolConstants.ProtocolVersion, StringComparison.Ordinal))
 		{
-			command.Respond(StandardIpcResponse.FromError(
+			return StandardIpcResponse.FromError(
 				$"Protocol version '{request.ProtocolVersion}' is not supported.",
 				ProtocolConstants.ErrorCodes.UnsupportedProtocol,
-				LogCorrelationId()));
-			return;
+				LogCorrelationId());
 		}
 
-		command.Respond(new HelloCommandResponse
+		return new HelloCommandResponse
 		{
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
 			PayloadVersion = typeof(HelloCommand).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
@@ -29,7 +28,7 @@ internal static class HelloCommand
 			ProcessArchitecture = PayloadEnvironment.ProcessArchitecture,
 			FrameworkFamily = PayloadEnvironment.FrameworkFamily,
 			Timestamp = DateTimeOffset.UtcNow,
-		});
+		};
 	}
 
 	private static string LogCorrelationId()
