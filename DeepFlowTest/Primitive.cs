@@ -140,7 +140,6 @@ public sealed class Primitive
 				{
 					break;
 				}
-				break;
 		}
 
 		number = 0;

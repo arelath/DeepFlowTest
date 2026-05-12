@@ -2,12 +2,18 @@ namespace DeepFlowTest;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using LinqExpression = System.Linq.Expressions.Expression;
 
 public class Element
 {
@@ -76,7 +82,11 @@ public class Element
 
 	public Element this[int childIndex] => Children[childIndex];
 
-	public Primitive this[string propertyName] => Primitive.FromProperty(this, propertyName);
+	public Primitive this[string propertyName]
+	{
+		get => Primitive.FromProperty(this, propertyName);
+		set => SetProperty(propertyName, value?.Value);
+	}
 
 	public bool HasProperty(string propertyName) => Properties.ContainsKey(propertyName);
 
@@ -88,34 +98,34 @@ public class Element
 		if (value is T typed)
 			return typed;
 
-		return (T?)Convert.ChangeType(value, typeof(T), System.Globalization.CultureInfo.InvariantCulture);
+		return (T?)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
 	}
 
-	public Element Click() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId });
+	public virtual Element Click() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId });
 
-	public Element RightClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, MouseButton = "right" });
+	public virtual Element RightClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, MouseButton = "right" });
 
-	public Element DoubleClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, ClickCount = 2 });
+	public virtual Element DoubleClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, ClickCount = 2 });
 
-	public Element Focus() => SendTargetedWithRepair(() => new FocusCommandRequest { TargetId = TargetId });
+	public virtual Element Focus() => SendTargetedWithRepair(() => new FocusCommandRequest { TargetId = TargetId });
 
-	public Element Select() => KnownOperation("Select");
+	public virtual Element Select() => KnownOperation("Select");
 
-	public Element Expand() => KnownOperation("Expand");
+	public virtual Element Expand() => KnownOperation("Expand");
 
-	public Element Collapse() => KnownOperation("Collapse");
+	public virtual Element Collapse() => KnownOperation("Collapse");
 
-	public Element Check() => KnownOperation("Check");
+	public virtual Element Check() => KnownOperation("Check");
 
-	public Element Uncheck() => KnownOperation("Uncheck");
+	public virtual Element Uncheck() => KnownOperation("Uncheck");
 
-	public Element ScrollIntoView() => KnownOperation("BringIntoView");
+	public virtual Element ScrollIntoView() => KnownOperation("BringIntoView");
 
-	public Element AcceptDialog() => KnownOperation("AcceptDialog");
+	public virtual Element AcceptDialog() => KnownOperation("AcceptDialog");
 
-	public Element CancelDialog() => KnownOperation("CancelDialog");
+	public virtual Element CancelDialog() => KnownOperation("CancelDialog");
 
-	public Element Type(string text, bool clearFirst = false)
+	public virtual Element Type(string text, bool clearFirst = false)
 	{
 		SendTargetedWithRepair(() => new TypeTextCommandRequest { TargetId = TargetId, Text = text, ClearFirst = clearFirst });
 		return this;
@@ -127,7 +137,7 @@ public class Element
 	public byte[] Screenshot(ImageFormat format = ImageFormat.Jpeg) =>
 		Convert.FromBase64String(CaptureScreenshot(format.ToProtocolString()).BytesBase64 ?? string.Empty);
 
-	public Element Screenshot(string fileOutputPath)
+	public virtual Element Screenshot(string fileOutputPath)
 	{
 		_ = fileOutputPath ?? throw new ArgumentNullException(nameof(fileOutputPath));
 		var bytes = Screenshot(GetImageFormatFromPath(fileOutputPath));
@@ -138,37 +148,108 @@ public class Element
 		return this;
 	}
 
-	public Element Screenshot(out byte[] screenshotBytes, ImageFormat format = ImageFormat.Jpeg)
+	public virtual Element Screenshot(out byte[] screenshotBytes, ImageFormat format = ImageFormat.Jpeg)
 	{
 		screenshotBytes = Screenshot(format);
 		return this;
 	}
 
-	public Element SelectText(string text) =>
-		SetProperty("SelectedText", text);
+	public virtual Element SelectText(string text)
+	{
+		var currentText = GetProperty<string>("Text") ?? string.Empty;
+		var startIndex = currentText.IndexOf(text ?? string.Empty, StringComparison.Ordinal);
+		if (startIndex < 0)
+			return SetProperty("SelectedText", text);
 
-	public Element RaiseEvent(string eventName) =>
+		SetProperty("SelectionStart", startIndex);
+		SetProperty("SelectionLength", text?.Length ?? 0);
+		return this;
+	}
+
+	public virtual Element RaiseEvent(string eventName) =>
 		SendTargetedWithRepair(() => new RaiseEventCommandRequest { TargetId = TargetId, EventName = eventName });
 
-	public Element RaiseEvent<TInput>(Expression<Func<TInput, RoutedEventArgs>> code) =>
+	public virtual Element RaiseEvent<TInput>(Expression<Func<TInput, RoutedEventArgs>> code) =>
 		SendTargetedWithRepair(() => new RaiseEventCommandRequest { TargetId = TargetId, GetRoutedEventArgs = ExpressionPayloadSerializer.Serialize(code) });
 
-	public Element Invoke(string methodName, bool allowUnsafeCode = false) =>
+	public virtual Element Invoke(string methodName, bool allowUnsafeCode = false) =>
 		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = methodName, AllowUnsafeCode = allowUnsafeCode });
 
-	public Element Invoke<TInput>(Expression<Action<TInput>> code) =>
-		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true });
+	public virtual Element Invoke<TInput>(Expression<Action<TInput>> code, int timeoutMs = 10_000) =>
+		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
 
-	public Element SetProperty(string propertyName, object? value) =>
+	public virtual TOutput? Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, int timeoutMs = 10_000)
+	{
+		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		return ConvertResponseValue<TOutput>(response.Value);
+	}
+
+	public virtual Element Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, out TOutput? result, int timeoutMs = 10_000)
+	{
+		result = Invoke(code, timeoutMs);
+		return this;
+	}
+
+	public virtual Element InvokeAsync<TInput>(Expression<Func<TInput, Task>> code, int timeoutMs = 10_000)
+	{
+		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		return this;
+	}
+
+	public virtual TOutput? InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, int timeoutMs = 10_000)
+	{
+		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		return ConvertResponseValue<TOutput>(response.Value);
+	}
+
+	public virtual Element InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, out TOutput? result, int timeoutMs = 10_000)
+	{
+		result = InvokeAsync(code, timeoutMs);
+		return this;
+	}
+
+	public virtual Element SetProperty(string propertyName, object? value) =>
 		SendTargetedWithRepair(() => new SetPropertyCommandRequest { TargetId = TargetId, PropertyName = propertyName, PropertyValue = value });
 
-	public Element SetProperty<TInput, TOutput>(string propertyName, Expression<Func<TInput, TOutput>> getValue) =>
+	public virtual Element SetProperty<TInput, TOutput>(string propertyName, Expression<Func<TInput, TOutput>> getValue) =>
 		SendTargetedWithRepair(() => new SetPropertyCommandRequest
 		{
 			TargetId = TargetId,
 			PropertyName = propertyName,
 			PropertyValue = ExpressionPayloadSerializer.Serialize(getValue),
 		});
+
+	public virtual Element Assert(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs = 10_000)
+	{
+		_ = predicateExpression ?? throw new ArgumentNullException(nameof(predicateExpression));
+		var predicate = predicateExpression.Compile();
+		var timeout = TimeSpan.FromMilliseconds(Math.Max(1, timeoutMs));
+		var delays = new[] { 0, 25, 100, 250, 500, 1000 };
+		var stopwatch = Stopwatch.StartNew();
+		Exception? lastException = null;
+
+		for (var attempt = 0; ; attempt++)
+		{
+			try
+			{
+				RefreshFromCurrentSnapshot();
+				if (predicate(this) == true)
+					return this;
+				lastException = null;
+			}
+			catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+			{
+				lastException = ex;
+			}
+
+			if (stopwatch.Elapsed >= timeout)
+				break;
+
+			Thread.Sleep(delays[Math.Min(attempt + 1, delays.Length - 1)]);
+		}
+
+		throw new AppDriverAssertionException(FormatAssertionFailure(predicateExpression, timeoutMs, lastException));
+	}
 
 	internal static Element FromMatch(AppDriver driver, FindElementMatchResponse match, ElementSelector? selector)
 	{
@@ -187,10 +268,10 @@ public class Element
 	internal static Element FromNode(AppDriver driver, VisualTreeNodeDto node, VisualTreeSnapshot snapshot) =>
 		new(driver, node, snapshot: snapshot);
 
-	protected void ReplaceNode(VisualTreeNodeDto replacement)
+	protected void ReplaceNode(VisualTreeNodeDto replacement, VisualTreeSnapshot? snapshot = null)
 	{
 		node = replacement;
-		Snapshot = null;
+		Snapshot = snapshot;
 	}
 
 	private Element KnownOperation(string operation) =>
@@ -198,10 +279,16 @@ public class Element
 
 	private Element SendTargetedWithRepair(Func<IpcCommand> commandFactory)
 	{
+		SendTargetedWithRepairResponse(commandFactory);
+		return this;
+	}
+
+	private StandardIpcResponse SendTargetedWithRepairResponse(Func<IpcCommand> commandFactory)
+	{
 		var response = SendWithRepair<StandardIpcResponse>(commandFactory);
 		if (response.Success != true)
 			throw new AppDriverException(response.ErrorCode ?? ProtocolConstants.ErrorCodes.ProtocolError, response.Error ?? "Command failed.");
-		return this;
+		return response;
 	}
 
 	private TResponse SendWithRepair<TResponse>(Func<IpcCommand> commandFactory)
@@ -255,9 +342,117 @@ public class Element
 			_ => ImageFormat.Png,
 		};
 	}
+
+	private void RefreshFromCurrentSnapshot()
+	{
+		var snapshot = driver.GetVisualTree(TargetId);
+		var refreshed = snapshot.Nodes.SingleOrDefault(candidate => string.Equals(candidate.TargetId, TargetId, StringComparison.Ordinal));
+		if (refreshed is not null)
+		{
+			ReplaceNode(refreshed, snapshot);
+			return;
+		}
+
+		if (Selector is null)
+			return;
+
+		var repaired = driver.Repair(this);
+		ReplaceNode(repaired.node, repaired.Snapshot);
+	}
+
+	private string FormatAssertionFailure(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs, Exception? lastException)
+	{
+		var propertyNames = ElementPropertyAccessCollector.Collect(predicateExpression);
+		var actuals = propertyNames.Count == 0
+			? Properties.OrderBy(static property => property.Key, StringComparer.Ordinal).Take(12)
+			: propertyNames.OrderBy(static name => name, StringComparer.Ordinal)
+				.Select(name => new KeyValuePair<string, object?>(name, Properties.TryGetValue(name, out var value) ? value : Primitive.Empty));
+		var builder = new StringBuilder()
+			.AppendFormat(CultureInfo.InvariantCulture, "Expected '{0}' to be true within {1}ms. ", predicateExpression.Body, timeoutMs)
+			.AppendFormat(CultureInfo.InvariantCulture, "TargetId={0}; TypeName={1}; ", TargetId, TypeName)
+			.Append("Actuals={")
+			.Append(string.Join(", ", actuals.Select(static property => property.Key + "=" + FormatValue(property.Value))))
+			.Append('}');
+
+		if (lastException is not null)
+			builder.AppendFormat(CultureInfo.InvariantCulture, "; LastError={0}: {1}", lastException.GetType().Name, lastException.Message);
+
+		return builder.ToString();
+	}
+
+	private static string FormatValue(object? value) =>
+		value switch
+		{
+			null => "null",
+			Primitive primitive => primitive.ToString(),
+			_ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
+		};
+
+	private static T? ConvertResponseValue<T>(object? value)
+	{
+		if (value is null)
+			return default;
+		if (value is T typed)
+			return typed;
+		if (value is Newtonsoft.Json.Linq.JToken token)
+			return token.ToObject<T>();
+		return (T?)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
+	}
+
+	private sealed class ElementPropertyAccessCollector : ExpressionVisitor
+	{
+		private readonly HashSet<string> propertyNames = new(StringComparer.Ordinal);
+
+		public static IReadOnlyCollection<string> Collect(LinqExpression expression)
+		{
+			var collector = new ElementPropertyAccessCollector();
+			collector.Visit(expression);
+			return collector.propertyNames;
+		}
+
+		protected override LinqExpression VisitIndex(IndexExpression node)
+		{
+			if (IsElementExpression(node.Object) && node.Arguments.Count == 1 && TryGetString(node.Arguments[0], out var propertyName))
+				propertyNames.Add(propertyName);
+
+			return base.VisitIndex(node);
+		}
+
+		protected override LinqExpression VisitMethodCall(MethodCallExpression node)
+		{
+			if (IsElementExpression(node.Object)
+				&& node.Arguments.Count == 1
+				&& (node.Method.Name == "get_Item" || node.Method.Name == nameof(HasProperty))
+				&& TryGetString(node.Arguments[0], out var propertyName))
+			{
+				propertyNames.Add(propertyName);
+			}
+
+			return base.VisitMethodCall(node);
+		}
+
+		private static bool IsElementExpression(LinqExpression? expression) =>
+			expression is not null && typeof(Element).IsAssignableFrom(expression.Type);
+
+		private static bool TryGetString(LinqExpression expression, out string value)
+		{
+			while (expression is UnaryExpression { NodeType: ExpressionType.Convert } convert)
+				expression = convert.Operand;
+
+			if (expression is ConstantExpression { Value: string constant })
+			{
+				value = constant;
+				return true;
+			}
+
+			value = string.Empty;
+			return false;
+		}
+	}
 }
 
-public class Element<TNative> : Element
+public class Element<T> : Element
+	where T : Element
 {
 	public Element(Element source)
 		: base(source)
@@ -267,5 +462,40 @@ public class Element<TNative> : Element
 	internal Element(AppDriver driver, VisualTreeNodeDto node, ElementSelector? selector = null, VisualTreeSnapshot? snapshot = null)
 		: base(driver, node, selector, snapshot)
 	{
+	}
+
+	public new T Click() => Return(base.Click());
+	public new T RightClick() => Return(base.RightClick());
+	public new T DoubleClick() => Return(base.DoubleClick());
+	public new T Focus() => Return(base.Focus());
+	public new T Select() => Return(base.Select());
+	public new T Expand() => Return(base.Expand());
+	public new T Collapse() => Return(base.Collapse());
+	public new T Check() => Return(base.Check());
+	public new T Uncheck() => Return(base.Uncheck());
+	public new T ScrollIntoView() => Return(base.ScrollIntoView());
+	public new T AcceptDialog() => Return(base.AcceptDialog());
+	public new T CancelDialog() => Return(base.CancelDialog());
+	public new T Type(string text, bool clearFirst = false) => Return(base.Type(text, clearFirst));
+	public new T SelectText(string text) => Return(base.SelectText(text));
+	public new T Screenshot(string fileOutputPath) => Return(base.Screenshot(fileOutputPath));
+	public new T Screenshot(out byte[] screenshotBytes, ImageFormat format = ImageFormat.Jpeg) => Return(base.Screenshot(out screenshotBytes, format));
+	public new T RaiseEvent(string eventName) => Return(base.RaiseEvent(eventName));
+	public new T RaiseEvent<TInput>(Expression<Func<TInput, RoutedEventArgs>> code) => Return(base.RaiseEvent(code));
+	public new T Invoke(string methodName, bool allowUnsafeCode = false) => Return(base.Invoke(methodName, allowUnsafeCode));
+	public new T Invoke<TInput>(Expression<Action<TInput>> code, int timeoutMs = 10_000) => Return(base.Invoke(code, timeoutMs));
+	public new T Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, out TOutput? result, int timeoutMs = 10_000) => Return(base.Invoke(code, out result, timeoutMs));
+	public new T InvokeAsync<TInput>(Expression<Func<TInput, Task>> code, int timeoutMs = 10_000) => Return(base.InvokeAsync(code, timeoutMs));
+	public new T InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, out TOutput? result, int timeoutMs = 10_000) => Return(base.InvokeAsync(code, out result, timeoutMs));
+	public new T SetProperty(string propertyName, object? value) => Return(base.SetProperty(propertyName, value));
+	public new T SetProperty<TInput, TOutput>(string propertyName, Expression<Func<TInput, TOutput>> getValue) => Return(base.SetProperty(propertyName, getValue));
+	public new T Assert(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs = 10_000) => Return(base.Assert(predicateExpression, timeoutMs));
+
+	private T Return(Element _)
+	{
+		if (this is T typed)
+			return typed;
+
+		throw new InvalidCastException($"Element wrapper '{GetType().FullName}' cannot be returned as '{typeof(T).FullName}'.");
 	}
 }

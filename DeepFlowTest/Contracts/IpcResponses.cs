@@ -13,6 +13,8 @@ public sealed class StandardIpcResponse
 
 	public string? Error { get; set; }
 
+	public object? Value { get; set; }
+
 	public string? LogCorrelationId { get; set; }
 
 	public static StandardIpcResponse Ok() =>

@@ -164,7 +164,7 @@ internal static class StartSendingCommand
 		return new
 		{
 			status = "heartbeat",
-			processId = Environment.ProcessId,
+			processId = System.Diagnostics.Process.GetCurrentProcess().Id,
 			rootCount = snapshot.RootIds.Count,
 			roots = snapshot.RootIds,
 			generatedUtc = DateTimeOffset.UtcNow,

@@ -43,9 +43,13 @@ public sealed class InjectorLauncherProgramRunTests
 	public void ProgramRunMapsMissingInjectorDllSeparately()
 	{
 		var payload = Path.Combine(Path.GetTempPath(), $"deepflowtest-payload-{Guid.NewGuid():N}.dll");
+		var isolatedRoot = Path.Combine(Path.GetTempPath(), $"deepflowtest-injector-root-{Guid.NewGuid():N}");
 		File.WriteAllText(payload, string.Empty);
+		Directory.CreateDirectory(isolatedRoot);
 		try
 		{
+			using var _ = InjectorPathResolver.OverrideRootDirectoryForTests(isolatedRoot);
+
 			var exitCode = Program.Run(CreateArgs(payload));
 
 			Assert.That(exitCode, Is.EqualTo(InjectorExitCode.MissingInjectorDll));
@@ -53,6 +57,7 @@ public sealed class InjectorLauncherProgramRunTests
 		finally
 		{
 			File.Delete(payload);
+			Directory.Delete(isolatedRoot, recursive: true);
 		}
 	}
 

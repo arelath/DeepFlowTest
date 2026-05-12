@@ -15,7 +15,7 @@ internal static class Injector
 
 	public static void InjectIntoProcess(ProcessWrapper processWrapper, InjectorData injectorData)
 	{
-		var paths = InjectorPathResolver.GetDllPaths(processWrapper.Architecture, AppContext.BaseDirectory, processWrapper.SupportedFrameworkFamily);
+		var paths = InjectorPathResolver.GetDllPaths(processWrapper.Architecture, InjectorPathResolver.RootDirectory, processWrapper.SupportedFrameworkFamily);
 		InjectIntoProcess(processWrapper, injectorData, paths);
 	}
 

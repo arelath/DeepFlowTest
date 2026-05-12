@@ -182,7 +182,7 @@ public sealed class ElementApiTests
 	}
 
 	[Test]
-	public void WpfPilot2StylePrimitiveIndexerFluentActionsAndScreenshotBytesWork()
+	public void CompatibilityPrimitiveIndexerFluentActionsAndScreenshotBytesWork()
 	{
 		var session = new FakeSession(
 			FindMatch("button", "submit"),

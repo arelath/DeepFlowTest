@@ -236,9 +236,9 @@ public static class CliRootCommand
 		command.Add(CreateOption<string>("--text", "Text selector."));
 		command.Add(CreateOption<string>("--type", "Type selector."));
 		command.Add(CreateOption<string>("--type-contains", "Type contains selector."));
-		command.Add(CreateOption<string>("--property", "Property equality selector as name=value."));
-		command.Add(CreateOption<string>("--property-contains", "Property contains selector as name=value."));
-		command.Add(CreateOption<string>("--property-regex", "Property regex selector as name=regex."));
+		command.Add(CreateOption<string>("--property", "Property equality selector as name=value.", "--prop"));
+		command.Add(CreateOption<string>("--property-contains", "Property contains selector as name=value.", "--contains"));
+		command.Add(CreateOption<string>("--property-regex", "Property regex selector as name=regex.", "--regex"));
 		command.Add(CreateOption<bool>("--visible", "Require visible nodes."));
 		command.Add(CreateOption<bool>("--enabled", "Require enabled nodes."));
 		command.Add(CreateOption<bool>("--case-sensitive", "Use case-sensitive matching."));
@@ -261,7 +261,7 @@ public static class CliRootCommand
 	{
 		AddActionTargetOptions(command);
 		command.Add(CreateOption<string>("--image-format", "Image format."));
-		command.Add(CreateOption<string>("--output", "Output image path."));
+		command.Add(CreateOption<string>("--output", "Output image path.", "--out"));
 		command.Add(CreateOption<bool>("--base64", "Include base64 bytes in JSON output."));
 	}
 
@@ -305,6 +305,7 @@ public static class CliRootCommand
 		AddActionTargetOptions(command);
 		command.Add(CreateOption<string>("--button", "Mouse button."));
 		command.Add(CreateOption<int>("--count", "Click count."));
+		command.Add(CreateOption<bool>("--double", "Send a double-click routed event."));
 	}
 
 	private static void AddTypeOptions(Command command)
@@ -350,18 +351,18 @@ public static class CliRootCommand
 		command.Add(CreateOption<string>("--text", "Text selector."));
 		command.Add(CreateOption<string>("--type", "Type selector."));
 		command.Add(CreateOption<string>("--type-contains", "Type contains selector."));
-		command.Add(CreateOption<string>("--match-property", "Property equality selector as name=value."));
-		command.Add(CreateOption<string>("--property-contains", "Property contains selector as name=value."));
-		command.Add(CreateOption<string>("--property-regex", "Property regex selector as name=regex."));
-		command.Add(CreateOption<bool>("--visible", "Require visible nodes."));
-		command.Add(CreateOption<bool>("--enabled", "Require enabled nodes."));
+		command.Add(CreateOption<string>("--match-property", "Property equality selector as name=value.", "--prop"));
+		command.Add(CreateOption<string>("--property-contains", "Property contains selector as name=value.", "--contains"));
+		command.Add(CreateOption<string>("--property-regex", "Property regex selector as name=regex.", "--regex"));
+		command.Add(CreateOption<bool>("--visible", "Require visible nodes.", "--require-visible"));
+		command.Add(CreateOption<bool>("--enabled", "Require enabled nodes.", "--require-enabled"));
 		command.Add(CreateOption<bool>("--case-sensitive", "Use case-sensitive matching."));
 		command.Add(CreateOption<bool>("--first", "Use the first matching node."));
 		command.Add(CreateOption<int>("--index", "Use zero-based index from matching nodes."));
 	}
 
-	private static Option<T> CreateOption<T>(string name, string description) =>
-		new(name)
+	private static Option<T> CreateOption<T>(string name, string description, params string[] aliases) =>
+		new(name, aliases)
 		{
 			Description = description,
 		};

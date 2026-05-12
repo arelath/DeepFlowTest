@@ -7,6 +7,7 @@ using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using NUnit.Framework;
+using WpfKey = System.Windows.Input.Key;
 
 [TestFixture]
 public sealed class PrimitiveKeyboardAssertionTests
@@ -55,6 +56,13 @@ public sealed class PrimitiveKeyboardAssertionTests
 		Assert.That(keyCommands.Select(static command => command.Keys), Is.EqualTo(new object?[] { "Enter", "Control+A" }));
 		Assert.That(keyCommands.All(command => command.DelayMs == 12), Is.True);
 		Assert.That(keyCommands.All(command => command.EnsureForeground == false), Is.True);
+	}
+
+	[Test]
+	public void KeyboardExposesCompatibilityPhysicalInputOverloads()
+	{
+		Assert.That(typeof(Keyboard).GetMethod(nameof(Keyboard.Press), new[] { typeof(WpfKey[]) }), Is.Not.Null);
+		Assert.That(typeof(Keyboard).GetMethod(nameof(Keyboard.Type), new[] { typeof(string) }), Is.Not.Null);
 	}
 
 	[Test]

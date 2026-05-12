@@ -21,6 +21,18 @@ public sealed class ScreenshotCommandHandlerTests
 	}
 
 	[Test]
+	public void ScreenshotAcceptsCompatOutAlias()
+	{
+		var path = Path.Combine(Path.GetTempPath(), "DeepFlowTest.Cli.Tests", System.Guid.NewGuid().ToString("N"), "capture.png");
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: new FakeAppSessionService());
+
+		var result = CliTestHost.Run(new[] { "screenshot", "--pid", "1234", "--out", path }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(File.Exists(path), Is.True);
+	}
+
+	[Test]
 	public void ScreenshotCanIncludeBase64AndResolveShortTarget()
 	{
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: new FakeAppSessionService());

@@ -34,6 +34,20 @@ public sealed class ActionCommandHandlerTests
 	}
 
 	[Test]
+	public void ClickAcceptsCompatDoubleAliasAndSelectorAliases()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "click", "--pid", "1234", "--prop", "AutomationProperties.AutomationId=SubmitButton", "--require-visible", "--double" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		var command = session.Session.Commands.OfType<KnownRoutedEventCommandRequest>().Single();
+		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
+		Assert.That(command.EventName, Is.EqualTo("MouseDoubleClick"));
+	}
+
+	[Test]
 	public void RightDoubleClickKeepsClickPayload()
 	{
 		var session = new FakeAppSessionService();
@@ -67,6 +81,21 @@ public sealed class ActionCommandHandlerTests
 		Assert.That(session.Session.Commands.OfType<SetPropertyCommandRequest>().Single().PropertyValue, Is.EqualTo(true));
 		Assert.That(session.Session.Commands.OfType<KnownRoutedEventCommandRequest>().Single(command => command.EventName == "Click").TargetId, Is.EqualTo("button-0002"));
 		Assert.That(session.Session.Commands.OfType<KnownOperationCommandRequest>().Single().Operation, Is.EqualTo("Focus"));
+	}
+
+	[Test]
+	public void TypeAndKeyCanTargetForegroundWithoutElementSelector()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var typed = CliTestHost.Run(new[] { "type", "--pid", "1234", "--text", "hello" }, services);
+		var keyed = CliTestHost.Run(new[] { "key", "--pid", "1234", "--keys", "Enter" }, services);
+
+		Assert.That(typed.ExitCode, Is.EqualTo(0));
+		Assert.That(keyed.ExitCode, Is.EqualTo(0));
+		Assert.That(session.Session.Commands.OfType<TypeTextCommandRequest>().Single().TargetId, Is.Null);
+		Assert.That(session.Session.Commands.OfType<KeyPressCommandRequest>().Single().TargetId, Is.Null);
 	}
 
 	[Test]

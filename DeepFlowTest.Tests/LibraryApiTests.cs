@@ -53,7 +53,7 @@ public sealed class LibraryApiTests
 	}
 
 	[Test]
-	public void WpfPilot2StyleLaunchAndScreenshotOverloadsCompileAndSendExpectedCommands()
+	public void CompatibilityLaunchAndScreenshotOverloadsCompileAndSendExpectedCommands()
 	{
 		var session = new FakeSession(new ScreenshotCommandResponse
 		{
@@ -90,7 +90,7 @@ public sealed class LibraryApiTests
 	}
 
 	[Test]
-	public void WpfPilot2StyleElementExpressionLookupSupportsPropertyIndexer()
+	public void CompatibilityElementExpressionLookupSupportsPropertyIndexer()
 	{
 		var snapshot = VisualTreeSnapshot.Create(1, new[]
 		{
@@ -104,6 +104,26 @@ public sealed class LibraryApiTests
 		var element = driver.GetElement(x => x["Name"] == "Run" && x["Width"] > 100);
 
 		Assert.That(element.TargetId, Is.EqualTo("button"));
+	}
+
+	[Test]
+	public void CompatibilityCustomElementLookupReturnsTypedFluentWrapper()
+	{
+		var snapshot = VisualTreeSnapshot.Create(1, new[]
+		{
+			new VisualTreeNodeDto { TargetId = "button", TypeName = "Button", IsRoot = true, Properties = { ["Name"] = "Run" } },
+		});
+		var session = new FakeSession(snapshot, StandardIpcResponse.Ok());
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			session);
+
+		var button = driver.GetElement<RunButton>(x => x["Name"] == "Run");
+		var clicked = button.Click();
+
+		Assert.That(button.TargetId, Is.EqualTo("button"));
+		Assert.That(clicked, Is.SameAs(button));
+		Assert.That(session.SentCommands.OfType<ClickCommandRequest>().Single().TargetId, Is.EqualTo("button"));
 	}
 
 	private static FindElementCommandResponse FindMatch(string targetId, string name, string typeName)
@@ -196,6 +216,14 @@ public sealed class LibraryApiTests
 		}
 
 		public void Dispose()
+		{
+		}
+	}
+
+	private sealed class RunButton : Element<RunButton>
+	{
+		public RunButton(Element source)
+			: base(source)
 		{
 		}
 	}

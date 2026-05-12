@@ -101,14 +101,15 @@ public sealed class AppDriver : IDisposable
 		GetElements(matcher, maxMatches: 1).SingleOrDefault()
 		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
 
-	public Element GetElement(Expression<Func<Element, bool?>> matcher) =>
-		GetElements(matcher, maxMatches: 1).SingleOrDefault()
-		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
+	public Element GetElement(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
+		PollForElement(
+			() => FindElements(matcher, maxMatches: 2),
+			matcher?.ToString() ?? string.Empty,
+			TimeoutFromMilliseconds(timeoutMs));
 
-	public TElement GetElement<TElement>(Expression<Func<TElement, bool?>> matcher)
+	public TElement GetElement<TElement>(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000)
 		where TElement : Element =>
-		GetElements<TElement>(matcher, maxMatches: 1).SingleOrDefault()
-		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
+		WrapElement<TElement>(GetElement(matcher, timeoutMs));
 
 	public IReadOnlyList<Element> GetElements(ElementSelector selector, int maxMatches = 100)
 	{
@@ -123,17 +124,50 @@ public sealed class AppDriver : IDisposable
 		return FindElements(null, payload, maxMatches);
 	}
 
-	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int maxMatches = 100)
+	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000)
+	{
+		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
+		var timeout = TimeoutFromMilliseconds(timeoutMs);
+		var stopwatch = Stopwatch.StartNew();
+		var delays = new[] { 0 }.Concat(Options.ElementPollBackoffMs ?? Array.Empty<int>());
+		foreach (var delay in delays)
+		{
+			if (delay > 0)
+				Thread.Sleep(delay);
+
+			var matches = FindElements(matcher, maxMatches: 0);
+			if (matches.Count != 0)
+				return matches;
+			if (stopwatch.Elapsed >= timeout)
+				break;
+		}
+
+		return Array.Empty<Element>();
+	}
+
+	public IReadOnlyList<TElement> GetElements<TElement>(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000)
+		where TElement : Element =>
+		GetElements(matcher, timeoutMs)
+			.Select(WrapElement<TElement>)
+			.ToArray();
+
+	private IReadOnlyList<Element> FindElements(Expression<Func<Element, bool?>> matcher, int maxMatches)
 	{
 		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
 		var predicate = matcher.Compile();
 		var snapshot = GetVisualTree();
+		var limit = maxMatches <= 0 ? int.MaxValue : maxMatches;
 		return snapshot.Nodes
 			.Select(node => Element.FromNode(this, node, snapshot))
 			.Where(element => predicate(element) == true)
-			.Take(Math.Max(0, maxMatches))
+			.Take(limit)
 			.ToArray();
 	}
+
+	public TElement GetElement<TElement>(Expression<Func<TElement, bool?>> matcher)
+		where TElement : Element =>
+		GetElements<TElement>(matcher, maxMatches: 1).SingleOrDefault()
+		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
 
 	public IReadOnlyList<TElement> GetElements<TElement>(Expression<Func<TElement, bool?>> matcher, int maxMatches = 100)
 		where TElement : Element
@@ -165,6 +199,9 @@ public sealed class AppDriver : IDisposable
 	}
 
 	private Element PollForElement(Func<IReadOnlyList<Element>> find, string selectorDescription)
+		=> PollForElement(find, selectorDescription, Options.Timeout);
+
+	private Element PollForElement(Func<IReadOnlyList<Element>> find, string selectorDescription, TimeSpan timeout)
 	{
 		var stopwatch = Stopwatch.StartNew();
 		var delays = new[] { 0 }.Concat(Options.ElementPollBackoffMs ?? Array.Empty<int>());
@@ -178,7 +215,7 @@ public sealed class AppDriver : IDisposable
 				return matches[0];
 			if (matches.Count > 1)
 				throw new AppDriverException(AppDriverErrorCodes.AmbiguousTarget, $"More than one element matched selector '{selectorDescription}'.");
-			if (stopwatch.Elapsed >= Options.Timeout)
+			if (stopwatch.Elapsed >= timeout)
 				break;
 		}
 
@@ -220,6 +257,12 @@ public sealed class AppDriver : IDisposable
 		if (!string.IsNullOrEmpty(directory))
 			Directory.CreateDirectory(directory);
 		File.WriteAllBytes(fileOutputPath, bytes);
+	}
+
+	public IDisposable Record(string fileOutputPath, string? windowTitle = null)
+	{
+		_ = fileOutputPath ?? throw new ArgumentNullException(nameof(fileOutputPath));
+		throw new NotSupportedException("Recording requires an FFmpeg packaging decision for DeepFlowTest. Use screenshot streaming until recording resources are packaged.");
 	}
 
 	internal Element Repair(Element element)
@@ -275,4 +318,7 @@ public sealed class AppDriver : IDisposable
 			_ => ImageFormat.Png,
 		};
 	}
+
+	private static TimeSpan TimeoutFromMilliseconds(int timeoutMs) =>
+		TimeSpan.FromMilliseconds(Math.Max(1, timeoutMs));
 }

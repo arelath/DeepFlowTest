@@ -1,8 +1,10 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Linq.Expressions;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -153,6 +155,86 @@ public sealed class TargetActionCommandTests
 
 			AssertOk(CaptureResponse(new InvokeCommandRequest { TargetId = targetId, Code = "Focus", AllowUnsafeCode = true }));
 			Assert.That(textBox.IsKeyboardFocusWithin, Is.True);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void ExpressionInvokeSetPropertyAndRaiseEventRunAgainstTarget()
+	{
+		var clickCount = 0;
+		var panel = new StackPanel();
+		var textBox = new TextBox { Name = "expressionBox", Text = "before" };
+		var button = new Button { Name = "expressionButton", Content = "Ready" };
+		button.Click += (_, _) => clickCount++;
+		panel.Children.Add(textBox);
+		panel.Children.Add(button);
+		var window = CreateWindow("Expression actions", panel);
+
+		try
+		{
+			window.Show();
+			var textBoxId = FindTargetId("expressionBox");
+			var buttonId = FindTargetId("expressionButton");
+			Expression<Func<TextBox, string>> readText = x => x.Text;
+			Expression<Func<TextBox, string>> appendText = x => x.Text + "-after";
+			Expression<Func<Button, RoutedEventArgs>> clickArgs = x => new RoutedEventArgs(ButtonBase.ClickEvent);
+
+			var invoke = (StandardIpcResponse)CaptureResponse(new InvokeCommandRequest
+			{
+				TargetId = textBoxId,
+				Code = ExpressionPayloadSerializer.Serialize(readText),
+				AllowUnsafeCode = true,
+			})!;
+			Assert.That(invoke.Success, Is.True, invoke.Error);
+			Assert.That(invoke.Value, Is.EqualTo("before"));
+
+			AssertOk(CaptureResponse(new SetPropertyCommandRequest
+			{
+				TargetId = textBoxId,
+				PropertyName = "Text",
+				PropertyValue = ExpressionPayloadSerializer.Serialize(appendText),
+			}));
+			Assert.That(textBox.Text, Is.EqualTo("before-after"));
+
+			AssertOk(CaptureResponse(new RaiseEventCommandRequest
+			{
+				TargetId = buttonId,
+				GetRoutedEventArgs = ExpressionPayloadSerializer.Serialize(clickArgs),
+			}));
+			Assert.That(clickCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void AsyncExpressionInvokeAwaitsTaskResult()
+	{
+		var textBox = new TextBox { Name = "asyncExpressionBox", Text = "async" };
+		var window = CreateWindow("Async expression action", textBox);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("asyncExpressionBox");
+			Expression<Func<TextBox, Task<string>>> readTextAsync = x => Task.FromResult(x.Text + "-result");
+
+			var response = (StandardIpcResponse)CaptureResponse(new InvokeCommandRequest
+			{
+				TargetId = targetId,
+				Code = ExpressionPayloadSerializer.Serialize(readTextAsync),
+				AllowUnsafeCode = true,
+				TimeoutMs = 1000,
+			})!;
+
+			Assert.That(response.Success, Is.True, response.Error);
+			Assert.That(response.Value, Is.EqualTo("async-result"));
 		}
 		finally
 		{

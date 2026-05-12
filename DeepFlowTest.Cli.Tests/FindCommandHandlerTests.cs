@@ -19,6 +19,23 @@ public sealed class FindCommandHandlerTests
 	}
 
 	[Test]
+	public void FindAcceptsCompatPropertyAliases()
+	{
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: new FakeAppSessionService());
+
+		var exact = CliTestHost.Run(new[] { "find", "--pid", "1234", "--prop", "Name=SubmitButton" }, services);
+		var contains = CliTestHost.Run(new[] { "find", "--pid", "1234", "--contains", "Text=Sub" }, services);
+		var regex = CliTestHost.Run(new[] { "find", "--pid", "1234", "--regex", "Name=^Submit" }, services);
+
+		Assert.That(exact.ExitCode, Is.EqualTo(0));
+		Assert.That(contains.ExitCode, Is.EqualTo(0));
+		Assert.That(regex.ExitCode, Is.EqualTo(0));
+		Assert.That(exact.Stdout, Does.Contain("\"matchCount\":1"));
+		Assert.That(contains.Stdout, Does.Contain("\"matchCount\":1"));
+		Assert.That(regex.Stdout, Does.Contain("\"matchCount\":1"));
+	}
+
+	[Test]
 	public void FindNoMatchSucceedsUnlessRequired()
 	{
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: new FakeAppSessionService());

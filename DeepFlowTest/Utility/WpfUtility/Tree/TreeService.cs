@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls.Primitives;
@@ -110,10 +111,10 @@ public sealed class TreeService
 
 		try
 		{
-			if (Application.Current is not null)
+			if (Application.Current is { } application && application.Dispatcher.CheckAccess())
 			{
-				AddRoot(Application.Current);
-				foreach (Window? window in Application.Current.Windows)
+				AddRoot(application);
+				foreach (Window? window in application.Windows)
 					AddRoot(window);
 			}
 		}
@@ -124,7 +125,23 @@ public sealed class TreeService
 		try
 		{
 			foreach (PresentationSource? source in PresentationSource.CurrentSources)
-				AddRoot(source?.RootVisual);
+			{
+				if (source?.Dispatcher?.CheckAccess() == true)
+					AddRoot(source.RootVisual);
+			}
+		}
+		catch (InvalidOperationException)
+		{
+		}
+
+		try
+		{
+			foreach (var hwnd in EnumerateProcessTopLevelWindows())
+			{
+				var source = HwndSource.FromHwnd(hwnd);
+				if (source?.Dispatcher.CheckAccess() == true)
+					AddRoot(source.RootVisual);
+			}
 		}
 		catch (InvalidOperationException)
 		{
@@ -209,6 +226,12 @@ public sealed class TreeService
 
 	private static IEnumerable<object?> EnumerateChildren(object target, TargetObjectMetadata metadata)
 	{
+		if (TryGetHybridBridgeChild(target, out var bridgeChild))
+		{
+			yield return bridgeChild;
+			yield break;
+		}
+
 		if (target is Application application)
 		{
 			foreach (Window? window in application.Windows)
@@ -225,9 +248,6 @@ public sealed class TreeService
 
 			if (target is Popup { Child: { } popupChild })
 				yield return popupChild;
-
-			if (TryGetWindowsFormsHostChild(target, out var hostedControl))
-				yield return hostedControl;
 		}
 
 		if (target is Forms.Control control)
@@ -310,11 +330,18 @@ public sealed class TreeService
 				yield return child;
 	}
 
-	private static bool TryGetWindowsFormsHostChild(object target, out object? child)
+	private static bool TryGetHybridBridgeChild(object target, out object? child)
 	{
 		child = null;
+		var typeName = target.GetType().FullName;
+		if (!string.Equals(typeName, "System.Windows.Forms.Integration.ElementHost", StringComparison.Ordinal)
+			&& !string.Equals(typeName, "System.Windows.Forms.Integration.WindowsFormsHost", StringComparison.Ordinal))
+		{
+			return false;
+		}
+
 		var property = target.GetType().GetProperty("Child");
-		if (property is null || !typeof(Forms.Control).IsAssignableFrom(property.PropertyType))
+		if (property is null)
 			return false;
 
 		child = property.GetValue(target, null);
@@ -382,21 +409,43 @@ public sealed class TreeService
 
 	private static Dispatcher? FindWpfDispatcher()
 	{
-		if (Application.Current?.Dispatcher is not null)
-			return Application.Current.Dispatcher;
+		var currentDispatcher = GetCurrentStaDispatcher();
+		if (currentDispatcher is not null)
+			return currentDispatcher;
 
+		Dispatcher? firstSourceDispatcher = null;
 		try
 		{
 			foreach (PresentationSource? source in PresentationSource.CurrentSources)
-				if (source?.Dispatcher is not null)
+			{
+				if (source?.RootVisual is null || source.Dispatcher is null)
+					continue;
+
+				if (source.Dispatcher.CheckAccess())
 					return source.Dispatcher;
+
+				firstSourceDispatcher ??= source.Dispatcher;
+			}
 		}
 		catch (InvalidOperationException)
 		{
 		}
 
-		return null;
+		if (Application.Current?.Dispatcher is { } applicationDispatcher)
+			return applicationDispatcher.CheckAccess() || firstSourceDispatcher is null
+				? applicationDispatcher
+				: firstSourceDispatcher;
+
+		if (firstSourceDispatcher is not null)
+			return firstSourceDispatcher;
+
+		return currentDispatcher;
 	}
+
+	private static Dispatcher? GetCurrentStaDispatcher() =>
+		Thread.CurrentThread.GetApartmentState() == ApartmentState.STA
+			? Dispatcher.FromThread(Thread.CurrentThread)
+			: null;
 
 	private static IEnumerable<IntPtr> EnumerateNativeChildWindows(IntPtr hwnd)
 	{
@@ -412,6 +461,23 @@ public sealed class TreeService
 
 		foreach (var child in children)
 			yield return child;
+	}
+
+	private static IEnumerable<IntPtr> EnumerateProcessTopLevelWindows()
+	{
+		var processId = Process.GetCurrentProcess().Id;
+		var windows = new List<IntPtr>();
+		EnumWindows((hwnd, _) =>
+		{
+			GetWindowThreadProcessId(hwnd, out var windowProcessId);
+			if (windowProcessId == processId)
+				windows.Add(hwnd);
+
+			return true;
+		}, IntPtr.Zero);
+
+		foreach (var window in windows)
+			yield return window;
 	}
 
 	private static AutomationElement? TryGetAutomationElement(IntPtr hwnd)
@@ -470,7 +536,15 @@ public sealed class TreeService
 	[DllImport("user32.dll")]
 	private static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildWindowsProc lpEnumFunc, IntPtr lParam);
 
+	[DllImport("user32.dll")]
+	private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+	[DllImport("user32.dll")]
+	private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int processId);
+
 	private delegate bool EnumChildWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+	private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 
 	private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
 	{

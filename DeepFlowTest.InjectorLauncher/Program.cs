@@ -85,7 +85,7 @@ public static class Program
 
 	private static string ResolvePayloadAssemblyPath(string assemblyNameOrPath, string frameworkFamily)
 	{
-		return InjectorPathResolver.ResolvePayloadPath(AppContext.BaseDirectory, frameworkFamily, assemblyNameOrPath);
+		return InjectorPathResolver.ResolvePayloadPath(InjectorPathResolver.RootDirectory, frameworkFamily, assemblyNameOrPath);
 	}
 
 	private static string GetCurrentExecutablePath()

@@ -24,4 +24,5 @@ public static class AppDriverErrorCodes
 	public const string AmbiguousTarget = "ambiguous-target";
 	public const string InjectorFailed = "injector-failed";
 	public const string TargetNotFound = "target-not-found";
+	public const string UnsupportedTarget = "unsupported-target";
 }

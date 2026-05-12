@@ -297,7 +297,7 @@ public static class Program
 			commonOptions.TimeoutMs);
 		return new ScreenshotFileService().Process(response, new ScreenshotFileOptions
 		{
-			OutputPath = CliArgumentReader.GetOption(args, "--output"),
+			OutputPath = CliArgumentReader.GetOption(args, "--output", "--out"),
 			IncludeBase64 = CliArgumentReader.HasOption(args, "--base64"),
 		});
 	}
@@ -320,19 +320,28 @@ public static class Program
 			throw new CliException(CliErrorCodes.InvalidArguments, "Wait match count must be greater than zero.");
 
 		var stopwatch = Stopwatch.StartNew();
-		while (stopwatch.ElapsedMilliseconds <= commonOptions.TimeoutMs)
+		using var cancellation = CreateConsoleCancellationSource();
+		try
 		{
-			WaitCancellationToken.ThrowIfCancellationRequested();
-			var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.TreeLimit, options.Limit));
-			var result = new FindSnapshotService().Find(snapshot, options);
-			if (result.MatchCount >= requiredMatches)
-				return result;
+			while (stopwatch.ElapsedMilliseconds <= commonOptions.TimeoutMs)
+			{
+				cancellation.Token.ThrowIfCancellationRequested();
+				var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.TreeLimit, options.Limit));
+				var result = new FindSnapshotService().Find(snapshot, options);
+				if (result.MatchCount >= requiredMatches)
+					return result;
 
-			var remaining = commonOptions.TimeoutMs - (int)stopwatch.ElapsedMilliseconds;
-			if (remaining <= 0)
-				break;
+				var remaining = commonOptions.TimeoutMs - (int)stopwatch.ElapsedMilliseconds;
+				if (remaining <= 0)
+					break;
 
-			Thread.Sleep(Math.Min(interval, remaining));
+				if (cancellation.Token.WaitHandle.WaitOne(Math.Min(interval, remaining)))
+					cancellation.Token.ThrowIfCancellationRequested();
+			}
+		}
+		catch (OperationCanceledException)
+		{
+			throw new CliException(CliErrorCodes.CommandTimeout, "Wait was canceled.");
 		}
 
 		throw new CliException(CliErrorCodes.CommandTimeout, $"Wait timed out after {commonOptions.TimeoutMs} ms.");
@@ -368,6 +377,7 @@ public static class Program
 			TimeoutMs = commonOptions.TimeoutMs,
 		};
 		using var stream = session.StartStream(request, commonOptions.TimeoutMs);
+		using var cancellation = CreateConsoleCancellationSource();
 		var envelopes = new List<CliResponseEnvelope>
 		{
 			CliResponseFactory.Success($"stream {streamKind} start", stream.Start, Stopwatch.StartNew()),
@@ -378,7 +388,7 @@ public static class Program
 		{
 			var remaining = duration - (int)stopwatch.ElapsedMilliseconds;
 			var readTimeout = Math.Max(interval, Math.Min(commonOptions.TimeoutMs, remaining + interval));
-			var frame = stream.ReadFrame(readTimeout, StreamCancellationToken);
+			var frame = stream.ReadFrame(readTimeout, cancellation.Token);
 			if (frame is null)
 				break;
 
@@ -434,9 +444,9 @@ public static class Program
 			Name = CliArgumentReader.GetOption(args, "--name"),
 			AutomationId = CliArgumentReader.GetOption(args, "--automation-id"),
 			Text = CliArgumentReader.GetOption(args, "--text"),
-			PropertyEquals = CliArgumentReader.GetKeyValue(args, "--property"),
-			PropertyContains = CliArgumentReader.GetKeyValue(args, "--property-contains"),
-			PropertyRegex = CliArgumentReader.GetKeyValue(args, "--property-regex"),
+			PropertyEquals = CliArgumentReader.GetKeyValue(args, "--property", "--prop"),
+			PropertyContains = CliArgumentReader.GetKeyValue(args, "--property-contains", "--contains"),
+			PropertyRegex = CliArgumentReader.GetKeyValue(args, "--property-regex", "--regex"),
 			Visible = CliArgumentReader.HasOption(args, "--visible") ? true : null,
 			Enabled = CliArgumentReader.HasOption(args, "--enabled") ? true : null,
 			CaseSensitive = CliArgumentReader.HasOption(args, "--case-sensitive"),
@@ -479,6 +489,7 @@ public static class Program
 		new ActionGate().Demand("click", commonOptions);
 		var button = (CliArgumentReader.GetOption(args, "--button") ?? "left").ToLowerInvariant();
 		var count = CliArgumentReader.GetInt(args, "--count", 1);
+		var isDouble = CliArgumentReader.HasOption(args, "--double");
 		if (count <= 0)
 			throw new CliException(CliErrorCodes.InvalidArguments, "Click count must be greater than zero.");
 		if (button is not ("left" or "right" or "double"))
@@ -493,7 +504,7 @@ public static class Program
 			ElementSelector.FromArgs(args),
 			targetId =>
 			{
-				if (button == "double")
+				if (isDouble || button == "double")
 				{
 					return new KnownRoutedEventCommandRequest
 					{
@@ -536,8 +547,6 @@ public static class Program
 
 		var selector = ElementSelector.FromArgs(args);
 		selector.Text = CliArgumentReader.GetOption(args, "--selector-text");
-		if (selector.IsEmpty)
-			throw new CliException(CliErrorCodes.UnsupportedTarget, "Physical foreground typing without a target selector is not supported; provide a target selector.");
 
 		using var session = OpenSession(services, commonOptions);
 		return new ActionCommandSupport().Execute(
@@ -552,7 +561,7 @@ public static class Program
 				TargetId = targetId,
 				ClearFirst = CliArgumentReader.HasOption(args, "--clear-first"),
 			},
-			requireElementTarget: true,
+			requireElementTarget: false,
 			afterProperties: new[] { "Text", "Content" });
 	}
 
@@ -565,8 +574,6 @@ public static class Program
 		ValidateKeys(keys!);
 
 		var selector = ElementSelector.FromArgs(args);
-		if (selector.IsEmpty)
-			throw new CliException(CliErrorCodes.UnsupportedTarget, "Physical foreground key input without a target selector is not supported; provide a target selector.");
 
 		using var session = OpenSession(services, commonOptions);
 		return new ActionCommandSupport().Execute(
@@ -582,7 +589,7 @@ public static class Program
 				DelayMs = CliArgumentReader.GetInt(args, "--delay-ms", defaults.KeyDelayMs),
 				EnsureForeground = defaults.EnsureForeground,
 			},
-			requireElementTarget: true,
+			requireElementTarget: false,
 			afterProperties: new[] { "Text", "Content", "IsKeyboardFocused", "IsKeyboardFocusWithin" });
 	}
 
@@ -847,9 +854,7 @@ public static class Program
 		return value;
 	}
 
-	private static CancellationToken WaitCancellationToken => CancellationToken.None;
-
-	private static CancellationToken StreamCancellationToken => CancellationToken.None;
+	private static ConsoleCancellationSource CreateConsoleCancellationSource() => new();
 }
 
 public sealed class ProtocolCommandData<TResponse>
@@ -878,4 +883,41 @@ public sealed class CliResponseSequence
 	}
 
 	public IReadOnlyList<CliResponseEnvelope> Envelopes { get; }
+}
+
+internal sealed class ConsoleCancellationSource : IDisposable
+{
+	private readonly CancellationTokenSource source = new();
+	private readonly ConsoleCancelEventHandler handler;
+
+	public ConsoleCancellationSource()
+	{
+		handler = (_, args) =>
+		{
+			args.Cancel = true;
+			source.Cancel();
+		};
+		try
+		{
+			Console.CancelKeyPress += handler;
+		}
+		catch (InvalidOperationException)
+		{
+		}
+	}
+
+	public CancellationToken Token => source.Token;
+
+	public void Dispose()
+	{
+		try
+		{
+			Console.CancelKeyPress -= handler;
+		}
+		catch (InvalidOperationException)
+		{
+		}
+
+		source.Dispose();
+	}
 }

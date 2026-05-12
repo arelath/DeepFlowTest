@@ -193,17 +193,43 @@ public static class ThreadUtility
 
 	private static Dispatcher? FindWpfDispatcher()
 	{
-		if (Application.Current?.Dispatcher is not null)
-			return Application.Current.Dispatcher;
+		var currentDispatcher = GetCurrentStaDispatcher();
+		if (currentDispatcher is not null)
+			return currentDispatcher;
 
-		foreach (PresentationSource? source in PresentationSource.CurrentSources)
+		Dispatcher? firstSourceDispatcher = null;
+		try
 		{
-			if (source?.Dispatcher is not null)
-				return source.Dispatcher;
+			foreach (PresentationSource? source in PresentationSource.CurrentSources)
+			{
+				if (source?.RootVisual is null || source.Dispatcher is null)
+					continue;
+
+				if (source.Dispatcher.CheckAccess())
+					return source.Dispatcher;
+
+				firstSourceDispatcher ??= source.Dispatcher;
+			}
+		}
+		catch (InvalidOperationException)
+		{
 		}
 
-		return null;
+		if (Application.Current?.Dispatcher is { } applicationDispatcher)
+			return applicationDispatcher.CheckAccess() || firstSourceDispatcher is null
+				? applicationDispatcher
+				: firstSourceDispatcher;
+
+		if (firstSourceDispatcher is not null)
+			return firstSourceDispatcher;
+
+		return currentDispatcher;
 	}
+
+	private static Dispatcher? GetCurrentStaDispatcher() =>
+		Thread.CurrentThread.GetApartmentState() == ApartmentState.STA
+			? Dispatcher.FromThread(Thread.CurrentThread)
+			: null;
 
 	private static WinForms.Control? FindWinFormsControl()
 	{

@@ -1,24 +1,36 @@
 namespace DeepFlowTest.AppDriverPayload.Commands;
 
 using System;
+using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.Serialization;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using Newtonsoft.Json.Linq;
+using Serialize.Linq;
+using Serialize.Linq.Factories;
+using Serialize.Linq.Serializers;
 using Forms = System.Windows.Forms;
+using SerializeJsonSerializer = Serialize.Linq.Serializers.JsonSerializer;
 
 internal static class TargetActionCommand
 {
+	private static readonly FactorySettings ExpressionFactorySettings = new() { AllowPrivateFieldAccess = true };
+
 	public static object Click(ClickCommandRequest request, TreeService treeService) =>
 		WithTarget(ProtocolConstants.Commands.Click, request.TargetId, treeService, target =>
 		{
@@ -92,6 +104,9 @@ internal static class TargetActionCommand
 	public static object RaiseEvent(RaiseEventCommandRequest request, TreeService treeService) =>
 		WithTarget(ProtocolConstants.Commands.RaiseEvent, request.TargetId, treeService, target =>
 		{
+			if (TryGetExpressionPayload(request.GetRoutedEventArgs, out _))
+				return RaiseExpressionRoutedEvent(target, request.GetRoutedEventArgs, request.TimeoutMs);
+
 			var eventName = !string.IsNullOrWhiteSpace(request.EventName)
 				? request.EventName
 				: Convert.ToString(request.GetRoutedEventArgs, CultureInfo.InvariantCulture) ?? string.Empty;
@@ -111,6 +126,12 @@ internal static class TargetActionCommand
 
 		return WithTarget(ProtocolConstants.Commands.Invoke, request.TargetId, treeService, target =>
 		{
+			if (TryGetExpressionPayload(request.Code, out _))
+			{
+				var result = EvaluateExpressionPayload(target, request.Code, request.TimeoutMs, awaitTasks: true);
+				return ActionResult.Ok(result);
+			}
+
 			var methodName = Convert.ToString(UnwrapJsonValue(request.Code), CultureInfo.InvariantCulture);
 			if (string.IsNullOrWhiteSpace(methodName))
 				return ActionResult.Unsupported("Invoke requires a public parameterless method name.");
@@ -121,14 +142,13 @@ internal static class TargetActionCommand
 
 			try
 			{
-				method.Invoke(target, null);
+				var result = method.Invoke(target, null);
+				return ActionResult.Ok(result);
 			}
 			catch (TargetInvocationException ex) when (ex.InnerException is not null)
 			{
 				return ActionResult.Unsupported($"Invoke method '{methodName}' failed: {ex.InnerException.Message}");
 			}
-
-			return ActionResult.Ok();
 		});
 	}
 
@@ -150,6 +170,20 @@ internal static class TargetActionCommand
 		{
 			return ToResponse(action(resolution.Target!), commandName, targetId);
 		}
+		catch (TimeoutException ex)
+		{
+			return StandardIpcResponse.FromError(
+				$"{commandName}: action timed out for target '{targetId}': {ex.Message}",
+				ProtocolConstants.ErrorCodes.CommandTimeout,
+				LogCorrelationId());
+		}
+		catch (SerializationException ex)
+		{
+			return StandardIpcResponse.FromError(
+				$"{commandName}: action result is not serializable for target '{targetId}': {ex.Message}",
+				ProtocolConstants.ErrorCodes.ProtocolError,
+				LogCorrelationId());
+		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
 			return StandardIpcResponse.FromError(
@@ -161,7 +195,12 @@ internal static class TargetActionCommand
 
 	private static StandardIpcResponse ToResponse(ActionResult result, string? commandName = null, string? targetId = null) =>
 		result.Success
-			? StandardIpcResponse.Ok()
+			? new StandardIpcResponse
+			{
+				Success = true,
+				Status = ProtocolConstants.Statuses.Ok,
+				Value = result.Value,
+			}
 			: UnsupportedTarget(FormatActionError(result.Error ?? "The requested action is not supported for this target.", commandName, targetId));
 
 	private static StandardIpcResponse UnsupportedTarget(string error) =>
@@ -314,7 +353,7 @@ internal static class TargetActionCommand
 		|| string.Equals(keyText, "Down", StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(keyText, "Left", StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(keyText, "Right", StringComparison.OrdinalIgnoreCase)
-		|| (keyText.Length > 1 && keyText.StartsWith("F", StringComparison.OrdinalIgnoreCase) && int.TryParse(keyText[1..], out _));
+		|| (keyText.Length > 1 && keyText.StartsWith("F", StringComparison.OrdinalIgnoreCase) && int.TryParse(keyText.Substring(1), out _));
 
 	private static bool IsSelectAllShortcut(string keyText) =>
 		string.Equals(keyText, "Control+A", StringComparison.OrdinalIgnoreCase)
@@ -335,7 +374,19 @@ internal static class TargetActionCommand
 		if (string.IsNullOrWhiteSpace(propertyName))
 			return ActionResult.Unsupported("Property name is required.");
 
-		var value = UnwrapJsonValue(rawValue);
+		var value = TryGetExpressionPayload(rawValue, out _)
+			? EvaluateExpressionPayload(target, rawValue, timeoutMs: null, awaitTasks: true)
+			: UnwrapJsonValue(rawValue);
+
+		if (IsNativeTextProperty(propertyName))
+		{
+			var textValue = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+			if (target is AutomationElement automationElement && TrySetAutomationValue(automationElement, textValue))
+				return ActionResult.Ok();
+			if (target is IntPtr hwnd && TrySetNativeWindowText(hwnd, textValue, clearFirst: true))
+				return ActionResult.Ok();
+		}
+
 		var property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.FlattenHierarchy);
 		if (property is not null)
 		{
@@ -355,6 +406,11 @@ internal static class TargetActionCommand
 		return ActionResult.Unsupported($"Property '{propertyName}' was not found.");
 	}
 
+	private static bool IsNativeTextProperty(string propertyName) =>
+		string.Equals(propertyName, "FileName", StringComparison.Ordinal)
+		|| string.Equals(propertyName, "Text", StringComparison.Ordinal)
+		|| string.Equals(propertyName, "Value", StringComparison.Ordinal);
+
 	private static ActionResult RaiseKnownRoutedEvent(object target, string eventName)
 	{
 		if (target is not UIElement uiElement && target is not ContentElement)
@@ -365,6 +421,26 @@ internal static class TargetActionCommand
 			return ActionResult.Unsupported($"Routed event '{eventName}' is not allow-listed.");
 
 		var args = new RoutedEventArgs(routedEvent, target);
+		if (target is UIElement targetElement)
+			targetElement.RaiseEvent(args);
+		else
+			((ContentElement)target).RaiseEvent(args);
+
+		return ActionResult.Ok();
+	}
+
+	private static ActionResult RaiseExpressionRoutedEvent(object target, object? expressionPayload, int? timeoutMs)
+	{
+		if (target is not UIElement uiElement && target is not ContentElement)
+			return ActionResult.Unsupported($"Target type '{target.GetType().FullName}' does not support routed events.");
+
+		var evaluated = EvaluateExpressionPayload(target, expressionPayload, timeoutMs, awaitTasks: false);
+		if (evaluated is not RoutedEventArgs args)
+			return ActionResult.Unsupported("Routed event expression did not return RoutedEventArgs.");
+		if (args.RoutedEvent is null)
+			return ActionResult.Unsupported("Routed event expression returned args without RoutedEvent.");
+
+		args.Source ??= target;
 		if (target is UIElement targetElement)
 			targetElement.RaiseEvent(args);
 		else
@@ -665,6 +741,63 @@ internal static class TargetActionCommand
 		return false;
 	}
 
+	private static object? EvaluateExpressionPayload(object target, object? rawPayload, int? timeoutMs, bool awaitTasks)
+	{
+		if (!TryGetExpressionPayload(rawPayload, out var payload))
+			return UnwrapJsonValue(rawPayload);
+
+		var expression = DeserializeExpression(payload);
+		var result = expression.Compile().DynamicInvoke(target);
+		return awaitTasks ? AwaitTaskResult(result, timeoutMs) : result;
+	}
+
+	private static bool TryGetExpressionPayload(object? rawPayload, out ExpressionMatcherPayload payload)
+	{
+		payload = null!;
+		if (rawPayload is null)
+			return false;
+
+		try
+		{
+			payload = MessagePacker.ConvertTo<ExpressionMatcherPayload>(rawPayload);
+			return !string.IsNullOrWhiteSpace(payload.ExpressionJson);
+		}
+		catch (Exception ex) when (ex is InvalidCastException or ArgumentException or Newtonsoft.Json.JsonException)
+		{
+			return false;
+		}
+	}
+
+	private static LambdaExpression DeserializeExpression(ExpressionMatcherPayload payload)
+	{
+		if (string.IsNullOrWhiteSpace(payload.ExpressionJson))
+			throw new InvalidOperationException("Expression payload is empty.");
+
+		var serializer = new ExpressionSerializer(new SerializeJsonSerializer(), ExpressionFactorySettings);
+		var expression = serializer.DeserializeText(payload.ExpressionJson, new ExpressionContext { AllowPrivateFieldAccess = true });
+		return expression as LambdaExpression
+			?? throw new InvalidOperationException("Expression payload did not deserialize to a lambda expression.");
+	}
+
+	private static object? AwaitTaskResult(object? result, int? timeoutMs)
+	{
+		if (result is not Task task)
+			return result;
+
+		if (timeoutMs is > 0)
+		{
+			if (!task.Wait(timeoutMs.Value))
+				throw new TimeoutException("Expression task did not complete within the command timeout.");
+		}
+		else
+		{
+			task.GetAwaiter().GetResult();
+		}
+
+		var resultProperty = task.GetType().GetProperty(nameof(Task<object>.Result), BindingFlags.Instance | BindingFlags.Public);
+		return resultProperty?.GetValue(task, null);
+	}
+
 	private static object? ConvertValue(object? value, Type targetType)
 	{
 		if (value is null)
@@ -679,7 +812,38 @@ internal static class TargetActionCommand
 		if (underlyingType.IsEnum)
 			return Enum.Parse(underlyingType, Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
 
+		if (value is string text)
+		{
+			var converted = ConvertFromInvariantString(text, underlyingType);
+			if (converted is not null)
+				return converted;
+		}
+
+		var sourceConverter = TypeDescriptor.GetConverter(value);
+		if (sourceConverter.CanConvertTo(underlyingType))
+			return sourceConverter.ConvertTo(null, CultureInfo.InvariantCulture, value, underlyingType);
+
+		var targetConverter = TypeDescriptor.GetConverter(underlyingType);
+		if (targetConverter.CanConvertFrom(value.GetType()))
+			return targetConverter.ConvertFrom(null, CultureInfo.InvariantCulture, value);
+
 		return Convert.ChangeType(value, underlyingType, CultureInfo.InvariantCulture);
+	}
+
+	private static object? ConvertFromInvariantString(string text, Type targetType)
+	{
+		if (targetType == typeof(SolidColorBrush))
+		{
+			var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(text));
+			if (brush.CanFreeze)
+				brush.Freeze();
+			return brush;
+		}
+
+		var converter = TypeDescriptor.GetConverter(targetType);
+		return converter.CanConvertFrom(typeof(string))
+			? converter.ConvertFromInvariantString(text)
+			: null;
 	}
 
 	private static object? UnwrapJsonValue(object? value)
@@ -699,17 +863,20 @@ internal static class TargetActionCommand
 
 	private readonly struct ActionResult
 	{
-		private ActionResult(bool success, string? error)
+		private ActionResult(bool success, string? error, object? value = null)
 		{
 			Success = success;
 			Error = error;
+			Value = value;
 		}
 
 		public bool Success { get; }
 
 		public string? Error { get; }
 
-		public static ActionResult Ok() => new(true, null);
+		public object? Value { get; }
+
+		public static ActionResult Ok(object? value = null) => new(true, null, value);
 
 		public static ActionResult Unsupported(string error) => new(false, error);
 	}

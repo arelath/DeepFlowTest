@@ -7,6 +7,16 @@ internal static class InjectorPathResolver
 {
 	public const string ResourceFolderName = "DeepFlowTestResources";
 	public const string PayloadAssemblyName = "DeepFlowTest.dll";
+	private static string? rootDirectoryOverride;
+
+	public static string RootDirectory => rootDirectoryOverride ?? AppContext.BaseDirectory;
+
+	public static IDisposable OverrideRootDirectoryForTests(string rootDirectory)
+	{
+		var previous = rootDirectoryOverride;
+		rootDirectoryOverride = rootDirectory ?? throw new ArgumentNullException(nameof(rootDirectory));
+		return new RestoreRootDirectory(previous);
+	}
 
 	public static InjectorDllPaths GetDllPaths(string architecture, string rootDirectory, string frameworkFamily)
 	{
@@ -76,6 +86,21 @@ internal static class InjectorPathResolver
 			return;
 
 		throw new InjectorLauncherException(InjectorExitCode.UnsupportedTarget, $"Unsupported target framework family '{frameworkFamily}'.");
+	}
+
+	private sealed class RestoreRootDirectory : IDisposable
+	{
+		private readonly string? previous;
+
+		public RestoreRootDirectory(string? previous)
+		{
+			this.previous = previous;
+		}
+
+		public void Dispose()
+		{
+			rootDirectoryOverride = previous;
+		}
 	}
 }
 

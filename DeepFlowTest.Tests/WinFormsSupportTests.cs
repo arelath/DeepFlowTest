@@ -4,10 +4,13 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Forms.Integration;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Utility;
+using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
 using Forms = System.Windows.Forms;
 
@@ -118,43 +121,50 @@ public sealed class WinFormsSupportTests
 	[Test]
 	public void HybridWpfWinFormsHostAppearsInSnapshots()
 	{
+		_ = Application.Current ?? new Application();
+		var root = new StackPanel { Name = "hybridRoot" };
 		var host = new WindowsFormsHost
 		{
 			Child = new Forms.Button { Name = "hostedFormsButton", Text = "Hosted", Width = 90, Height = 28 },
 		};
-		var window = new Window
-		{
-			Title = "Hybrid host",
-			Content = host,
-			Width = 220,
-			Height = 140,
-			ShowInTaskbar = false,
-			WindowStartupLocation = WindowStartupLocation.Manual,
-			Left = -20000,
-			Top = -20000,
-		};
+		root.Children.Add(host);
+		host.Child.CreateControl();
 
-		try
+		var targetIds = new TargetIdService();
+		var rootId = targetIds.GetOrCreateId(root);
+		var snapshot = new TreeService(targetIds).CaptureSnapshot(new TreeSnapshotOptions
 		{
-			window.Show();
-			window.UpdateLayout();
-			host.Child.CreateControl();
-			Forms.Application.DoEvents();
+			RootTargetId = rootId,
+			RequestedPropertyNames = new[] { "Name", "Text", "Title" },
+			MaxNodeCount = 300,
+		});
 
-			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
-			{
-				AsSnapshot = true,
-				PropNames = new[] { "Name", "Text", "Title" },
-				MaxNodeCount = 300,
-			})!;
+		Assert.That(snapshot.Nodes.Any(node => node.Properties.TryGetValue("Name", out var value) && Equals(value, "hostedFormsButton")), Is.True);
+		Assert.That(snapshot.TargetFrameworkFamily, Is.EqualTo("mixed"));
+	}
 
-			Assert.That(snapshot.Nodes.Any(node => node.Properties.TryGetValue("Name", out var value) && Equals(value, "hostedFormsButton")), Is.True);
-			Assert.That(snapshot.TargetFrameworkFamily, Is.EqualTo("mixed"));
-		}
-		finally
+	[Test]
+	public void HybridWinFormsElementHostAppearsInSnapshots()
+	{
+		using var form = new Forms.Form { Name = "elementHostForm" };
+		using var host = new ElementHost { Name = "wpfIsland" };
+		host.Child = new Button { Name = "hostedWpfButton", Content = "Hosted WPF" };
+		form.Controls.Add(host);
+
+		var targetIds = new TargetIdService();
+		var rootId = targetIds.GetOrCreateId(form);
+		var snapshot = new TreeService(targetIds).CaptureSnapshot(new TreeSnapshotOptions
 		{
-			window.Close();
-		}
+			RootTargetId = rootId,
+			RequestedPropertyNames = new[] { "Name", "Content" },
+			MaxNodeCount = 300,
+		});
+
+		var hostNode = snapshot.Nodes.Single(node => node.Properties.TryGetValue("Name", out var value) && Equals(value, "wpfIsland"));
+		var wpfNode = snapshot.Nodes.Single(node => node.Properties.TryGetValue("Name", out var value) && Equals(value, "hostedWpfButton"));
+		Assert.That(wpfNode.ParentId, Is.EqualTo(hostNode.TargetId));
+		Assert.That(wpfNode.Properties["Content"], Is.EqualTo("Hosted WPF"));
+		Assert.That(snapshot.TargetFrameworkFamily, Is.EqualTo("mixed"));
 	}
 
 	private static Forms.Form CreateForm()
@@ -226,4 +236,5 @@ public sealed class WinFormsSupportTests
 		method.Invoke(null, new object?[] { command, options, null });
 		return response;
 	}
+
 }

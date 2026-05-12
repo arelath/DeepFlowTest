@@ -129,8 +129,10 @@ public sealed class ReusablePipeSession
 		ActiveSubscriptionState? state;
 		lock (subscriptions)
 		{
-			if (!subscriptions.Remove(subscriptionId, out state))
+			if (!subscriptions.TryGetValue(subscriptionId, out state))
 				return false;
+
+			subscriptions.Remove(subscriptionId);
 		}
 
 		StopAndDispose(state, timeoutMs);

@@ -63,16 +63,21 @@ internal static class CliArgumentReader
 		return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 	}
 
-	public static KeyValuePair<string, string>? GetKeyValue(IReadOnlyList<string> args, string name)
+	public static KeyValuePair<string, string>? GetKeyValue(IReadOnlyList<string> args, params string[] names)
 	{
-		var value = GetOption(args, name);
-		if (string.IsNullOrWhiteSpace(value))
-			return null;
+		foreach (var name in names)
+		{
+			var value = GetOption(args, name);
+			if (string.IsNullOrWhiteSpace(value))
+				continue;
 
-		var separator = value.IndexOf('=');
-		if (separator <= 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Option '{name}' must use name=value.");
+			var separator = value.IndexOf('=');
+			if (separator <= 0)
+				throw new CliException(CliErrorCodes.InvalidArguments, $"Option '{name}' must use name=value.");
 
-		return new KeyValuePair<string, string>(value[..separator], value[(separator + 1)..]);
+			return new KeyValuePair<string, string>(value[..separator], value[(separator + 1)..]);
+		}
+
+		return null;
 	}
 }
