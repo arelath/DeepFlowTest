@@ -3,6 +3,7 @@ namespace DeepFlowTest.Contracts;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using DeepFlowTest.Interop;
 
 public sealed record class StandardIpcResponse
 {
@@ -48,7 +49,7 @@ public sealed record class StandardIpcResponse
 		new() { Success = success, Status = success ? ProtocolConstants.Statuses.Ok : ProtocolConstants.Statuses.Error };
 
 	public static StandardIpcResponse UnserializableResult() =>
-		WithValue(ProtocolConstants.Statuses.UnserializableResult) with { Success = true, Status = ProtocolConstants.Statuses.UnserializableResult };
+		new() { Success = true, Status = ProtocolConstants.Statuses.UnserializableResult };
 
 	public static StandardIpcResponse WithValue(string value) =>
 		new() { Value = value };
@@ -402,6 +403,28 @@ public sealed record class StreamMessage
 	public object? Data { get; set; }
 
 	public CliStreamError? Error { get; set; }
+}
+
+public sealed record class VisualTreeDeltaSnapshotFrame
+{
+	public VisualTreeDeltaSnapshotFrame()
+	{
+	}
+
+	public VisualTreeDeltaSnapshotFrame(VisualTreeSnapshot snapshot)
+	{
+		Snapshot = snapshot;
+	}
+
+	public bool IsDelta { get; set; }
+
+	public VisualTreeSnapshot? Snapshot { get; set; }
+
+	public bool IsFullSnapshot
+	{
+		get => !IsDelta;
+		set => IsDelta = !value;
+	}
 }
 
 public sealed record class CliStreamError

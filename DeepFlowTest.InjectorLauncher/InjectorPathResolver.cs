@@ -37,6 +37,13 @@ internal static class InjectorPathResolver
 	public static string ResolveResourcePath(string rootDirectory, string architecture, string fileName)
 	{
 		var normalizedArchitecture = ArchitectureDetector.Normalize(architecture);
+
+		// Common deployment: launcher exe runs from <bin>/DeepFlowTestResources/<arch>/, with its
+		// architecture-specific DLLs sitting beside it. Prefer that sibling layout.
+		var siblingPath = Path.Combine(rootDirectory, fileName);
+		if (File.Exists(siblingPath))
+			return siblingPath;
+
 		var contentFilePath = Path.Combine(rootDirectory, "contentFiles", "any", "any", ResourceFolderName, normalizedArchitecture, fileName);
 		if (File.Exists(contentFilePath))
 			return contentFilePath;

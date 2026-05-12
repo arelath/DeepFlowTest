@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
 
 [TestFixture]
@@ -32,6 +33,29 @@ public sealed class MessagePackerTests
 		var unpacked = MessagePacker.ConvertTo<StandardIpcResponse>(MessagePacker.Unpack(MessagePacker.Pack(response)));
 
 		Assert.That(unpacked.Status, Has.Length.EqualTo(1024 * 1024));
+	}
+
+	[Test]
+	public void RoundTripsStructuredPropertyExtractionErrors()
+	{
+		var response = new FindElementCommandResponse
+		{
+			Matches =
+			{
+				new FindElementMatchResponse
+				{
+					TargetId = "target",
+					TypeName = "Button",
+					Properties = { ["Text"] = PropertyExtractionError.Missing("Text") },
+				},
+			},
+			MatchCount = 1,
+		};
+
+		var unpacked = MessagePacker.ConvertTo<FindElementCommandResponse>(MessagePacker.Unpack(MessagePacker.Pack(response)));
+
+		Assert.That(unpacked.Matches[0].Properties["Text"], Is.TypeOf<PropertyExtractionError>());
+		Assert.That(((PropertyExtractionError)unpacked.Matches[0].Properties["Text"]!).ErrorCode, Is.EqualTo("missing-property"));
 	}
 
 	[Test]

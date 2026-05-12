@@ -1,6 +1,8 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using DeepFlowTest;
 using DeepFlowTest.Tests.Fakes;
 using NUnit.Framework;
@@ -22,6 +24,26 @@ public sealed class AppConnectionTests
 	}
 
 	[Test]
+	public void LaunchOwnedConnectionTracksProcessForParentClose()
+	{
+		var process = new FakeTargetProcess();
+		var registrations = new List<ITargetProcess>();
+		var previous = AppConnection.RegisterOwnedProcessForParentClose;
+		AppConnection.RegisterOwnedProcessForParentClose = registrations.Add;
+		try
+		{
+			using var connection = AppConnection.ForLaunch(process, "pipe-launch", "dotnet");
+
+			Assert.That(registrations.Single(), Is.SameAs(process));
+			Assert.That(connection.OwnsProcess, Is.True);
+		}
+		finally
+		{
+			AppConnection.RegisterOwnedProcessForParentClose = previous;
+		}
+	}
+
+	[Test]
 	public void AttachDisposalLeavesTargetAlive()
 	{
 		var process = new FakeTargetProcess();
@@ -31,6 +53,26 @@ public sealed class AppConnectionTests
 
 		Assert.That(process.KillCount, Is.EqualTo(0));
 		Assert.That(process.DisposeCount, Is.EqualTo(1));
+	}
+
+	[Test]
+	public void AttachConnectionDoesNotTrackProcessForParentClose()
+	{
+		var process = new FakeTargetProcess();
+		var registrations = new List<ITargetProcess>();
+		var previous = AppConnection.RegisterOwnedProcessForParentClose;
+		AppConnection.RegisterOwnedProcessForParentClose = registrations.Add;
+		try
+		{
+			using var connection = AppConnection.ForAttach(process, "pipe-attach", "dotnet");
+
+			Assert.That(registrations, Is.Empty);
+			Assert.That(connection.OwnsProcess, Is.False);
+		}
+		finally
+		{
+			AppConnection.RegisterOwnedProcessForParentClose = previous;
+		}
 	}
 
 	[Test]

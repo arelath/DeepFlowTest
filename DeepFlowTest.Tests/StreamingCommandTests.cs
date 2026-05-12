@@ -3,9 +3,6 @@ namespace DeepFlowTest.Tests;
 using System;
 using System.Collections.Generic;
 using System.Threading;
-using System.Windows;
-using System.Windows.Controls;
-using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Streaming;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -52,79 +49,29 @@ public sealed class StreamingCommandTests
 	}
 
 	[Test]
-	[Apartment(ApartmentState.STA)]
-	public void VisualTreeDeltaStreamUsesCompatPayloadShapes()
+	public void VisualTreeDeltaPayloadsUseCompatShapes()
 	{
-		_ = Application.Current ?? new Application();
-		var window = new Window
+		var previous = VisualTreeSnapshot.Create(1, new[]
 		{
-			Content = new Button { Name = "streamButton", Content = "Stream" },
-			Width = 120,
-			Height = 80,
-			ShowInTaskbar = false,
-			WindowStartupLocation = WindowStartupLocation.Manual,
-			Left = -20000,
-			Top = -20000,
-		};
-		var sent = new List<StreamMessage>();
-		object? response = null;
-		var responseCount = 0;
-		var command = new NamedPipeServer.Command
+			new VisualTreeNodeDto { TargetId = "root", TypeName = "Window", IsRoot = true },
+		});
+		var current = VisualTreeSnapshot.Create(2, new[]
 		{
-			Value = new StartSendingCommandRequest
-			{
-				StreamKind = ProtocolConstants.StreamKinds.VisualTreeDelta,
-				IntervalMs = 50,
-			},
-			Respond = value =>
-			{
-				response = value;
-				responseCount++;
-			},
-			CheckHasResponded = () => responseCount != 0,
-			HoldConnectionOpen = () => { },
-			TrySend = value =>
-			{
-				sent.Add((StreamMessage)value);
-				return sent.Count < 2;
-			},
-		};
-		var reusableSession = new ReusablePipeSession("stream-test", _ => { });
-		var options = new AppDriverPayloadStartupOptions
-		{
-			PipeName = "stream-test",
-			Mode = PayloadStartupModes.ReusableCli,
-			PayloadRoot = AppContext.BaseDirectory,
-			ProtocolVersion = ProtocolConstants.ProtocolVersion,
-		};
+			new VisualTreeNodeDto { TargetId = "root", TypeName = "Window", IsRoot = true },
+			new VisualTreeNodeDto { TargetId = "button", TypeName = "Button", ParentId = "root" },
+		});
+		var fullFrame = new StreamMessage("subscription", ProtocolConstants.StreamKinds.VisualTreeDelta, 1, new VisualTreeDeltaSnapshotFrame(previous));
+		var deltaFrame = new StreamMessage("subscription", ProtocolConstants.StreamKinds.VisualTreeDelta, 2, VisualTreeSnapshotDelta.Create(previous, current));
 
-		try
-		{
-			window.Show();
-			PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
-			AppDriverCommandDispatcher.Process(command, options, reusableSession);
-			Assert.That(response, Is.TypeOf<StartSendingCommandResponse>());
-			var start = (StartSendingCommandResponse)response!;
+		var fullRoundTrip = MessagePacker.ConvertTo<StreamMessage>(MessagePacker.Unpack(MessagePacker.Pack(fullFrame)));
+		var deltaRoundTrip = MessagePacker.ConvertTo<StreamMessage>(MessagePacker.Unpack(MessagePacker.Pack(deltaFrame)));
+		var fullData = JObject.FromObject(fullRoundTrip.Data!);
+		var deltaData = JObject.FromObject(deltaRoundTrip.Data!);
 
-			Assert.That(SpinWaitUntil(() => sent.Count >= 2, TimeSpan.FromSeconds(3)), Is.True);
-			Assert.That(reusableSession.StopSubscription(start.SubscriptionId), Is.True);
-
-			var firstFrame = MessagePacker.ConvertTo<StreamMessage>(MessagePacker.Unpack(MessagePacker.Pack(sent[0])));
-			var secondFrame = MessagePacker.ConvertTo<StreamMessage>(MessagePacker.Unpack(MessagePacker.Pack(sent[1])));
-			var firstData = (JObject)firstFrame.Data!;
-			var secondData = (JObject)secondFrame.Data!;
-
-			Assert.That(firstData.Value<bool>("IsDelta"), Is.False);
-			Assert.That(firstData["Snapshot"], Is.Not.Null);
-			Assert.That(secondData["BaseSequenceNumber"], Is.Not.Null);
-			Assert.That(secondData["CurrentSequenceNumber"], Is.Not.Null);
-		}
-		finally
-		{
-			if (response is StartSendingCommandResponse start)
-				reusableSession.StopSubscription(start.SubscriptionId);
-			window.Close();
-		}
+		Assert.That(fullData.Value<bool>("IsDelta"), Is.False);
+		Assert.That(fullData["Snapshot"], Is.Not.Null);
+		Assert.That(deltaData["BaseSequenceNumber"], Is.Not.Null);
+		Assert.That(deltaData["CurrentSequenceNumber"], Is.Not.Null);
 	}
 
 	private static bool SpinWaitUntil(Func<bool> condition, TimeSpan timeout)

@@ -58,7 +58,7 @@ internal sealed class Build
 			new BuildTarget("TestCore", TestCore, "Restore"),
 			new BuildTarget("TestCli", TestCli, "Restore"),
 			new BuildTarget("CompileTestHarnesses", CompileTestHarnesses, "Restore"),
-			new BuildTarget("TestIntegration", TestIntegration, "CompileTestHarnesses"),
+			new BuildTarget("TestIntegration", TestIntegration, "Compile", "CompileTestHarnesses"),
 			new BuildTarget("TestCompat", TestCompat, "Compile"),
 			new BuildTarget("TestFull", TestFull, "TestFast", "TestIntegration", "TestCompat"),
 			new BuildTarget("PublishCli", PublishCli, "Compile"),
@@ -242,9 +242,16 @@ internal sealed class Build
 		RunDotNet("build", HarnessSolution, "--configuration", configuration, "--no-restore");
 	}
 
-	private static void TestIntegration()
+	private void TestIntegration()
 	{
-		Console.WriteLine("Integration lane is declared for later harness-launching tests.");
+		RunDotNet(
+			"test",
+			CoreTestsProject,
+			"--configuration",
+			configuration,
+			"--no-build",
+			"--filter",
+			"FullyQualifiedName~RunningProcessAttachIntegrationTests");
 	}
 
 	private static void TestCompat()

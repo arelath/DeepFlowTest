@@ -174,22 +174,4 @@ internal static class StartSendingCommand
 		};
 	}
 
-	private sealed class VisualTreeDeltaSnapshotFrame
-	{
-		public VisualTreeDeltaSnapshotFrame(VisualTreeSnapshot snapshot)
-		{
-			Snapshot = snapshot;
-		}
-
-		public bool IsDelta { get; set; }
-
-		public VisualTreeSnapshot Snapshot { get; }
-
-		public bool IsFullSnapshot
-		{
-			get => !IsDelta;
-			set => IsDelta = !value;
-		}
-	}
-
 }

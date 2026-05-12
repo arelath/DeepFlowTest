@@ -22,6 +22,8 @@ internal sealed class InjectorLauncherCommandLineOptions
 
 	public string StartupArgument { get; private set; } = string.Empty;
 
+	public string PayloadRoot { get; private set; } = string.Empty;
+
 	public bool Verbose { get; private set; }
 
 	public bool Debug { get; private set; }
@@ -34,7 +36,7 @@ internal sealed class InjectorLauncherCommandLineOptions
 		"DeepFlowTest injector launcher\n" +
 		"Usage: DeepFlowTest.InjectorLauncher.<arch>.exe --targetPID <pid> [--targetHwnd <hwnd>] --assembly <assembly> --className <type> --methodName <method> [--startupArgument <value>]\n" +
 		"       DeepFlowTest.InjectorLauncher.<arch>.exe --targetHwnd <hwnd> --assembly <assembly> --className <type> --methodName <method> [--startupArgument <value>]\n" +
-		"Options: --targetPID, --targetHwnd, --assembly, --className, --methodName, --startupArgument, --verbose, --debug, --attachConsoleToParent, --help";
+		"Options: --targetPID, --targetHwnd, --assembly, --className, --methodName, --startupArgument, --payloadRoot, --verbose, --debug, --attachConsoleToParent, --help";
 
 	public static bool TryParse(string[] args, out InjectorLauncherCommandLineOptions options, out string error)
 	{
@@ -85,6 +87,11 @@ internal sealed class InjectorLauncherCommandLineOptions
 					if (!ReadValue(args, ref i, arg, out var startupArgument, out error))
 						return false;
 					values["startupArgument"] = startupArgument;
+					break;
+				case "--payloadRoot":
+					if (!ReadValue(args, ref i, arg, out var payloadRoot, out error))
+						return false;
+					values["payloadRoot"] = payloadRoot;
 					break;
 				case "-v":
 				case "--verbose":
@@ -149,6 +156,7 @@ internal sealed class InjectorLauncherCommandLineOptions
 		options.ClassName = classNameValue;
 		options.MethodName = methodNameValue;
 		options.StartupArgument = values.TryGetValue("startupArgument", out var parsedStartupArgument) ? parsedStartupArgument : string.Empty;
+		options.PayloadRoot = values.TryGetValue("payloadRoot", out var parsedPayloadRoot) ? parsedPayloadRoot : string.Empty;
 		return true;
 	}
 

@@ -2,6 +2,7 @@ namespace DeepFlowTest;
 
 using System;
 using System.Diagnostics;
+using DeepFlowTest.Utility;
 
 public sealed class AppConnection : IDisposable
 {
@@ -16,6 +17,8 @@ public sealed class AppConnection : IDisposable
 		PipeName = string.IsNullOrWhiteSpace(options.PipeName) ? throw new ArgumentException("Pipe name is required.", nameof(options)) : options.PipeName;
 		PayloadFrameworkFamily = options.PayloadFrameworkFamily ?? string.Empty;
 		InjectorState = options.InjectorState;
+		if (OwnsProcess)
+			RegisterOwnedProcessForParentClose(TargetProcess);
 	}
 
 	public ITargetProcess TargetProcess { get; }
@@ -33,6 +36,8 @@ public sealed class AppConnection : IDisposable
 	public string? LastStartupLog { get; private set; }
 
 	public bool IsDisposed => disposed;
+
+	internal static Action<ITargetProcess> RegisterOwnedProcessForParentClose { get; set; } = RegisterTargetProcessWithParentCloseTracker;
 
 	public void EnsurePipeOrInject(Func<AppConnection, bool> isPipeAvailable, IAppConnectionInjector injector, bool allowInjection)
 	{
@@ -86,6 +91,12 @@ public sealed class AppConnection : IDisposable
 	{
 		if (disposed)
 			throw new ObjectDisposedException(nameof(AppConnection));
+	}
+
+	private static void RegisterTargetProcessWithParentCloseTracker(ITargetProcess process)
+	{
+		if (process is TargetProcess targetProcess)
+			ProcessCloseOnParentClose.Add(targetProcess.Process);
 	}
 
 	public static AppConnection ForLaunch(ITargetProcess process, string pipeName, string payloadFrameworkFamily = "") =>

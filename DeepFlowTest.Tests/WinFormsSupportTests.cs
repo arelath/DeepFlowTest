@@ -302,7 +302,7 @@ public sealed class WinFormsSupportTests
 	}
 
 	[Test]
-	public void ModalPendingCommandsUseNativeDialogTreeFallback()
+	public void ModalNativeDialogFallbackDetectsRootsAndBuildsNativeTree()
 	{
 		using var form = CreateForm();
 
@@ -311,17 +311,18 @@ public sealed class WinFormsSupportTests
 			form.Show();
 			Forms.Application.DoEvents();
 			using var roots = NativeDialogService.OverrideRootWindowsForTests(new[] { form.Handle });
-			using var delay = AppDriverCommandDispatcher.DelayUiHandlersForTests(1000);
 
-			var response = CaptureResponse(new GetVisualTreeCommandRequest
+			Assert.That(NativeDialogService.HasRootWindowsForCurrentProcess(), Is.True);
+			var waitResult = AppDriverCommandDispatcher.WaitForShowDialogAsync(1000, CancellationToken.None).GetAwaiter().GetResult();
+			var treeService = NativeDialogService.TryCreateTreeService();
+
+			Assert.That(waitResult, Is.EqualTo(UiThreadRunResult.Pending));
+			Assert.That(treeService, Is.Not.Null);
+			var snapshot = treeService!.CaptureSnapshot(new TreeSnapshotOptions
 			{
-				AsSnapshot = true,
-				PropNames = ["Text", "ClassName"],
-				TimeoutMs = 750,
+				RequestedPropertyNames = ["Text", "ClassName"],
+				MaxNodeCount = 100,
 			});
-
-			Assert.That(response, Is.TypeOf<VisualTreeSnapshot>());
-			var snapshot = (VisualTreeSnapshot)response!;
 			Assert.That(snapshot.Nodes.Any(node => node.Hwnd == form.Handle.ToInt64()), Is.True);
 		}
 		finally

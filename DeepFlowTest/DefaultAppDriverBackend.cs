@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
+using System.Text;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
 
@@ -45,7 +46,7 @@ public sealed class DefaultAppDriverBackend : IAppDriverBackend
 			PipeName = ResolvePipeName(options, process.Id),
 		});
 
-		InitializeConnection(connection, options, PayloadStartupModes.OneShotDriver);
+		InitializeConnection(connection, options, PayloadStartupModes.ReusableCli);
 		return connection;
 	}
 
@@ -54,7 +55,7 @@ public sealed class DefaultAppDriverBackend : IAppDriverBackend
 		_ = options ?? throw new ArgumentNullException(nameof(options));
 		var process = processCatalog.GetById(processId);
 		var connection = AppConnection.ForAttach(process, ResolvePipeName(options, process.Id));
-		InitializeConnection(connection, options, PayloadStartupModes.OneShotDriver);
+		InitializeConnection(connection, options, PayloadStartupModes.ReusableCli);
 		return connection;
 	}
 
@@ -63,7 +64,7 @@ public sealed class DefaultAppDriverBackend : IAppDriverBackend
 		_ = options ?? throw new ArgumentNullException(nameof(options));
 		var process = AppDriverProcessResolver.ResolveByName(processCatalog.GetProcesses(), processName, options.AllowContainsProcessNameMatch);
 		var connection = AppConnection.ForAttach(process, ResolvePipeName(options, process.Id));
-		InitializeConnection(connection, options, PayloadStartupModes.OneShotDriver);
+		InitializeConnection(connection, options, PayloadStartupModes.ReusableCli);
 		return connection;
 	}
 
@@ -157,7 +158,7 @@ public sealed class ExternalInjectorAppConnectionInjector : IAppConnectionInject
 		{
 			UseShellExecute = false,
 			CreateNoWindow = true,
-			Arguments = BuildInjectorArguments(connection, startupOptions.Encode()),
+			Arguments = BuildInjectorArguments(connection, startupOptions.Encode(), options.PayloadRoot),
 		};
 		using var injectorProcess = Process.Start(startInfo) ?? throw new AppDriverException(AppDriverErrorCodes.InjectorFailed, "Failed to start injector launcher.");
 		if (!injectorProcess.WaitForExit((int)Math.Max(1, options.Timeout.TotalMilliseconds)))
@@ -191,10 +192,10 @@ public sealed class ExternalInjectorAppConnectionInjector : IAppConnectionInject
 			: null;
 	}
 
-	private static string BuildInjectorArguments(AppConnection connection, string startupArgument)
+	internal static string BuildInjectorArguments(AppConnection connection, string startupArgument, string payloadRoot)
 	{
-		return string.Join(
-			" ",
+		var parts = new List<string>(14)
+		{
 			Quote("--targetPID"),
 			connection.TargetProcess.Id.ToString(CultureInfo.InvariantCulture),
 			Quote("--assembly"),
@@ -204,8 +205,46 @@ public sealed class ExternalInjectorAppConnectionInjector : IAppConnectionInject
 			Quote("--methodName"),
 			Quote("Start"),
 			Quote("--startupArgument"),
-			Quote(startupArgument));
+			Quote(startupArgument),
+		};
+
+		if (!string.IsNullOrWhiteSpace(payloadRoot))
+		{
+			parts.Add(Quote("--payloadRoot"));
+			parts.Add(Quote(payloadRoot));
+		}
+
+		return string.Join(" ", parts);
 	}
 
-	private static string Quote(string value) => "\"" + value.Replace("\"", "\\\"") + "\"";
+	private static string Quote(string value)
+	{
+		var builder = new StringBuilder(value.Length + 2);
+		builder.Append('"');
+		var backslashCount = 0;
+		foreach (var character in value)
+		{
+			if (character == '\\')
+			{
+				backslashCount++;
+				continue;
+			}
+
+			if (character == '"')
+			{
+				builder.Append('\\', (backslashCount * 2) + 1);
+				builder.Append('"');
+				backslashCount = 0;
+				continue;
+			}
+
+			builder.Append('\\', backslashCount);
+			builder.Append(character);
+			backslashCount = 0;
+		}
+
+		builder.Append('\\', backslashCount * 2);
+		builder.Append('"');
+		return builder.ToString();
+	}
 }

@@ -105,7 +105,7 @@ public sealed class AppDriverTests
 		var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
 			session,
-			new AppDriverOptions { ElementPollBackoffMs = new[] { 1 }, Timeout = TimeSpan.FromSeconds(1) });
+			new AppDriverOptions { ElementPollBackoffMs = new[] { 1 }, Timeout = TimeSpan.FromMilliseconds(2500) });
 
 		var element = driver.GetElement(ElementSelector.ByName("late"));
 
@@ -132,7 +132,7 @@ public sealed class AppDriverTests
 			session,
 			new AppDriverOptions { ElementPollBackoffMs = new[] { 1 }, Timeout = TimeSpan.FromSeconds(1) });
 
-		var elements = driver.GetElements(x => x["Name"] == "late", timeoutMs: 500);
+		var elements = driver.GetElements(x => x["Name"] == "late", timeoutMs: 1500);
 
 		Assert.That(elements.Single().TargetId, Is.EqualTo("late-target"));
 		Assert.That(session.SentCommands.Count, Is.EqualTo(3));

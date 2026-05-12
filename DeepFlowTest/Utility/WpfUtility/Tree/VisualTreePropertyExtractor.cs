@@ -403,7 +403,8 @@ public sealed class VisualTreePropertyExtractor
 
 public sealed class PropertyExtractionError
 {
-	private PropertyExtractionError(string propertyName, string errorCode, string message)
+	[Newtonsoft.Json.JsonConstructor]
+	public PropertyExtractionError(string propertyName, string errorCode, string message)
 	{
 		PropertyName = propertyName;
 		ErrorCode = errorCode;

@@ -25,7 +25,7 @@ public sealed class ProtocolCommandTests
 	}
 
 	[Test]
-	public void ContractDtosExposeWpfPilot2ConstructorsAliasesAndEquality()
+	public void ContractDtosExposeCompatConstructorsAliasesAndEquality()
 	{
 		var leftClick = new ClickCommandRequest("button", "Left", 123);
 		var sameLeftClick = new ClickCommandRequest("button", "Left", 123);

@@ -18,6 +18,7 @@ public sealed class InjectorLauncherOptionTests
 				"--className", "Payload",
 				"--methodName", "Start",
 				"--startupArgument", "dft:value",
+				"--payloadRoot", @"C:\custom\payload root",
 				"--verbose",
 				"--debug",
 				"--attachConsoleToParent",
@@ -32,6 +33,7 @@ public sealed class InjectorLauncherOptionTests
 		Assert.That(options.ClassName, Is.EqualTo("Payload"));
 		Assert.That(options.MethodName, Is.EqualTo("Start"));
 		Assert.That(options.StartupArgument, Is.EqualTo("dft:value"));
+		Assert.That(options.PayloadRoot, Is.EqualTo(@"C:\custom\payload root"));
 		Assert.That(options.Verbose, Is.True);
 		Assert.That(options.Debug, Is.True);
 		Assert.That(options.AttachConsoleToParent, Is.True);

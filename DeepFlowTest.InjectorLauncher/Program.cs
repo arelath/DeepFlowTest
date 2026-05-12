@@ -54,7 +54,7 @@ public static class Program
 					return ArchitectureRedirect.Run(redirect);
 			}
 
-			var payloadPath = ResolvePayloadAssemblyPath(options.Assembly, processWrapper.SupportedFrameworkFamily);
+			var payloadPath = ResolvePayloadAssemblyPath(options.Assembly, processWrapper.SupportedFrameworkFamily, options.PayloadRoot);
 			var injectorData = new InjectorData
 			{
 				FullAssemblyPath = payloadPath,
@@ -83,9 +83,12 @@ public static class Program
 		}
 	}
 
-	private static string ResolvePayloadAssemblyPath(string assemblyNameOrPath, string frameworkFamily)
+	private static string ResolvePayloadAssemblyPath(string assemblyNameOrPath, string frameworkFamily, string payloadRootOverride)
 	{
-		return InjectorPathResolver.ResolvePayloadPath(InjectorPathResolver.RootDirectory, frameworkFamily, assemblyNameOrPath);
+		var rootDirectory = string.IsNullOrWhiteSpace(payloadRootOverride)
+			? InjectorPathResolver.RootDirectory
+			: payloadRootOverride;
+		return InjectorPathResolver.ResolvePayloadPath(rootDirectory, frameworkFamily, assemblyNameOrPath);
 	}
 
 	private static string GetCurrentExecutablePath()

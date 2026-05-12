@@ -157,6 +157,20 @@ public sealed class InjectorArgumentTests
 		Assert.That(parts[4], Is.EqualTo(data.StartupArgument));
 	}
 
+	[Test]
+	public void InjectorArgumentsEscapePayloadRootTrailingBackslash()
+	{
+		using var connection = AppConnection.ForAttach(new Fakes.FakeTargetProcess { Id = 123 }, "pipe-123");
+
+		var arguments = ExternalInjectorAppConnectionInjector.BuildInjectorArguments(
+			connection,
+			"dft:abc",
+			@"C:\payload root\");
+
+		Assert.That(arguments, Does.Contain(@"""C:\payload root\\"""));
+		Assert.That(arguments, Does.Not.Contain(@"""C:\payload root\"""));
+	}
+
 	private static string CreateTempDirectory()
 	{
 		var root = Path.Combine(Path.GetTempPath(), $"deepflowtest-injector-test-{Guid.NewGuid():N}");

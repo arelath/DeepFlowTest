@@ -30,6 +30,8 @@ public sealed class ArchitectureAndFrameworkTests
 	public void FrameworkClassificationUsesModuleEvidence()
 	{
 		Assert.That(FrameworkDetector.Classify(new[] { new ModuleEvidence("PresentationFramework.dll", productVersion: "4.8.9032.0") }), Is.EqualTo("netframework"));
+		Assert.That(FrameworkDetector.Classify(new[] { new ModuleEvidence("clr.dll", productVersion: "4.8.9032.0") }), Is.EqualTo("netframework"));
+		Assert.That(FrameworkDetector.Classify(new[] { new ModuleEvidence("mscorlib.ni.dll", productVersion: "4.8.9032.0") }), Is.EqualTo("netframework"));
 		Assert.That(FrameworkDetector.Classify(new[] { new ModuleEvidence("coreclr.dll", productVersion: "3.1.32") }), Is.EqualTo("netcoreapp"));
 		Assert.That(FrameworkDetector.Classify(new[] { new ModuleEvidence("System.Runtime.dll", productVersion: "8.0.21") }), Is.EqualTo("dotnet"));
 	}

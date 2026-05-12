@@ -64,10 +64,19 @@ internal static class FrameworkDetector
 		if (moduleName.Equals("coreclr.dll", StringComparison.OrdinalIgnoreCase))
 			return 100;
 
+		if (moduleName.Equals("clr.dll", StringComparison.OrdinalIgnoreCase))
+			return 90;
+
 		if (moduleName.Equals("System.Runtime.dll", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.Equals("System.Private.CoreLib.dll", StringComparison.OrdinalIgnoreCase))
 		{
 			return 80;
+		}
+
+		if (moduleName.Equals("mscorlib.dll", StringComparison.OrdinalIgnoreCase) ||
+			moduleName.Equals("mscorlib.ni.dll", StringComparison.OrdinalIgnoreCase))
+		{
+			return 70;
 		}
 
 		return 10;
@@ -76,8 +85,11 @@ internal static class FrameworkDetector
 	private static bool IsRuntimeEvidence(string moduleName)
 	{
 		return moduleName.Equals("coreclr.dll", StringComparison.OrdinalIgnoreCase) ||
+			moduleName.Equals("clr.dll", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.Equals("System.Private.CoreLib.dll", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.Equals("System.Runtime.dll", StringComparison.OrdinalIgnoreCase) ||
+			moduleName.Equals("mscorlib.dll", StringComparison.OrdinalIgnoreCase) ||
+			moduleName.Equals("mscorlib.ni.dll", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.Equals("PresentationFramework.dll", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.StartsWith("wpfgfx_", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.Equals("System.Windows.Forms.dll", StringComparison.OrdinalIgnoreCase) ||
