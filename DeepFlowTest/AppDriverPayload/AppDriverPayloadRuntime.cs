@@ -8,7 +8,9 @@ using DeepFlowTest.Utility;
 
 public interface IAppDriverPayloadRuntime
 {
-	bool HasSupportedTarget();
+	UiAvailability GetAvailability();
+
+	bool HasSupportedTarget(UiAvailability availability);
 
 	void StartOneShot(AppDriverPayloadStartupOptions options);
 
@@ -19,18 +21,37 @@ internal sealed class DefaultAppDriverPayloadRuntime : IAppDriverPayloadRuntime
 {
 	public bool HasSupportedTarget()
 	{
-		return ThreadUtility.HasSupportedUiRoot();
+		return HasSupportedTarget(GetAvailability());
+	}
+
+	public UiAvailability GetAvailability()
+	{
+		return ThreadUtility.GetAvailability();
+	}
+
+	public bool HasSupportedTarget(UiAvailability availability)
+	{
+		return ThreadUtility.HasSupportedUiRoot(availability);
 	}
 
 	public void StartOneShot(AppDriverPayloadStartupOptions options)
 	{
-		var thread = new Thread(() => RunOneShotCommandLoop(options))
+		var channel = new NamedPipeServer(options.PipeName);
+		var thread = new Thread(() => RunOneShotCommandLoop(options, channel))
 		{
 			IsBackground = true,
 			Name = $"{nameof(AppDriverPayload)}:{options.PipeName}",
 		};
 		thread.SetApartmentState(ApartmentState.STA);
-		thread.Start();
+		try
+		{
+			thread.Start();
+		}
+		catch
+		{
+			channel.Dispose();
+			throw;
+		}
 	}
 
 	public ReusablePipeSession StartReusable(AppDriverPayloadStartupOptions options)
@@ -38,25 +59,27 @@ internal sealed class DefaultAppDriverPayloadRuntime : IAppDriverPayloadRuntime
 		return ReusablePipeSessionRegistry.GetOrStart(options.PipeName);
 	}
 
-	private static void RunOneShotCommandLoop(AppDriverPayloadStartupOptions options)
+	private static void RunOneShotCommandLoop(AppDriverPayloadStartupOptions options, NamedPipeServer channel)
 	{
 		PayloadLog.Write($"Starting one-shot command loop for pipe '{options.PipeName}'.");
-		using var channel = new NamedPipeServer(options.PipeName);
-		NamedPipeServer.Command? command = null;
-		try
+		using (channel)
 		{
-			command = channel.WaitForNextCommand();
-			AppDriverCommandDispatcher.Process(command.Value, options, reusableSession: null);
-		}
-		catch (Exception ex)
-		{
-			PayloadLog.Write("One-shot command loop failed.", ex);
-			if (command.HasValue && !command.Value.CheckHasResponded())
+			NamedPipeServer.Command? command = null;
+			try
 			{
-				command.Value.Respond(StandardIpcResponse.FromError(
-					ex.ToString(),
-					ex is ProtocolException protocolException ? protocolException.ErrorCode : ProtocolConstants.ErrorCodes.ProtocolError,
-					PathCorrelationId()));
+				command = channel.WaitForNextCommand();
+				AppDriverCommandDispatcher.Process(command.Value, options, reusableSession: null);
+			}
+			catch (Exception ex)
+			{
+				PayloadLog.Write("One-shot command loop failed.", ex);
+				if (command.HasValue && !command.Value.CheckHasResponded())
+				{
+					command.Value.Respond(StandardIpcResponse.FromError(
+						ex.ToString(),
+						ex is ProtocolException protocolException ? protocolException.ErrorCode : ProtocolConstants.ErrorCodes.ProtocolError,
+						PathCorrelationId()));
+				}
 			}
 		}
 	}

@@ -1,15 +1,15 @@
 namespace DeepFlowTest.Interop;
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using DeepFlowTest.Contracts;
 
 public sealed class ReusableNamedPipeServer : IDisposable
 {
-	private NamedPipeServerStream? activePipe;
-	private StreamWriteLock? activeWriteLock;
-	private string? activeConnectionId;
+	private readonly object sync = new();
+	private readonly List<ConnectionState> activeConnections = new();
 	private bool isDisposed;
 
 	public ReusableNamedPipeServer(string pipeName)
@@ -28,7 +28,12 @@ public sealed class ReusableNamedPipeServer : IDisposable
 	public void Dispose()
 	{
 		isDisposed = true;
-		CloseActivePipe(clientDisconnected: true);
+		ConnectionState[] connections;
+		lock (sync)
+			connections = activeConnections.ToArray();
+
+		foreach (var connection in connections)
+			ClosePipe(connection, clientDisconnected: true);
 	}
 
 	public NamedPipeServer.Command? WaitForNextCommand()
@@ -36,33 +41,33 @@ public sealed class ReusableNamedPipeServer : IDisposable
 		if (isDisposed)
 			throw new ObjectDisposedException(nameof(ReusableNamedPipeServer));
 
-		var pipe = GetConnectedPipe();
+		var connection = GetConnectedPipe();
 		MessagePacker.MessageFrame frame;
 		try
 		{
-			frame = MessagePacker.ReadFrame(pipe);
+			frame = MessagePacker.ReadFrame(connection.Pipe);
 		}
 		catch (IOException)
 		{
-			HandleDisconnectedClient(pipe);
+			HandleDisconnectedClient(connection);
 			return null;
 		}
 		catch (ObjectDisposedException)
 		{
-			HandleDisconnectedClient(pipe);
+			HandleDisconnectedClient(connection);
 			return null;
 		}
 
 		if (!frame.HasFrame || frame.Message is null)
 		{
-			HandleDisconnectedClient(pipe);
+			HandleDisconnectedClient(connection);
 			return null;
 		}
 
 		ReceivedCommandCount++;
 		var hasResponded = false;
 		var keepConnectionOpen = false;
-		var connectionId = activeConnectionId;
+		var connectionId = connection.ConnectionId;
 
 		bool CheckHasResponded() => hasResponded;
 		void HoldConnectionOpen() => keepConnectionOpen = true;
@@ -74,27 +79,26 @@ public sealed class ReusableNamedPipeServer : IDisposable
 			TrySend(response);
 			hasResponded = true;
 			if (!keepConnectionOpen)
-				ClosePipe(pipe, clientDisconnected: false);
+				ClosePipe(connection, clientDisconnected: false);
 		}
 
 		bool TrySend(object response)
 		{
-			var writeLock = activeWriteLock;
-			if (writeLock is null || !ReferenceEquals(activePipe, pipe))
+			if (!IsActive(connection))
 				return false;
 
 			try
 			{
-				return writeLock.TryWrite(pipe, response);
+				return connection.WriteLock.TryWrite(connection.Pipe, response);
 			}
 			catch (IOException)
 			{
-				HandleDisconnectedClient(pipe);
+				HandleDisconnectedClient(connection);
 				return false;
 			}
 			catch (ObjectDisposedException)
 			{
-				HandleDisconnectedClient(pipe);
+				HandleDisconnectedClient(connection);
 				return false;
 			}
 		}
@@ -110,48 +114,57 @@ public sealed class ReusableNamedPipeServer : IDisposable
 		};
 	}
 
-	private NamedPipeServerStream GetConnectedPipe()
+	private ConnectionState GetConnectedPipe()
 	{
-		if (activePipe is not null && activePipe.IsConnected)
-			return activePipe;
-
 		var pipe = new NamedPipeServerStream(
 			PipeName,
 			PipeDirection.InOut,
-			maxNumberOfServerInstances: 1,
+			maxNumberOfServerInstances: NamedPipeServerStream.MaxAllowedServerInstances,
 			transmissionMode: PipeTransmissionMode.Byte,
 			options: PipeOptions.Asynchronous);
-		activePipe = pipe;
-		activeWriteLock = new StreamWriteLock();
-		activeConnectionId = Guid.NewGuid().ToString("N");
+		var connection = new ConnectionState(pipe, Guid.NewGuid().ToString("N"), new StreamWriteLock());
+		lock (sync)
+			activeConnections.Add(connection);
+
 		pipe.WaitForConnection();
-		return pipe;
+		return connection;
 	}
 
-	private void HandleDisconnectedClient(NamedPipeServerStream pipe)
+	private void HandleDisconnectedClient(ConnectionState connection)
 	{
 		DisconnectedClientCount++;
-		ClosePipe(pipe, clientDisconnected: true);
+		ClosePipe(connection, clientDisconnected: true);
 	}
 
-	private void CloseActivePipe(bool clientDisconnected)
+	private bool IsActive(ConnectionState connection)
 	{
-		if (activePipe is not null)
-			ClosePipe(activePipe, clientDisconnected);
+		lock (sync)
+			return activeConnections.Contains(connection);
 	}
 
-	private void ClosePipe(NamedPipeServerStream pipe, bool clientDisconnected)
+	private void ClosePipe(ConnectionState connection, bool clientDisconnected)
 	{
-		var connectionId = activeConnectionId;
-		if (ReferenceEquals(activePipe, pipe))
+		lock (sync)
+			activeConnections.Remove(connection);
+
+		connection.Pipe.Dispose();
+		if (clientDisconnected && !string.IsNullOrEmpty(connection.ConnectionId))
+			ClientDisconnected?.Invoke(connection.ConnectionId);
+	}
+
+	private sealed class ConnectionState
+	{
+		public ConnectionState(NamedPipeServerStream pipe, string connectionId, StreamWriteLock writeLock)
 		{
-			activePipe = null;
-			activeWriteLock = null;
-			activeConnectionId = null;
+			Pipe = pipe;
+			ConnectionId = connectionId;
+			WriteLock = writeLock;
 		}
 
-		pipe.Dispose();
-		if (clientDisconnected && !string.IsNullOrEmpty(connectionId))
-			ClientDisconnected?.Invoke(connectionId!);
+		public NamedPipeServerStream Pipe { get; }
+
+		public string ConnectionId { get; }
+
+		public StreamWriteLock WriteLock { get; }
 	}
 }

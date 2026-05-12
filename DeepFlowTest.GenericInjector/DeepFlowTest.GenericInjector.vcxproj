@@ -137,7 +137,7 @@
 
   <ItemGroup>
     <ResourceCompile Include="version.rc">
-      <PreprocessorDefinitions>VERSION_MAJOR=$(MajorVersion);VERSION_MINOR=$(MinorVersion);VERSION_BUILD=$(BuildVersion);VERSION_REVISION=$(RevisionVersion);InformationalVersion="$(InformationalVersion)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>VERSION_MAJOR=$(MajorVersion);VERSION_MINOR=$(MinorVersion);VERSION_BUILD=$(BuildVersion);VERSION_REVISION=$(RevisionVersion);InformationalVersion="$(InformationalVersion)";VER_ORIGINAL_FILENAME_STR="DeepFlowTest.GenericInjector.$(ArchitectureName).dll";%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
   </ItemGroup>
 

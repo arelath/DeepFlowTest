@@ -103,6 +103,8 @@ public sealed class RepositoryConfigurationTests
 			Assert.That(buildScript, Does.Contain($"\"{target}\""));
 
 		Assert.That(buildScript, Does.Contain("new BuildTarget(\"Compile\", Compile, \"Restore\", \"CompileNativeInjector\")"));
+		Assert.That(buildScript, Does.Contain("RepackPayloads();"));
+		Assert.That(buildScript, Does.Contain("RunDotNet(\"build\", CliProject"));
 	}
 
 	[Test]
@@ -192,6 +194,23 @@ public sealed class RepositoryConfigurationTests
 		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x64"));
 		Assert.That(cliProject, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x86"));
 		Assert.That(cliProject, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x64"));
+		Assert.That(cliProject, Does.Not.Contain(@"DeepFlowTestResources\x86\**\*.*"));
+		Assert.That(cliProject, Does.Not.Contain(@"DeepFlowTestResources\x64\**\*.*"));
+		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x86\*.dll"));
+		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x64\*.exe"));
+		Assert.That(nativeProject, Does.Contain("VER_ORIGINAL_FILENAME_STR=\"DeepFlowTest.GenericInjector.$(ArchitectureName).dll\""));
+	}
+
+	[Test]
+	public void BuildPackCreatesLibraryContentLayout()
+	{
+		var buildScript = File.ReadAllText(Path.Combine(FindRepositoryRoot(), ".build", "Build.cs"));
+
+		Assert.That(buildScript, Does.Contain("contentFiles"));
+		Assert.That(buildScript, Does.Contain("DeepFlowTestResources"));
+		Assert.That(buildScript, Does.Contain("IsPackageResourceFile"));
+		Assert.That(buildScript, Does.Not.Contain(".lib"));
+		Assert.That(buildScript, Does.Not.Contain(".exp"));
 	}
 
 	[Test]

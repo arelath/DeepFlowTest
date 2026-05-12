@@ -44,6 +44,8 @@ internal static class InjectorPathResolver
 		if (Path.IsPathRooted(assemblyNameOrPath))
 			return assemblyNameOrPath;
 
+		ValidateFrameworkFamily(frameworkFamily);
+
 		var assemblyFileName = assemblyNameOrPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
 			? assemblyNameOrPath
 			: $"{assemblyNameOrPath}.dll";
@@ -63,6 +65,17 @@ internal static class InjectorPathResolver
 		}
 
 		throw new FileNotFoundException($"Could not find payload assembly for framework family '{frameworkFamily}'.", fallbackPath);
+	}
+
+	private static void ValidateFrameworkFamily(string frameworkFamily)
+	{
+		if (string.IsNullOrWhiteSpace(frameworkFamily))
+			return;
+
+		if (frameworkFamily is FrameworkDetector.NetFramework or FrameworkDetector.NetCoreApp or FrameworkDetector.DotNet)
+			return;
+
+		throw new InjectorLauncherException(InjectorExitCode.UnsupportedTarget, $"Unsupported target framework family '{frameworkFamily}'.");
 	}
 }
 

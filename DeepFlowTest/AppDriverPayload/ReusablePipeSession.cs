@@ -2,6 +2,7 @@ namespace DeepFlowTest.AppDriverPayload;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using DeepFlowTest.Contracts;
@@ -12,7 +13,11 @@ public sealed class ReusablePipeSession
 	private readonly Action<ReusablePipeSession> runCommandLoop;
 	private readonly Dictionary<string, ActiveSubscriptionResponse> subscriptions = new();
 	private int started;
-	private int isBusy;
+	private int busyCount;
+	private int totalCommandsHandled;
+	private int disconnectedClientCount;
+	private volatile bool stopRequested;
+	private ReusableNamedPipeServer? server;
 
 	public ReusablePipeSession(string pipeName)
 		: this(pipeName, RunReusableCommandLoop)
@@ -29,11 +34,11 @@ public sealed class ReusablePipeSession
 
 	public bool IsStarted => started == 1;
 
-	public bool IsBusy => isBusy == 1;
+	public bool IsBusy => Volatile.Read(ref busyCount) > 0;
 
-	public int TotalCommandsHandled { get; private set; }
+	public int TotalCommandsHandled => Volatile.Read(ref totalCommandsHandled);
 
-	public int DisconnectedClientCount { get; private set; }
+	public int DisconnectedClientCount => Volatile.Read(ref disconnectedClientCount);
 
 	public IReadOnlyList<ActiveSubscriptionResponse> ActiveSubscriptions
 	{
@@ -58,9 +63,15 @@ public sealed class ReusablePipeSession
 		thread.Start();
 	}
 
+	public void Stop()
+	{
+		stopRequested = true;
+		server?.Dispose();
+	}
+
 	public void MarkClientDisconnected(string connectionId)
 	{
-		DisconnectedClientCount++;
+		Interlocked.Increment(ref disconnectedClientCount);
 		StopSubscriptionsForConnection(connectionId);
 	}
 
@@ -133,6 +144,7 @@ public sealed class ReusablePipeSession
 	{
 		PayloadLog.Write($"Starting reusable command loop for pipe '{session.PipeName}'.");
 		using var channel = new ReusableNamedPipeServer(session.PipeName);
+		session.server = channel;
 		channel.ClientDisconnected += session.MarkClientDisconnected;
 
 		var options = new AppDriverPayloadStartupOptions
@@ -143,7 +155,7 @@ public sealed class ReusablePipeSession
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
 		};
 
-		while (true)
+		while (!session.stopRequested)
 		{
 			NamedPipeServer.Command? command = null;
 			try
@@ -153,20 +165,25 @@ public sealed class ReusablePipeSession
 					continue;
 
 				var kind = AppDriverCommandDispatcher.GetCommandKind(command.Value.Value);
-				var reportsBusy = kind != ProtocolConstants.Commands.Hello && kind != ProtocolConstants.Commands.PipeStatus;
+				var reportsBusy = ReportsBusy(kind);
+				Interlocked.Increment(ref session.totalCommandsHandled);
 				if (reportsBusy)
-					Interlocked.Exchange(ref session.isBusy, 1);
+				{
+					Interlocked.Increment(ref session.busyCount);
+					var busyCommand = command.Value;
+					_ = System.Threading.Tasks.Task.Run(() => ProcessCommand(session, busyCommand, options, reportsBusy: true));
+					continue;
+				}
 
-				session.TotalCommandsHandled++;
-				try
-				{
-					AppDriverCommandDispatcher.Process(command.Value, options, session);
-				}
-				finally
-				{
-					if (reportsBusy)
-						Interlocked.Exchange(ref session.isBusy, 0);
-				}
+				ProcessCommand(session, command.Value, options, reportsBusy: false);
+			}
+			catch (ObjectDisposedException) when (session.stopRequested)
+			{
+				break;
+			}
+			catch (IOException) when (session.stopRequested)
+			{
+				break;
 			}
 			catch (Exception ex)
 			{
@@ -175,6 +192,41 @@ public sealed class ReusablePipeSession
 					command.Value.Respond(StandardIpcResponse.FromError(ex.ToString(), ProtocolConstants.ErrorCodes.ProtocolError, LogCorrelationId()));
 			}
 		}
+
+		session.server = null;
+		Interlocked.Exchange(ref session.started, 0);
+	}
+
+	private static void ProcessCommand(
+		ReusablePipeSession session,
+		NamedPipeServer.Command command,
+		AppDriverPayloadStartupOptions options,
+		bool reportsBusy)
+	{
+		try
+		{
+			AppDriverCommandDispatcher.Process(command, options, session);
+		}
+		catch (Exception ex)
+		{
+			PayloadLog.Write("Reusable command processing failed.", ex);
+			if (!command.CheckHasResponded())
+				command.Respond(StandardIpcResponse.FromError(ex.ToString(), ProtocolConstants.ErrorCodes.ProtocolError, LogCorrelationId()));
+		}
+		finally
+		{
+			if (reportsBusy)
+				Interlocked.Decrement(ref session.busyCount);
+		}
+	}
+
+	private static bool ReportsBusy(string kind)
+	{
+		return kind is not (ProtocolConstants.Commands.Hello
+			or ProtocolConstants.Commands.Ping
+			or ProtocolConstants.Commands.PipeStatus
+			or ProtocolConstants.Commands.StartSending
+			or ProtocolConstants.Commands.StopSending);
 	}
 
 	private static string LogCorrelationId()

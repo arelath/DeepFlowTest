@@ -74,7 +74,7 @@ internal static class ArchitectureDetector
 		catch (Exception ex)
 		{
 			InjectorLog.Write($"Architecture detection failed for PID {process.Id}: {ex}");
-			return CurrentProcessArchitecture;
+			throw new InjectorLauncherException(InjectorExitCode.UnsupportedTarget, $"Could not detect architecture for target process {process.Id}.", ex);
 		}
 	}
 }

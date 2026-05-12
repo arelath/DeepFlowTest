@@ -10,6 +10,12 @@ internal sealed class InjectorLauncherException : Exception
 		ExitCode = exitCode;
 	}
 
+	public InjectorLauncherException(int exitCode, string message, Exception innerException)
+		: base(message, innerException)
+	{
+		ExitCode = exitCode;
+	}
+
 	public int ExitCode { get; }
 }
 
@@ -22,5 +28,6 @@ internal static class InjectorExitCode
 	public const int MissingArchitectureLauncher = 5;
 	public const int MissingPayload = 6;
 	public const int NativeInjectionFailed = 7;
+	public const int MissingInjectorDll = 8;
 	public const int UnexpectedFailure = 1;
 }

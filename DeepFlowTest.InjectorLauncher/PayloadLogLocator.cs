@@ -27,8 +27,9 @@ internal static class PayloadLogLocator
 	public static bool TryReadTail(string startupArgument, int processId, out string tail, int maxCharacters = 4096)
 	{
 		tail = string.Empty;
-		if (!TryExtractPipeName(startupArgument, out var pipeName))
-			return false;
+		var pipeName = TryExtractPipeName(startupArgument, out var extractedPipeName)
+			? extractedPipeName
+			: "startup";
 
 		var logPath = GetLogPath(pipeName, processId);
 		if (!File.Exists(logPath))

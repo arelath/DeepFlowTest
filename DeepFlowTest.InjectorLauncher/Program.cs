@@ -8,10 +8,12 @@ using DeepFlowTest.Shared;
 
 public static class Program
 {
+#if !DEEPFLOWTEST_INJECTOR_TESTS
 	public static int Main(string[] args)
 	{
 		return Run(args);
 	}
+#endif
 
 	internal static int Run(string[] args)
 	{
@@ -23,6 +25,12 @@ public static class Program
 			return InjectorExitCode.InvalidArguments;
 		}
 
+		if (options.HelpRequested)
+		{
+			Console.WriteLine(InjectorLauncherCommandLineOptions.HelpText);
+			return InjectorExitCode.Success;
+		}
+
 		try
 		{
 			if (options.Debug)
@@ -31,7 +39,10 @@ public static class Program
 			if (options.AttachConsoleToParent)
 				ConsoleHelper.AttachConsoleToParentProcessOrAllocateNewOne();
 
-			using var processWrapper = ProcessWrapper.From(options.TargetProcessId, new IntPtr(options.TargetWindowHandle));
+			var targetWindowHandle = new IntPtr(options.TargetWindowHandle);
+			using var processWrapper = options.HasTargetProcessId
+				? ProcessWrapper.From(options.TargetProcessId, targetWindowHandle)
+				: ProcessWrapper.FromWindowHandle(targetWindowHandle);
 			if (processWrapper is null)
 				return InjectorExitCode.TargetNotFound;
 

@@ -15,13 +15,17 @@ public static class MessagePacker
 {
 	private const int LengthPrefixByteCount = sizeof(int);
 	public const int MaxFrameLength = 512 * 1024 * 1024;
+	private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+	private static int maxFrameLengthLimit = MaxFrameLength;
 
 	public static byte[] Pack(object message)
 	{
 		if (message is null)
 			throw new ProtocolException(ProtocolConstants.ErrorCodes.ProtocolError, "Message frames cannot contain null payloads.");
 
-		return Compress(JsonConvert.SerializeObject(message, SerializerSettings));
+		var payload = Compress(message);
+		ValidateFrameLength(payload.Length);
+		return payload;
 	}
 
 	public static object Unpack(byte[] rawMessage)
@@ -29,10 +33,11 @@ public static class MessagePacker
 		if (rawMessage is null || rawMessage.Length == 0)
 			throw new ProtocolException(ProtocolConstants.ErrorCodes.MalformedFrame, "Message frame payload is empty.");
 
+		ValidateFrameLength(rawMessage.Length);
+
 		try
 		{
-			return JsonConvert.DeserializeObject(Decompress(rawMessage), SerializerSettings)
-				?? throw new ProtocolException(ProtocolConstants.ErrorCodes.ProtocolError, "Message frame payload deserialized to null.");
+			return DeserializeCompressed(new MemoryStream(rawMessage, writable: false));
 		}
 		catch (JsonException ex)
 		{
@@ -131,13 +136,7 @@ public static class MessagePacker
 	{
 		try
 		{
-			using var compressedStream = new MemoryStream(buffer, 0, length, writable: false);
-			using var decompressorStream = new DeflateStream(compressedStream, CompressionMode.Decompress);
-			using var decompressedStream = new MemoryStream();
-			decompressorStream.CopyTo(decompressedStream);
-			var json = Encoding.UTF8.GetString(decompressedStream.ToArray());
-			return JsonConvert.DeserializeObject(json, SerializerSettings)
-				?? throw new ProtocolException(ProtocolConstants.ErrorCodes.ProtocolError, "Message frame payload deserialized to null.");
+			return DeserializeCompressed(new MemoryStream(buffer, 0, length, writable: false));
 		}
 		catch (JsonException ex)
 		{
@@ -149,25 +148,27 @@ public static class MessagePacker
 		}
 	}
 
-	private static byte[] Compress(string uncompressedString)
+	private static byte[] Compress(object message)
 	{
 		using var compressedStream = new MemoryStream();
 		using (var compressorStream = new DeflateStream(compressedStream, CompressionLevel.Optimal, leaveOpen: true))
+		using (var streamWriter = new StreamWriter(compressorStream, Utf8NoBom))
+		using (var jsonWriter = new JsonTextWriter(streamWriter))
 		{
-			var bytes = Encoding.UTF8.GetBytes(uncompressedString);
-			compressorStream.Write(bytes, 0, bytes.Length);
+			JsonSerializer.Create(SerializerSettings).Serialize(jsonWriter, message);
 		}
 
 		return compressedStream.ToArray();
 	}
 
-	private static string Decompress(byte[] compressedBytes)
+	private static object DeserializeCompressed(Stream compressedStream)
 	{
-		using var compressedStream = new MemoryStream(compressedBytes);
 		using var decompressorStream = new DeflateStream(compressedStream, CompressionMode.Decompress);
-		using var decompressedStream = new MemoryStream();
-		decompressorStream.CopyTo(decompressedStream);
-		return Encoding.UTF8.GetString(decompressedStream.ToArray());
+		using var streamReader = new StreamReader(decompressorStream, Utf8NoBom);
+		using var jsonReader = new JsonTextReader(streamReader);
+		jsonReader.MaxDepth = SerializerSettings.MaxDepth;
+		return JsonSerializer.Create(SerializerSettings).Deserialize(jsonReader)
+			?? throw new ProtocolException(ProtocolConstants.ErrorCodes.ProtocolError, "Message frame payload deserialized to null.");
 	}
 
 	private static RentedPayload? ReadFramePayload(Stream stream)
@@ -287,8 +288,15 @@ public static class MessagePacker
 		if (length <= 0)
 			throw new ProtocolException(ProtocolConstants.ErrorCodes.MalformedFrame, $"Invalid message frame length: {length}.");
 
-		if (length > MaxFrameLength)
-			throw new ProtocolException(ProtocolConstants.ErrorCodes.MalformedFrame, $"Message frame length {length} exceeds the limit of {MaxFrameLength} bytes.");
+		if (length > maxFrameLengthLimit)
+			throw new ProtocolException(ProtocolConstants.ErrorCodes.MalformedFrame, $"Message frame length {length} exceeds the limit of {maxFrameLengthLimit} bytes.");
+	}
+
+	private static IDisposable OverrideMaxFrameLengthForTests(int maxFrameLength)
+	{
+		var previous = maxFrameLengthLimit;
+		maxFrameLengthLimit = maxFrameLength;
+		return new RestoreMaxFrameLength(previous);
 	}
 
 	public readonly struct MessageFrame
@@ -325,6 +333,21 @@ public static class MessagePacker
 		public byte[] Buffer { get; }
 
 		public int Length { get; }
+	}
+
+	private sealed class RestoreMaxFrameLength : IDisposable
+	{
+		private readonly int previous;
+
+		public RestoreMaxFrameLength(int previous)
+		{
+			this.previous = previous;
+		}
+
+		public void Dispose()
+		{
+			maxFrameLengthLimit = previous;
+		}
 	}
 
 	private static JsonSerializerSettings SerializerSettings { get; } = new()

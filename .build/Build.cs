@@ -95,6 +95,7 @@ internal sealed class Build
 	{
 		RunDotNet("build", MainSolution, "--configuration", configuration, "--no-restore", "/p:RootBuild=true");
 		RepackPayloads();
+		RunDotNet("build", CliProject, "--configuration", configuration, "--no-restore", "/p:RootBuild=true");
 	}
 
 	private void CompileNativeInjector()
@@ -122,7 +123,7 @@ internal sealed class Build
 			var destination = Path.Combine(payloadRoot, mapping.PayloadFamily);
 
 			if (!Directory.Exists(source))
-				continue;
+				throw new DirectoryNotFoundException($"Expected payload build output '{source}' was not found.");
 
 			ResetDirectory(destination, payloadRoot);
 			Directory.CreateDirectory(destination);
@@ -262,9 +263,48 @@ internal sealed class Build
 
 	private void Pack()
 	{
-		var packageDirectory = Path.Combine(rootDirectory, "artifacts", "packages", configuration);
+		var artifactsRoot = Path.Combine(rootDirectory, "artifacts", "packages", configuration);
+		var packageDirectory = Path.Combine(artifactsRoot, "DeepFlowTest");
+		ResetDirectory(packageDirectory, artifactsRoot);
 		Directory.CreateDirectory(packageDirectory);
-		Console.WriteLine($"Package output directory prepared at {packageDirectory}.");
+
+		var contentRoot = Path.Combine(packageDirectory, "contentFiles", "any", "any");
+		CopyDirectory(Path.Combine(rootDirectory, "output", "payloads"), Path.Combine(contentRoot, "payloads"));
+		CopyDirectory(
+			Path.Combine(rootDirectory, "bin", configuration, "DeepFlowTestResources"),
+			Path.Combine(contentRoot, "DeepFlowTestResources"),
+			IsPackageResourceFile);
+
+		File.WriteAllText(
+			Path.Combine(packageDirectory, "DeepFlowTest.package.md"),
+			"DeepFlowTest package layout includes framework-family payload folders and architecture-specific injector resources under contentFiles/any/any." + Environment.NewLine);
+		Console.WriteLine($"Package content layout prepared at {packageDirectory}.");
+	}
+
+	private static bool IsPackageResourceFile(string path)
+	{
+		var extension = Path.GetExtension(path);
+		return extension.Equals(".dll", StringComparison.OrdinalIgnoreCase) ||
+			extension.Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
+			extension.Equals(".config", StringComparison.OrdinalIgnoreCase) ||
+			extension.Equals(".pdb", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static void CopyDirectory(string sourceDirectory, string destinationDirectory, Func<string, bool>? filter = null)
+	{
+		if (!Directory.Exists(sourceDirectory))
+			throw new DirectoryNotFoundException($"Expected package source directory '{sourceDirectory}' was not found.");
+
+		foreach (var sourceFile in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+		{
+			if (filter is not null && !filter(sourceFile))
+				continue;
+
+			var relativePath = Path.GetRelativePath(sourceDirectory, sourceFile);
+			var destinationFile = Path.Combine(destinationDirectory, relativePath);
+			Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
+			File.Copy(sourceFile, destinationFile, overwrite: true);
+		}
 	}
 
 	private static void CI()

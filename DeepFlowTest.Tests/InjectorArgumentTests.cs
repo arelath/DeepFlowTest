@@ -103,6 +103,24 @@ public sealed class InjectorArgumentTests
 	}
 
 	[Test]
+	public void PayloadPathRejectsUnknownFrameworkFamily()
+	{
+		var root = CreateTempDirectory();
+		try
+		{
+			File.WriteAllText(Path.Combine(root, "DeepFlowTest.dll"), string.Empty);
+
+			Assert.That(
+				() => InjectorPathResolver.ResolvePayloadPath(root, "unknown-runtime"),
+				Throws.TypeOf<InjectorLauncherException>().With.Property(nameof(InjectorLauncherException.ExitCode)).EqualTo(InjectorExitCode.UnsupportedTarget));
+		}
+		finally
+		{
+			Directory.Delete(root, recursive: true);
+		}
+	}
+
+	[Test]
 	public void PayloadPathFailsWhenPayloadIsMissing()
 	{
 		var root = CreateTempDirectory();

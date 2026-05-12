@@ -90,6 +90,52 @@ public sealed class NamedPipeSessionTests
 		Assert.That(serverTask.Wait(TimeSpan.FromSeconds(2)), Is.True);
 	}
 
+	[Test]
+	public void ClientMapsResponseTimeoutToStableFailure()
+	{
+		var pipeName = UniquePipeName();
+		var releaseServer = new TaskCompletionSource<bool>();
+		var serverTask = Task.Run(() =>
+		{
+			using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte);
+			pipe.WaitForConnection();
+			_ = MessagePacker.ReadFrame(pipe);
+			releaseServer.Task.Wait(TimeSpan.FromSeconds(2));
+		});
+
+		using var client = new NamedPipeClient(pipeName);
+		Assert.That(
+			() => client.Send(new HelloCommandRequest(), responseTimeoutMs: 50),
+			Throws.TypeOf<NamedPipeSessionException>().With.Property(nameof(NamedPipeSessionException.ErrorCode)).EqualTo(ProtocolConstants.ErrorCodes.CommandTimeout));
+
+		releaseServer.SetResult(true);
+		Assert.That(serverTask.Wait(TimeSpan.FromSeconds(2)), Is.True);
+	}
+
+	[Test]
+	public void ClientRechecksTargetExitAfterResponseTimeout()
+	{
+		var pipeName = UniquePipeName();
+		var commandReceived = new TaskCompletionSource<bool>();
+		var releaseServer = new TaskCompletionSource<bool>();
+		var serverTask = Task.Run(() =>
+		{
+			using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte);
+			pipe.WaitForConnection();
+			_ = MessagePacker.ReadFrame(pipe);
+			commandReceived.SetResult(true);
+			releaseServer.Task.Wait(TimeSpan.FromSeconds(2));
+		});
+
+		using var client = new NamedPipeClient(pipeName, getTargetExitCode: () => commandReceived.Task.IsCompleted ? 42 : null);
+		Assert.That(
+			() => client.Send(new HelloCommandRequest(), responseTimeoutMs: 50),
+			Throws.TypeOf<NamedPipeSessionException>().With.Property(nameof(NamedPipeSessionException.ErrorCode)).EqualTo(ProtocolConstants.ErrorCodes.TargetExited));
+
+		releaseServer.SetResult(true);
+		Assert.That(serverTask.Wait(TimeSpan.FromSeconds(2)), Is.True);
+	}
+
 	private static string UniquePipeName()
 	{
 		return $"deepflowtest-test-{Guid.NewGuid():N}";

@@ -25,11 +25,8 @@ internal static class NativeMethods
 		Injection =
 			CreateThread |
 			VirtualMemoryOperation |
-			VirtualMemoryRead |
 			VirtualMemoryWrite |
-			QueryInformation |
-			QueryLimitedInformation |
-			Synchronize,
+			QueryInformation,
 	}
 
 	[Flags]
@@ -193,7 +190,7 @@ internal static class NativeMethods
 			ImageFileMachine.Amd64 => ArchitectureDetector.X64,
 			ImageFileMachine.Arm => ArchitectureDetector.Arm,
 			ImageFileMachine.Arm64 => ArchitectureDetector.Arm64,
-			_ => ArchitectureDetector.X86,
+			_ => throw new InjectorLauncherException(InjectorExitCode.UnsupportedTarget, $"Unsupported target machine type '{machine}'."),
 		};
 	}
 

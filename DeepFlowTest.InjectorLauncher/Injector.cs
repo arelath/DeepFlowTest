@@ -44,11 +44,11 @@ internal static class Injector
 
 	private static void InjectIntoProcess(ProcessWrapper processWrapper, InjectorData injectorData, InjectorDllPaths paths)
 	{
-		if (!File.Exists(paths.InjectorDllPath))
-			throw new FileNotFoundException("Could not find injector DLL.", paths.InjectorDllPath);
-
 		if (!File.Exists(injectorData.FullAssemblyPath))
 			throw new FileNotFoundException("Could not find payload assembly.", injectorData.FullAssemblyPath);
+
+		if (!File.Exists(paths.InjectorDllPath))
+			throw new InjectorLauncherException(InjectorExitCode.MissingInjectorDll, $"Could not find injector DLL '{paths.InjectorDllPath}'.");
 
 		var nativeLogPath = InjectorLog.CreateNativeLogPath(processWrapper.Id);
 		var invocation = BuildInvocation(processWrapper, injectorData, paths, nativeLogPath);
@@ -102,7 +102,12 @@ internal static class Injector
 				InjectorLog.Write($"Payload log tail:{Environment.NewLine}{payloadLogTail}");
 
 			if (nativeResult != IntPtr.Zero)
-				throw Marshal.GetExceptionForHR((int)nativeResult.ToInt64()) ?? new InjectorLauncherException(InjectorExitCode.NativeInjectionFailed, "Unknown native injector failure.");
+			{
+				var nativeException = Marshal.GetExceptionForHR((int)nativeResult.ToInt64());
+				throw nativeException is null
+					? new InjectorLauncherException(InjectorExitCode.NativeInjectionFailed, $"Native injector failed with HRESULT {nativeResult}.")
+					: new InjectorLauncherException(InjectorExitCode.NativeInjectionFailed, $"Native injector failed with HRESULT {nativeResult}: {nativeException.Message}", nativeException);
+			}
 		}
 		finally
 		{

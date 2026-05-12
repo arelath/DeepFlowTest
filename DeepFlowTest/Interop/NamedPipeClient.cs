@@ -65,10 +65,12 @@ public sealed class NamedPipeClient : IDisposable
 		}
 		catch (TimeoutException ex)
 		{
+			ThrowIfTargetExited();
 			throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.CommandTimeout, $"Command timed out after {responseTimeoutMs} ms.", ex);
 		}
 		catch (IOException ex)
 		{
+			ThrowIfTargetExited();
 			throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.ProtocolError, "The pipe disconnected while processing a command.", ex);
 		}
 		catch (ProtocolException ex)

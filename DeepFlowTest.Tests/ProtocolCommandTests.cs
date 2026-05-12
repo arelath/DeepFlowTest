@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.AppDriverPayload;
@@ -17,7 +18,7 @@ public sealed class ProtocolCommandTests
 	{
 		foreach (var command in CreateAllProtocolCommandDtos())
 		{
-			var roundTripped = MessagePacker.ConvertTo(command, command.GetType());
+			var roundTripped = MessagePacker.ConvertTo(MessagePacker.Unpack(MessagePacker.Pack(command)), command.GetType());
 
 			Assert.That(((IpcCommand)roundTripped).Kind, Is.EqualTo(command.Kind));
 		}
@@ -40,10 +41,31 @@ public sealed class ProtocolCommandTests
 	{
 		var pipeName = $"deepflowtest-test-{Guid.NewGuid():N}";
 		PayloadLog.Initialize(pipeName);
+		var availability = ThreadUtility.GetAvailability();
 		var response = CaptureResponse(new PingCommandRequest(), reusableSession: null);
 
 		Assert.That(response, Is.TypeOf<PingCommandResponse>());
-		Assert.That(((PingCommandResponse)response!).ProcessId, Is.GreaterThan(0));
+		var ping = (PingCommandResponse)response!;
+		Assert.That(ping.ProcessId, Is.GreaterThan(0));
+		Assert.That(ping.IsNativeFallbackAvailable, Is.EqualTo(availability.IsNativeFallbackAvailable));
+	}
+
+	[Test]
+	public void OneShotHelloReturnsEnvironmentMetadata()
+	{
+		var pipeName = $"deepflowtest-test-{Guid.NewGuid():N}";
+		PayloadLog.Initialize(pipeName);
+
+		var response = CaptureResponse(new HelloCommandRequest(), reusableSession: null, pipeName);
+
+		Assert.That(response, Is.TypeOf<HelloCommandResponse>());
+		var hello = (HelloCommandResponse)response!;
+		Assert.That(hello.ProtocolVersion, Is.EqualTo(ProtocolConstants.ProtocolVersion));
+		Assert.That(hello.PipeName, Is.EqualTo(pipeName));
+		Assert.That(hello.IsReusable, Is.False);
+		Assert.That(hello.ProcessId, Is.GreaterThan(0));
+		Assert.That(hello.ProcessArchitecture, Is.Not.Empty);
+		Assert.That(hello.FrameworkFamily, Is.Not.Empty);
 	}
 
 	[Test]
@@ -101,7 +123,20 @@ public sealed class ProtocolCommandTests
 		Assert.That(response, Is.TypeOf<StandardIpcResponse>());
 		var error = (StandardIpcResponse)response!;
 		Assert.That(error.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.UnsupportedTarget));
-		Assert.That(error.Error, Does.Contain("Native fallback"));
+		Assert.That(error.Error, Does.Contain("NativeFallback"));
+	}
+
+	[Test]
+	public void DispatcherTimeoutReturnsSingleStableResponse()
+	{
+		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
+		using var _ = DelayUiHandlers(250);
+
+		var capture = CaptureDispatch(new GetVisualTreeCommandRequest { TimeoutMs = 10 }, reusableSession: null);
+
+		Assert.That(capture.ResponseCount, Is.EqualTo(1));
+		Assert.That(capture.Response, Is.TypeOf<StandardIpcResponse>());
+		Assert.That(((StandardIpcResponse)capture.Response!).ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.CommandTimeout));
 	}
 
 	[Test]
@@ -184,7 +219,12 @@ public sealed class ProtocolCommandTests
 		return CaptureDispatch(request, reusableSession).Response;
 	}
 
-	private static DispatchCapture CaptureDispatch(object request, ReusablePipeSession? reusableSession)
+	private static object? CaptureResponse(object request, ReusablePipeSession? reusableSession, string pipeName)
+	{
+		return CaptureDispatch(request, reusableSession, pipeName).Response;
+	}
+
+	private static DispatchCapture CaptureDispatch(object request, ReusablePipeSession? reusableSession, string pipeName = "test-pipe")
 	{
 		object? response = null;
 		var responseCount = 0;
@@ -207,7 +247,7 @@ public sealed class ProtocolCommandTests
 		};
 		var options = new AppDriverPayloadStartupOptions
 		{
-			PipeName = "test-pipe",
+			PipeName = pipeName,
 			Mode = reusableSession is null ? PayloadStartupModes.OneShotDriver : PayloadStartupModes.ReusableCli,
 			PayloadRoot = AppContext.BaseDirectory,
 			ProtocolVersion = ProtocolConstants.ProtocolVersion,
@@ -217,6 +257,13 @@ public sealed class ProtocolCommandTests
 		var method = dispatcherType.GetMethod("Process", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
 		method.Invoke(null, new object?[] { command, options, reusableSession });
 		return new DispatchCapture(response, responseCount);
+	}
+
+	private static IDisposable DelayUiHandlers(int delayMs)
+	{
+		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
+		var method = dispatcherType.GetMethod("DelayUiHandlersForTests", BindingFlags.Static | BindingFlags.NonPublic)!;
+		return (IDisposable)method.Invoke(null, new object[] { delayMs })!;
 	}
 
 	private static IpcCommand[] CreateAllProtocolCommandDtos()

@@ -30,6 +30,9 @@ public static class ReusablePipeSessionRegistry
 
 	public static void ClearForTests()
 	{
+		foreach (var session in Sessions.Values)
+			session.Stop();
+
 		Sessions.Clear();
 	}
 }

@@ -1,6 +1,8 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.IO.Pipes;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.AppDriverPayload;
@@ -95,8 +97,82 @@ public sealed class ReusablePipeSessionTests
 		}
 	}
 
+	[Test]
+	public async Task ReusableSessionAnswersStatusWhileStreamingConnectionIsHeld()
+	{
+		var pipeName = UniquePipeName();
+		PayloadLog.Initialize(pipeName);
+		_ = ReusablePipeSessionRegistry.GetOrStart(pipeName);
+
+		using var streamClient = new NamedPipeClient(pipeName);
+		var start = MessagePacker.ConvertTo<StartSendingCommandResponse>(
+			await streamClient.SendAsync(new StartSendingCommandRequest
+			{
+				StreamKind = ProtocolConstants.StreamKinds.VisualTree,
+				IntervalMs = 1000,
+			}));
+
+		using var statusClient = new NamedPipeClient(pipeName);
+		var status = MessagePacker.ConvertTo<PipeStatusCommandResponse>(await statusClient.SendAsync(new PipeStatusCommandRequest()));
+
+		Assert.That(start.Status, Is.EqualTo(ProtocolConstants.Statuses.Started));
+		Assert.That(status.IsSending, Is.True);
+		Assert.That(status.ActiveSubscriptionCount, Is.EqualTo(1));
+	}
+
+	[Test]
+	public async Task ReusableSessionAnswersStatusWhileCommandIsBusy()
+	{
+		var pipeName = UniquePipeName();
+		PayloadLog.Initialize(pipeName);
+		var session = ReusablePipeSessionRegistry.GetOrStart(pipeName);
+		using var _ = DelayUiHandlers(500);
+
+		var busyTask = Task.Run(async () =>
+		{
+			using var busyClient = new NamedPipeClient(pipeName);
+			return await busyClient.SendAsync(new GetVisualTreeCommandRequest { TimeoutMs = 1000 }, responseTimeoutMs: 2000);
+		});
+
+		Assert.That(SpinWait.SpinUntil(() => session.IsBusy, TimeSpan.FromSeconds(2)), Is.True);
+		using var statusClient = new NamedPipeClient(pipeName);
+		var status = MessagePacker.ConvertTo<PipeStatusCommandResponse>(await statusClient.SendAsync(new PipeStatusCommandRequest()));
+
+		Assert.That(status.IsBusy, Is.True);
+		await busyTask;
+	}
+
+	[Test]
+	public async Task ReusableServerReportsRealClientDisconnectBeforeCommand()
+	{
+		var pipeName = UniquePipeName();
+		var disconnected = new TaskCompletionSource<string>();
+		var serverTask = Task.Run(() =>
+		{
+			using var server = new ReusableNamedPipeServer(pipeName);
+			server.ClientDisconnected += connectionId => disconnected.TrySetResult(connectionId);
+			_ = server.WaitForNextCommand();
+		});
+
+		using (var rawClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut))
+			rawClient.Connect(1000);
+
+		var completed = await Task.WhenAny(disconnected.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+
+		Assert.That(completed, Is.SameAs(disconnected.Task));
+		Assert.That(disconnected.Task.Result, Is.Not.Empty);
+		await serverTask;
+	}
+
 	private static string UniquePipeName()
 	{
 		return $"deepflowtest-test-{Guid.NewGuid():N}";
+	}
+
+	private static IDisposable DelayUiHandlers(int delayMs)
+	{
+		var dispatcherType = Type.GetType("DeepFlowTest.AppDriverPayload.AppDriverCommandDispatcher, DeepFlowTest", throwOnError: true)!;
+		var method = dispatcherType.GetMethod("DelayUiHandlersForTests", BindingFlags.Static | BindingFlags.NonPublic)!;
+		return (IDisposable)method.Invoke(null, new object[] { delayMs })!;
 	}
 }

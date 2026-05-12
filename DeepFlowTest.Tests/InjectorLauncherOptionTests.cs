@@ -49,4 +49,33 @@ public sealed class InjectorLauncherOptionTests
 		Assert.That(error, Does.Contain("className"));
 	}
 
+	[Test]
+	public void ParsesHwndOnlyTargetSelector()
+	{
+		var ok = InjectorLauncherCommandLineOptions.TryParse(
+			new[]
+			{
+				"--targetHwnd", "456",
+				"--assembly", "DeepFlowTest",
+				"--className", "Payload",
+				"--methodName", "Start",
+			},
+			out var options,
+			out var error);
+
+		Assert.That(ok, Is.True, error);
+		Assert.That(options.HasTargetProcessId, Is.False);
+		Assert.That(options.HasTargetWindowHandle, Is.True);
+		Assert.That(options.TargetWindowHandle, Is.EqualTo(456));
+	}
+
+	[Test]
+	public void ParsesHelpWithoutRequiredTargetOptions()
+	{
+		var ok = InjectorLauncherCommandLineOptions.TryParse(new[] { "--help" }, out var options, out var error);
+
+		Assert.That(ok, Is.True, error);
+		Assert.That(options.HelpRequested, Is.True);
+		Assert.That(InjectorLauncherCommandLineOptions.HelpText, Does.Contain("DeepFlowTest injector launcher"));
+	}
 }

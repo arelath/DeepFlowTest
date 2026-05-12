@@ -29,8 +29,13 @@ public static class AppDriverPayload
 		{
 			var patchResult = AppHooks.Apply((message, exception) => PayloadLog.Write(message, exception));
 			PayloadLog.Write($"Runtime patch diagnostics: {patchResult.Summary}.");
+			var availability = runtime.GetAvailability();
+			PayloadLog.Write(
+				$"UI availability: WpfRoot={availability.IsWpfAvailable}; Dispatcher={availability.IsDispatcherAvailable}; " +
+				$"WinFormsRoot={availability.IsWinFormsAvailable}; WinFormsMessageLoop={availability.IsWinFormsMessageLoopAvailable}; " +
+				$"NativeFallback={availability.IsNativeFallbackAvailable}; RootCount={availability.RootCount}.");
 
-			if (!runtime.HasSupportedTarget())
+			if (!runtime.HasSupportedTarget(availability))
 			{
 				PayloadLog.Write("Unsupported target: no WPF dispatcher or WinForms message loop was detected.");
 				return 1;

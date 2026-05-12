@@ -5,6 +5,7 @@
     <AssemblyName>DeepFlowTest.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <DefineConstants>$(DefineConstants);DEEPFLOWTEST_INJECTOR_TESTS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +17,6 @@
 
   <ItemGroup>
     <Compile Include="..\Shared\InjectorData.cs" Link="Linked\Shared\InjectorData.cs" />
-    <Compile Include="..\DeepFlowTest.InjectorLauncher\*.cs" Exclude="..\DeepFlowTest.InjectorLauncher\Program.cs" Link="Linked\InjectorLauncher\%(Filename)%(Extension)" />
+    <Compile Include="..\DeepFlowTest.InjectorLauncher\*.cs" Link="Linked\InjectorLauncher\%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

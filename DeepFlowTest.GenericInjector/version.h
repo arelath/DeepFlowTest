@@ -7,7 +7,9 @@
 #define VER_PRODUCTNAME_STR "DeepFlowTest"
 #define VER_PRODUCT_VERSION VER_FILE_VERSION
 #define VER_PRODUCT_VERSION_STR STRINGIZE(InformationalVersion)
+#ifndef VER_ORIGINAL_FILENAME_STR
 #define VER_ORIGINAL_FILENAME_STR "DeepFlowTest.GenericInjector.dll"
+#endif
 #define VER_INTERNAL_NAME_STR VER_ORIGINAL_FILENAME_STR
 #define VER_COPYRIGHT_STR "Copyright (c) DeepFlowTest"
 #define VER_COMPANY_STR "DeepFlowTest"

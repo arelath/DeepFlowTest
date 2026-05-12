@@ -17,6 +17,7 @@ internal static class AppDriverCommandDispatcher
 
 	private static readonly TreeService TreeService = new();
 	private static readonly ExpressionCache ExpressionCache = new();
+	private static int delayBeforeUiHandlerForTests;
 
 	private static readonly Dictionary<string, CommandHandler> ImmediateHandlers = new()
 	{
@@ -115,6 +116,9 @@ internal static class AppDriverCommandDispatcher
 		AppDriverPayloadStartupOptions options,
 		ReusablePipeSession? reusableSession)
 	{
+		if (delayBeforeUiHandlerForTests > 0)
+			await Task.Delay(delayBeforeUiHandlerForTests).ConfigureAwait(false);
+
 		if (kind == ProtocolConstants.Commands.Ping)
 			return await handler(command, options, reusableSession).ConfigureAwait(false);
 
@@ -175,6 +179,28 @@ internal static class AppDriverCommandDispatcher
 	private static string LogCorrelationId()
 	{
 		return System.IO.Path.GetFileNameWithoutExtension(PayloadLog.CurrentLogPath);
+	}
+
+	private static IDisposable DelayUiHandlersForTests(int delayMs)
+	{
+		var previous = delayBeforeUiHandlerForTests;
+		delayBeforeUiHandlerForTests = delayMs;
+		return new RestoreDelay(previous);
+	}
+
+	private sealed class RestoreDelay : IDisposable
+	{
+		private readonly int previous;
+
+		public RestoreDelay(int previous)
+		{
+			this.previous = previous;
+		}
+
+		public void Dispose()
+		{
+			delayBeforeUiHandlerForTests = previous;
+		}
 	}
 
 	private delegate object CommandHandler(NamedPipeServer.Command command, AppDriverPayloadStartupOptions options, ReusablePipeSession? reusableSession);

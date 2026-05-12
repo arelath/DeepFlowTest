@@ -22,53 +22,83 @@ internal static class FrameworkDetector
 
 	public static string Classify(IEnumerable<ModuleEvidence> modules)
 	{
-		FileVersionInfo? realVersion = null;
-		ModuleEvidence? evidence = null;
-		foreach (var module in modules)
-		{
-			if (!IsRuntimeEvidence(module.ModuleName))
-				continue;
-
-			evidence = module;
-			if (!string.IsNullOrWhiteSpace(module.FilePath))
-			{
-				try
-				{
-					realVersion = FileVersionInfo.GetVersionInfo(module.FilePath);
-				}
-				catch
-				{
-					// Fake or inaccessible module paths still support tests through ProductVersion.
-				}
-			}
-
-			if (realVersion is not null || !string.IsNullOrWhiteSpace(module.ProductVersion))
-				break;
-		}
+		var evidence = modules
+			.Where(static module => IsRuntimeEvidence(module.ModuleName))
+			.Select(static module => new RuntimeEvidence(module, TryGetRealVersion(module), GetEvidencePriority(module.ModuleName)))
+			.OrderByDescending(static item => item.Priority)
+			.ThenByDescending(static item => item.RealVersion is not null || !string.IsNullOrWhiteSpace(item.Module.ProductVersion))
+			.FirstOrDefault();
 
 		if (evidence is null)
-			return NetFramework;
+			throw new InjectorLauncherException(InjectorExitCode.UnsupportedTarget, "No supported .NET runtime evidence was found in the target process.");
 
-		var version = VersionParser.Parse(realVersion?.ProductVersion ?? evidence.ProductVersion ?? string.Empty);
-		var major = realVersion?.ProductMajorPart ?? version.Major;
+		var version = VersionParser.Parse(evidence.RealVersion?.ProductVersion ?? evidence.Module.ProductVersion ?? string.Empty);
+		var major = evidence.RealVersion?.ProductMajorPart ?? version.Major;
 		return major switch
 		{
 			>= 5 => DotNet,
 			4 => NetFramework,
 			3 when version.Minor >= 1 => NetCoreApp,
-			_ => throw new InjectorLauncherException(InjectorExitCode.UnsupportedTarget, $".NET runtime version '{realVersion?.ProductVersion ?? evidence.ProductVersion}' is not supported."),
+			_ => throw new InjectorLauncherException(InjectorExitCode.UnsupportedTarget, $".NET runtime version '{evidence.RealVersion?.ProductVersion ?? evidence.Module.ProductVersion}' is not supported."),
 		};
+	}
+
+	private static FileVersionInfo? TryGetRealVersion(ModuleEvidence module)
+	{
+		if (string.IsNullOrWhiteSpace(module.FilePath))
+			return null;
+
+		try
+		{
+			return FileVersionInfo.GetVersionInfo(module.FilePath);
+		}
+		catch
+		{
+			// Fake or inaccessible module paths still support tests through ProductVersion.
+			return null;
+		}
+	}
+
+	private static int GetEvidencePriority(string moduleName)
+	{
+		if (moduleName.Equals("coreclr.dll", StringComparison.OrdinalIgnoreCase))
+			return 100;
+
+		if (moduleName.Equals("System.Runtime.dll", StringComparison.OrdinalIgnoreCase) ||
+			moduleName.Equals("System.Private.CoreLib.dll", StringComparison.OrdinalIgnoreCase))
+		{
+			return 80;
+		}
+
+		return 10;
 	}
 
 	private static bool IsRuntimeEvidence(string moduleName)
 	{
 		return moduleName.Equals("coreclr.dll", StringComparison.OrdinalIgnoreCase) ||
+			moduleName.Equals("System.Private.CoreLib.dll", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.Equals("System.Runtime.dll", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.Equals("PresentationFramework.dll", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.StartsWith("wpfgfx_", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.Equals("System.Windows.Forms.dll", StringComparison.OrdinalIgnoreCase) ||
 			moduleName.Equals("System.Windows.Forms.Primitives.dll", StringComparison.OrdinalIgnoreCase);
 	}
+}
+
+internal sealed class RuntimeEvidence
+{
+	public RuntimeEvidence(ModuleEvidence module, FileVersionInfo? realVersion, int priority)
+	{
+		Module = module;
+		RealVersion = realVersion;
+		Priority = priority;
+	}
+
+	public ModuleEvidence Module { get; }
+
+	public FileVersionInfo? RealVersion { get; }
+
+	public int Priority { get; }
 }
 
 internal sealed class ModuleEvidence

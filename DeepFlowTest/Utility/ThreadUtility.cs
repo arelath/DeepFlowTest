@@ -56,20 +56,31 @@ public static class ThreadUtility
 
 	public static bool HasSupportedUiRoot()
 	{
-		var availability = GetAvailability();
-		return availability.IsWpfAvailable || availability.IsWinFormsAvailable;
+		return HasSupportedUiRoot(GetAvailability());
+	}
+
+	public static bool HasSupportedUiRoot(UiAvailability availability)
+	{
+		_ = availability ?? throw new ArgumentNullException(nameof(availability));
+		return availability.IsWpfAvailable ||
+			availability.IsWinFormsAvailable ||
+			availability.IsDispatcherAvailable ||
+			availability.IsWinFormsMessageLoopAvailable;
 	}
 
 	public static UiAvailability GetAvailability()
 	{
 		var wpfRootCount = GetWpfRootCount();
 		var winFormsRootCount = GetWinFormsRootCount();
+		var isDispatcherAvailable = FindWpfDispatcher() is not null;
+		var isWinFormsMessageLoopAvailable = WinForms.Application.MessageLoop;
 		return new UiAvailability
 		{
 			IsWpfAvailable = wpfRootCount > 0,
 			IsWinFormsAvailable = winFormsRootCount > 0,
-			IsNativeFallbackAvailable = true,
-			IsDispatcherAvailable = FindWpfDispatcher() is not null,
+			IsNativeFallbackAvailable = wpfRootCount + winFormsRootCount > 0,
+			IsDispatcherAvailable = isDispatcherAvailable,
+			IsWinFormsMessageLoopAvailable = isWinFormsMessageLoopAvailable,
 			RootCount = wpfRootCount + winFormsRootCount,
 		};
 	}
@@ -249,6 +260,8 @@ public sealed class UiAvailability
 	public bool IsNativeFallbackAvailable { get; set; }
 
 	public bool IsDispatcherAvailable { get; set; }
+
+	public bool IsWinFormsMessageLoopAvailable { get; set; }
 
 	public int RootCount { get; set; }
 }

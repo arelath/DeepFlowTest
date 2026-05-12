@@ -10,15 +10,14 @@ internal sealed class ProcessWrapper : IDisposable
 		Process = process ?? throw new ArgumentNullException(nameof(process));
 		Id = process.Id;
 		WindowHandle = windowHandle;
-		Handle = NativeMethods.OpenProcess(process, NativeMethods.ProcessAccessFlags.Injection);
-		if (Handle.IsInvalid)
-			throw new InjectorLauncherException(InjectorExitCode.TargetNotFound, $"Could not open target process {process.Id}.");
-
 		Architecture = ArchitectureDetector.GetArchitecture(process);
 		if (!ArchitectureDetector.IsSupported(Architecture))
 			throw new InjectorLauncherException(InjectorExitCode.UnsupportedTarget, $"Architecture '{Architecture}' is not supported.");
 
 		SupportedFrameworkFamily = FrameworkDetector.Classify(process);
+		Handle = NativeMethods.OpenProcess(process, NativeMethods.ProcessAccessFlags.Injection);
+		if (Handle.IsInvalid)
+			throw new InjectorLauncherException(InjectorExitCode.TargetNotFound, $"Could not open target process {process.Id}.");
 	}
 
 	public Process Process { get; }

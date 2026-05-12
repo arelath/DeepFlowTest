@@ -8,7 +8,11 @@ internal sealed class InjectorLauncherCommandLineOptions
 {
 	public int TargetProcessId { get; private set; }
 
+	public bool HasTargetProcessId { get; private set; }
+
 	public long TargetWindowHandle { get; private set; }
+
+	public bool HasTargetWindowHandle { get; private set; }
 
 	public string Assembly { get; private set; } = string.Empty;
 
@@ -23,6 +27,14 @@ internal sealed class InjectorLauncherCommandLineOptions
 	public bool Debug { get; private set; }
 
 	public bool AttachConsoleToParent { get; private set; }
+
+	public bool HelpRequested { get; private set; }
+
+	public const string HelpText =
+		"DeepFlowTest injector launcher\n" +
+		"Usage: DeepFlowTest.InjectorLauncher.<arch>.exe --targetPID <pid> [--targetHwnd <hwnd>] --assembly <assembly> --className <type> --methodName <method> [--startupArgument <value>]\n" +
+		"       DeepFlowTest.InjectorLauncher.<arch>.exe --targetHwnd <hwnd> --assembly <assembly> --className <type> --methodName <method> [--startupArgument <value>]\n" +
+		"Options: --targetPID, --targetHwnd, --assembly, --className, --methodName, --startupArgument, --verbose, --debug, --attachConsoleToParent, --help";
 
 	public static bool TryParse(string[] args, out InjectorLauncherCommandLineOptions options, out string error)
 	{
@@ -85,19 +97,29 @@ internal sealed class InjectorLauncherCommandLineOptions
 				case "--attachConsoleToParent":
 					options.AttachConsoleToParent = true;
 					break;
+				case "--help":
+				case "-?":
+				case "/?":
+					options.HelpRequested = true;
+					return true;
 				default:
 					error = $"Unknown option '{arg}'.";
 					return false;
 			}
 		}
 
-		if (!values.TryGetValue("targetPID", out var pidText) || !int.TryParse(pidText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pid))
+		if (values.TryGetValue("targetPID", out var pidText))
 		{
-			error = "Missing or invalid required option '--targetPID'.";
-			return false;
+			if (!int.TryParse(pidText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pid))
+			{
+				error = "Invalid option '--targetPID'.";
+				return false;
+			}
+
+			options.TargetProcessId = pid;
+			options.HasTargetProcessId = true;
 		}
 
-		options.TargetProcessId = pid;
 		if (values.TryGetValue("targetHwnd", out var hwndText))
 		{
 			if (!long.TryParse(hwndText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hwnd))
@@ -107,6 +129,13 @@ internal sealed class InjectorLauncherCommandLineOptions
 			}
 
 			options.TargetWindowHandle = hwnd;
+			options.HasTargetWindowHandle = true;
+		}
+
+		if (!options.HasTargetProcessId && !options.HasTargetWindowHandle)
+		{
+			error = "Missing required option '--targetPID' or '--targetHwnd'.";
+			return false;
 		}
 
 		if (!ReadRequired(values, "assembly", out var assemblyValue, out error) ||

@@ -61,6 +61,18 @@ public sealed class PayloadStartupTests
 	}
 
 	[Test]
+	public void StartupOptionsRejectDecodeSideMalformedJsonAndUnknownMode()
+	{
+		Assert.That(
+			() => AppDriverPayloadStartupOptions.Decode(EncodeRawStartupJson("{")),
+			Throws.TypeOf<ProtocolException>().With.Property(nameof(ProtocolException.ErrorCode)).EqualTo(ProtocolConstants.ErrorCodes.StartupError));
+
+		Assert.That(
+			() => AppDriverPayloadStartupOptions.Decode(EncodeRawStartupJson(@"{""pipeName"":""pipe"",""mode"":""OtherMode"",""payloadRoot"":""root"",""protocolVersion"":""1""}")),
+			Throws.TypeOf<ProtocolException>().With.Property(nameof(ProtocolException.ErrorCode)).EqualTo(ProtocolConstants.ErrorCodes.StartupError));
+	}
+
+	[Test]
 	public void StartupOptionsDecodeTempJsonFileAndRejectMissingFile()
 	{
 		var path = Path.Combine(Path.GetTempPath(), $"deepflowtest-startup-{Guid.NewGuid():N}.json");
@@ -79,6 +91,29 @@ public sealed class PayloadStartupTests
 		Assert.That(
 			() => AppDriverPayloadStartupOptions.Decode(AppDriverPayloadStartupOptions.EncodeJsonFile(path)),
 			Throws.TypeOf<ProtocolException>());
+	}
+
+	[Test]
+	public void StartupOptionsJsonFileRejectsMalformedJsonAndUnknownMode()
+	{
+		var malformedPath = Path.Combine(Path.GetTempPath(), $"deepflowtest-startup-{Guid.NewGuid():N}.json");
+		var unknownModePath = Path.Combine(Path.GetTempPath(), $"deepflowtest-startup-{Guid.NewGuid():N}.json");
+		File.WriteAllText(malformedPath, "{");
+		File.WriteAllText(unknownModePath, @"{""pipeName"":""pipe"",""mode"":""OtherMode"",""payloadRoot"":""root"",""protocolVersion"":""1""}");
+		try
+		{
+			Assert.That(
+				() => AppDriverPayloadStartupOptions.Decode(AppDriverPayloadStartupOptions.EncodeJsonFile(malformedPath)),
+				Throws.TypeOf<ProtocolException>().With.Property(nameof(ProtocolException.ErrorCode)).EqualTo(ProtocolConstants.ErrorCodes.StartupError));
+			Assert.That(
+				() => AppDriverPayloadStartupOptions.Decode(AppDriverPayloadStartupOptions.EncodeJsonFile(unknownModePath)),
+				Throws.TypeOf<ProtocolException>().With.Property(nameof(ProtocolException.ErrorCode)).EqualTo(ProtocolConstants.ErrorCodes.StartupError));
+		}
+		finally
+		{
+			File.Delete(malformedPath);
+			File.Delete(unknownModePath);
+		}
 	}
 
 	[Test]
@@ -116,6 +151,7 @@ public sealed class PayloadStartupTests
 
 		Assert.That(exitCode, Is.EqualTo(1));
 		Assert.That(File.ReadAllText(PayloadLog.CurrentLogPath), Does.Contain("Unsupported target"));
+		Assert.That(File.ReadAllText(PayloadLog.CurrentLogPath), Does.Contain("UI availability"));
 	}
 
 	[Test]
@@ -156,6 +192,14 @@ public sealed class PayloadStartupTests
 		return Encoding.UTF8.GetString(Convert.FromBase64String(base64));
 	}
 
+	private static string EncodeRawStartupJson(string json)
+	{
+		return "dft:" + Convert.ToBase64String(Encoding.UTF8.GetBytes(json))
+			.TrimEnd('=')
+			.Replace('+', '-')
+			.Replace('/', '_');
+	}
+
 	private sealed class FakeRuntime : IAppDriverPayloadRuntime
 	{
 		public bool HasTarget { get; set; } = true;
@@ -164,7 +208,17 @@ public sealed class PayloadStartupTests
 
 		public int ReusableCount { get; private set; }
 
-		public bool HasSupportedTarget()
+		public DeepFlowTest.Utility.UiAvailability GetAvailability()
+		{
+			return new DeepFlowTest.Utility.UiAvailability
+			{
+				IsWpfAvailable = HasTarget,
+				IsDispatcherAvailable = HasTarget,
+				RootCount = HasTarget ? 1 : 0,
+			};
+		}
+
+		public bool HasSupportedTarget(DeepFlowTest.Utility.UiAvailability availability)
 		{
 			return HasTarget;
 		}

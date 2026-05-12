@@ -34,8 +34,7 @@ public sealed class DependencyIsolationTests
 	{
 		var root = FindRepositoryRoot();
 		var payloadRoot = Path.Combine(root, "output", "payloads");
-		if (!Directory.Exists(payloadRoot))
-			return;
+		Assert.That(Directory.Exists(payloadRoot), Is.True, "Repacked payload root should exist. Run .\\build.ps1 Compile before this test lane.");
 
 		foreach (var family in new[] { "netframework", "netcoreapp", "dotnet" })
 		{
@@ -56,8 +55,7 @@ public sealed class DependencyIsolationTests
 	{
 		var root = FindRepositoryRoot();
 		var payloadPath = Path.Combine(root, "output", "payloads", "dotnet", "DeepFlowTest.dll");
-		if (!File.Exists(payloadPath))
-			return;
+		Assert.That(File.Exists(payloadPath), Is.True, "Repacked dotnet payload should exist. Run .\\build.ps1 Compile before this test lane.");
 
 		var references = Assembly.LoadFile(payloadPath)
 			.GetReferencedAssemblies()
@@ -74,8 +72,7 @@ public sealed class DependencyIsolationTests
 	{
 		var root = FindRepositoryRoot();
 		var payloadPath = Path.Combine(root, "output", "payloads", "dotnet", "DeepFlowTest.dll");
-		if (!File.Exists(payloadPath))
-			Assert.Ignore("Repacked dotnet payload has not been generated yet. Run .\\build.ps1 Compile first.");
+		Assert.That(File.Exists(payloadPath), Is.True, "Repacked dotnet payload should exist. Run .\\build.ps1 Compile before this test lane.");
 
 		Assert.That(typeof(Newtonsoft.Json.JsonConvert).Assembly.GetName().Name, Is.EqualTo("Newtonsoft.Json"));
 

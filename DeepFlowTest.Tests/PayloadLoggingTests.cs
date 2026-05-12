@@ -37,4 +37,24 @@ public sealed class PayloadLoggingTests
 			File.Delete(logPath);
 		}
 	}
+
+	[Test]
+	public void InjectorFallsBackToStartupLogWhenStartupArgumentCannotBeParsed()
+	{
+		var processId = 123457;
+		var logPath = PayloadLogLocator.GetLogPath("startup", processId);
+		Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+		File.WriteAllText(logPath, "startup parse failed");
+		try
+		{
+			var found = PayloadLogLocator.TryReadTail("dft:not-base64", processId, out var tail);
+
+			Assert.That(found, Is.True);
+			Assert.That(tail, Does.Contain("startup parse failed"));
+		}
+		finally
+		{
+			File.Delete(logPath);
+		}
+	}
 }
