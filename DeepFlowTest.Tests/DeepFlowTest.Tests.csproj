@@ -13,6 +13,7 @@
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
     <ProjectReference Include="..\DeepFlowTest\DeepFlowTest.csproj" />
+    <ProjectReference Include="..\TestHarnesses\HelloWorld\HelloWorld.csproj" />
   </ItemGroup>
 
   <ItemGroup>

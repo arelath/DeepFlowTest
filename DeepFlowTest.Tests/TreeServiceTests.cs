@@ -143,12 +143,15 @@ public sealed class TreeServiceTests
 
 			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
 			{
-				RequestedPropertyNames = new[] { "Name", "Width", "Height", "Count", "ResourceKeys", "ImageMetadata", "Xaml" },
+				RequestedPropertyNames = new[] { "Name", "Width", "Height", "Count", "ResourceKeys", "ImageMetadata", "Xaml", "ResourceOrigin" },
 				MaxNodeCount = 500,
 			});
 
-			Assert.That(snapshot.Nodes.Any(node => node.TypeName == "WebBrowser"), Is.True);
+			var webBrowserNode = snapshot.Nodes.Single(node => node.TypeName == "WebBrowser");
+			Assert.That(webBrowserNode.TargetKind, Is.EqualTo(TargetObjectKind.WebBrowser.ToString()));
+			Assert.That(webBrowserNode.RuntimeFamily, Is.EqualTo("browser"));
 			Assert.That(snapshot.Nodes.Any(node => node.TargetKind == TargetObjectKind.Resource.ToString()), Is.True);
+			Assert.That(snapshot.Nodes.Any(node => node.TargetKind == TargetObjectKind.SystemResource.ToString()), Is.True);
 			Assert.That(snapshot.Nodes.Any(node => node.TargetKind == TargetObjectKind.Image.ToString()), Is.True);
 			Assert.That(snapshot.Nodes.Any(node => node.RuntimeFamily == "image"), Is.True);
 			var imageNode = snapshot.Nodes.Single(node => node.Properties.TryGetValue("Name", out var name) && Equals(name, "treeImage"));
@@ -171,6 +174,43 @@ public sealed class TreeServiceTests
 
 			Assert.That(peerSnapshot.Nodes.Single().TargetKind, Is.EqualTo(TargetObjectKind.WpfAutomationPeer.ToString()));
 			Assert.That(peerSnapshot.Nodes.Single().CanReceiveActions, Is.False);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void ResourceDictionariesExposeMergedDictionariesAndSystemResources()
+	{
+		_ = Application.Current ?? new Application();
+		var merged = new ResourceDictionary
+		{
+			["mergedBrush"] = Brushes.CadetBlue,
+		};
+		var panel = new StackPanel { Name = "resourcePanel" };
+		panel.Resources.MergedDictionaries.Add(merged);
+		panel.Resources["localBrush"] = Brushes.Coral;
+		var window = CreateWindow("Resource dictionaries", panel);
+
+		try
+		{
+			window.Show();
+
+			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
+			{
+				RequestedPropertyNames = new[] { "Name", "ResourceKeys", "MergedDictionaryCount", "ResourceOrigin" },
+				MaxNodeCount = 500,
+			});
+
+			var dictionaries = snapshot.Nodes.Where(node => node.TargetKind == TargetObjectKind.Resource.ToString()).ToArray();
+			Assert.That(dictionaries.Any(node => Equals(node.Properties["MergedDictionaryCount"], 1)), Is.True);
+			Assert.That(dictionaries.Any(node =>
+				node.Properties.TryGetValue("ResourceKeys", out var keys)
+				&& keys is System.Collections.IEnumerable resourceKeys
+				&& resourceKeys.Cast<object?>().Any(key => Equals(key, "mergedBrush"))), Is.True);
+			Assert.That(snapshot.Nodes.Any(node => node.TargetKind == TargetObjectKind.SystemResource.ToString()), Is.True);
 		}
 		finally
 		{

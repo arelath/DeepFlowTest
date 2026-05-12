@@ -69,6 +69,20 @@ public sealed class PrimitiveKeyboardAssertionTests
 	}
 
 	[Test]
+	public void PrimitiveStringConvenienceExtensionsMatchCompatibilitySurface()
+	{
+		Primitive text = "Hello,World";
+
+		Assert.That(text.Contains("lo"), Is.True);
+		Assert.That(text.StartsWith("Hello"), Is.True);
+		Assert.That(text.EndsWith("World"), Is.True);
+		Assert.That(text.Substring(6), Is.EqualTo("World"));
+		Assert.That(text.Split(',').Last(), Is.EqualTo("World"));
+		Assert.That("Name".ToPrimitive().Join("-", "Value"), Is.EqualTo("Name-Value"));
+		Assert.That(Primitive.Empty.IsNullOrEmpty(), Is.True);
+	}
+
+	[Test]
 	public void KeyboardTypingAndModifierSequenceSendCommands()
 	{
 		var session = new FakeSession(
@@ -94,6 +108,36 @@ public sealed class PrimitiveKeyboardAssertionTests
 		Assert.That(keyCommands.Select(static command => command.Keys), Is.EqualTo(new object?[] { "Enter", "Control+A" }));
 		Assert.That(keyCommands.All(command => command.DelayMs == 12), Is.True);
 		Assert.That(keyCommands.All(command => command.EnsureForeground == false), Is.True);
+	}
+
+	[Test]
+	public void KeyboardPropertyReturnsPersistentDriverBoundInstance()
+	{
+		var driver = CreateDriver(new FakeSession());
+
+		driver.Keyboard.DelayMs = 0;
+
+		Assert.That(driver.Keyboard, Is.SameAs(driver.Keyboard));
+		Assert.That(driver.Keyboard.DelayMs, Is.EqualTo(0));
+	}
+
+	[Test]
+	public void PhysicalKeyboardInputRefreshesCachedElementsAfterTyping()
+	{
+		var first = VisualTreeSnapshot.Create(1, new[]
+		{
+			new VisualTreeNodeDto { TargetId = "root", TypeName = "Window", IsRoot = true, Properties = { ["Name"] = "Before" } },
+		});
+		var second = VisualTreeSnapshot.Create(2, new[]
+		{
+			new VisualTreeNodeDto { TargetId = "root", TypeName = "Window", IsRoot = true, Properties = { ["Name"] = "After" } },
+		});
+		var driver = CreateDriver(new FakeSession(first, second));
+		var root = driver.GetRootElements().Single();
+
+		driver.Keyboard.Type(string.Empty);
+
+		Assert.That(root.GetProperty<string>("Name"), Is.EqualTo("After"));
 	}
 
 	[Test]

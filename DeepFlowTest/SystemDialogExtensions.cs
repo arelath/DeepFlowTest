@@ -4,37 +4,28 @@ using System;
 
 public static class SystemDialogExtensions
 {
-	public static Element HandleFileDialog(this AppDriver driver, string filePath)
+	public static AppDriver HandleFileDialog(this AppDriver driver, string filePath, int timeoutMs = 10_000)
 	{
 		_ = driver ?? throw new ArgumentNullException(nameof(driver));
-		var dialog = driver.GetElement(ElementSelector.ByType("Dialog"));
+		if (string.IsNullOrWhiteSpace(filePath))
+			throw new ArgumentException("File path is required.", nameof(filePath));
+
+		var dialog = driver.GetElement(x => x.TypeName == "Dialog", timeoutMs);
 		dialog.SetProperty("FileName", filePath).AcceptDialog();
-		return dialog;
+		return driver;
 	}
 
-	public static Element AcceptDialog(this AppDriver driver, int timeoutMs = 10_000)
+	public static AppDriver AcceptDialog(this AppDriver driver, int timeoutMs = 10_000)
 	{
 		_ = driver ?? throw new ArgumentNullException(nameof(driver));
-		return WithDialogTimeout(driver, timeoutMs, static dialog => dialog.AcceptDialog());
+		driver.GetElement(x => x.TypeName == "Dialog", timeoutMs).AcceptDialog();
+		return driver;
 	}
 
-	public static Element CancelDialog(this AppDriver driver, int timeoutMs = 10_000)
+	public static AppDriver CancelDialog(this AppDriver driver, int timeoutMs = 10_000)
 	{
 		_ = driver ?? throw new ArgumentNullException(nameof(driver));
-		return WithDialogTimeout(driver, timeoutMs, static dialog => dialog.CancelDialog());
-	}
-
-	private static Element WithDialogTimeout(AppDriver driver, int timeoutMs, Func<Element, Element> action)
-	{
-		var previousTimeout = driver.Options.Timeout;
-		try
-		{
-			driver.Options.Timeout = TimeSpan.FromMilliseconds(Math.Max(1, timeoutMs));
-			return action(driver.GetElement(ElementSelector.ByType("Dialog")));
-		}
-		finally
-		{
-			driver.Options.Timeout = previousTimeout;
-		}
+		driver.GetElement(x => x.TypeName == "Dialog", timeoutMs).CancelDialog();
+		return driver;
 	}
 }

@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -14,8 +15,11 @@ using DeepFlowTest.Interop;
 
 public sealed class AppDriver : IDisposable
 {
+	private static readonly object RecordingSync = new();
+	private static IDisposable? activeRecording;
 	private readonly object elementCacheSync = new();
 	private readonly Dictionary<string, List<WeakReference<Element>>> elementCache = new(StringComparer.Ordinal);
+	private readonly Keyboard keyboard;
 	private bool disposed;
 
 	private AppDriver(
@@ -27,6 +31,7 @@ public sealed class AppDriver : IDisposable
 		Connection = connection ?? throw new ArgumentNullException(nameof(connection));
 		Options = options ?? throw new ArgumentNullException(nameof(options));
 		Session = session ?? (sessionFactory ?? ((candidateConnection, candidateOptions) => new NamedPipeAppDriverCommandSession(candidateConnection, candidateOptions)))(connection, options);
+		keyboard = new Keyboard(this);
 	}
 
 	public string ProductName => ProductInfo.Name;
@@ -37,7 +42,7 @@ public sealed class AppDriver : IDisposable
 
 	public IAppDriverCommandSession Session { get; }
 
-	public Keyboard Keyboard => new(this);
+	public Keyboard Keyboard => keyboard;
 
 	public static AppDriver Launch(string executablePath) =>
 		new AppDriverFactory().Launch(executablePath);
@@ -246,7 +251,7 @@ public sealed class AppDriver : IDisposable
 		Send<ScreenshotCommandResponse>(new ScreenshotCommandRequest { Format = format });
 
 	public byte[] Screenshot(ImageFormat format = ImageFormat.Jpeg) =>
-		DecodeScreenshot(CaptureScreenshot(format.ToProtocolString()));
+		DecodeScreenshot(WaitForStableScreenshot(() => CaptureScreenshot(format.ToProtocolString()), nameof(Screenshot)));
 
 	public void Screenshot(string fileOutputPath)
 	{
@@ -258,10 +263,80 @@ public sealed class AppDriver : IDisposable
 		File.WriteAllBytes(fileOutputPath, bytes);
 	}
 
-	public IDisposable Record(string fileOutputPath, string? windowTitle = null)
+	public static IDisposable Record(string fileOutputPath, string? windowTitle = null)
 	{
 		_ = fileOutputPath ?? throw new ArgumentNullException(nameof(fileOutputPath));
-		throw new NotSupportedException("Recording requires an FFmpeg packaging decision for DeepFlowTest. Use screenshot streaming until recording resources are packaged.");
+		lock (RecordingSync)
+		{
+			activeRecording?.Dispose();
+			activeRecording = null;
+
+			fileOutputPath = Environment.ExpandEnvironmentVariables(fileOutputPath);
+			fileOutputPath = Path.GetFullPath(fileOutputPath);
+			var directory = Path.GetDirectoryName(fileOutputPath);
+			if (!string.IsNullOrEmpty(directory))
+				Directory.CreateDirectory(directory);
+			if (File.Exists(fileOutputPath))
+				File.Delete(fileOutputPath);
+
+			var ffmpegPath = ResolveFfmpegPath();
+			var fullScreen = string.IsNullOrEmpty(windowTitle) || Process.GetProcesses().Count(process => string.Equals(process.MainWindowTitle, windowTitle, StringComparison.Ordinal)) > 1;
+			var arguments = fullScreen
+				? $"-y -f gdigrab -framerate 24 -i desktop \"{fileOutputPath}\" -c:v vp8"
+				: $"-y -f gdigrab -framerate 24 -i title=\"{EscapeFfmpegArgument(windowTitle!)}\" \"{fileOutputPath}\" -c:v vp8";
+
+			var recorder = RecordingProcessFactory(new ProcessStartInfo
+			{
+				FileName = ffmpegPath,
+				Arguments = arguments,
+				CreateNoWindow = true,
+				UseShellExecute = false,
+				RedirectStandardError = true,
+				RedirectStandardOutput = true,
+				RedirectStandardInput = true,
+			});
+
+			activeRecording = new RecordingScope(recorder, () =>
+			{
+				lock (RecordingSync)
+				{
+					activeRecording = null;
+				}
+			});
+			return activeRecording;
+		}
+	}
+
+	internal static Func<ProcessStartInfo, IRecordingProcess> RecordingProcessFactory { get; set; } = ProcessRecordingProcess.Start;
+
+	internal static string? RecordingFfmpegPathOverride { get; set; }
+
+	internal void RefreshAfterPhysicalInput()
+	{
+		GetVisualTree();
+	}
+
+	internal static ScreenshotCommandResponse WaitForStableScreenshot(Func<ScreenshotCommandResponse> capture, string caller)
+	{
+		_ = capture ?? throw new ArgumentNullException(nameof(capture));
+		var stopwatch = Stopwatch.StartNew();
+		ScreenshotCommandResponse? previous = null;
+		ScreenshotCommandResponse? current = null;
+
+		while (stopwatch.ElapsedMilliseconds < 5_000)
+		{
+			current = capture();
+			ThrowIfScreenshotFailed(current, caller);
+			if (previous is not null && string.Equals(previous.BytesBase64, current.BytesBase64, StringComparison.Ordinal))
+				return current;
+
+			previous = current;
+			Thread.Sleep(500);
+		}
+
+		current ??= capture();
+		ThrowIfScreenshotFailed(current, caller);
+		return current;
 	}
 
 	internal Element Repair(Element element)
@@ -349,6 +424,39 @@ public sealed class AppDriver : IDisposable
 
 	private static byte[] DecodeScreenshot(ScreenshotCommandResponse response) =>
 		Convert.FromBase64String(response.BytesBase64 ?? string.Empty);
+
+	private static void ThrowIfScreenshotFailed(ScreenshotCommandResponse response, string caller)
+	{
+		if (response.Status == ProtocolConstants.Statuses.PendingResult)
+			throw new TimeoutException($"{caller} timeout.");
+		if (response.Success == false)
+			throw new AppDriverException(response.ErrorCode ?? ProtocolConstants.ErrorCodes.ProtocolError, response.Error ?? $"{caller} failed.");
+	}
+
+	private static string ResolveFfmpegPath()
+	{
+		if (!string.IsNullOrWhiteSpace(RecordingFfmpegPathOverride))
+			return RecordingFfmpegPathOverride!;
+
+		var baseDirectory = AppContext.BaseDirectory;
+		var assemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? baseDirectory;
+		var candidates = new[]
+		{
+			Path.Combine(baseDirectory, "DeepFlowTestResources", "ffmpeg.exe"),
+			Path.Combine(assemblyDirectory, "DeepFlowTestResources", "ffmpeg.exe"),
+			Path.Combine(baseDirectory, "contentFiles", "any", "any", "DeepFlowTestResources", "ffmpeg.exe"),
+			Path.Combine(assemblyDirectory, "contentFiles", "any", "any", "DeepFlowTestResources", "ffmpeg.exe"),
+		};
+
+		var path = candidates.FirstOrDefault(File.Exists);
+		if (path is not null)
+			return path;
+
+		throw new FileNotFoundException("FFmpeg was not found. Expected ffmpeg.exe under DeepFlowTestResources next to the DeepFlowTest assembly.", candidates[0]);
+	}
+
+	private static string EscapeFfmpegArgument(string value) =>
+		value.Replace("\"", "\\\"");
 
 	private static ImageFormat GetImageFormatFromPath(string path)
 	{

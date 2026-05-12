@@ -60,6 +60,20 @@ public sealed class StreamCommandHandlerTests
 	}
 
 	[Test]
+	public void DurationZeroStreamsUntilCanceledOrSourceEnds()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "stream", "visual-tree", "--pid", "1234", "--interval-ms", "60" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout.Split("\"messageKind\":\"stream\"").Length - 1, Is.EqualTo(3));
+		Assert.That(session.Session.Commands.OfType<StartSendingCommandRequest>().Single().IntervalMs, Is.EqualTo(60));
+		Assert.That(session.Session.Commands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
+	}
+
+	[Test]
 	public void StreamDtosRoundTripThroughMessagePacker()
 	{
 		foreach (var kind in new[]

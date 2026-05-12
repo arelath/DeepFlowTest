@@ -111,11 +111,11 @@ public static class Program
 			case "version":
 				return new ProductVersionData { ProductName = DeepFlowTest.ProductInfo.Name };
 			case "config get":
-				return services.DefaultsStore.Get(GetConfigPositional(args, 0));
+				return services.DefaultsStore.Get(GetConfigPositional(args, 0)) ?? new object();
 			case "config set":
 				var setKey = GetRequiredConfigPositional(args, 0, "key");
 				var setValue = GetRequiredConfigPositional(args, 1, "value");
-				services.DefaultsStore.Set(setKey, setValue);
+				services.DefaultsStore.Set(setKey, setValue, HasOption(args, "--json"));
 				return new
 				{
 					key = setKey,
@@ -130,6 +130,8 @@ public static class Program
 					value = services.DefaultsStore.Get(clearKey),
 				};
 			case "config reset":
+				if (!HasOption(args, "--yes"))
+					throw new CliException(CliErrorCodes.InvalidArguments, "`config reset` requires --yes.");
 				services.DefaultsStore.Reset();
 				return new { reset = true };
 			case "processes":
@@ -211,22 +213,22 @@ public static class Program
 
 	private static TreeSnapshotData ExecuteTree(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		var properties = GetRequestedProperties(args, defaults);
+		var properties = CliArgumentReader.GetStringList(args, "--props", defaults.Commands.Tree.Props);
 		if (!CliArgumentReader.HasOption(args, "--include-hidden") && !properties.Contains("IsVisible", StringComparer.Ordinal))
 			properties = properties.Concat(new[] { "IsVisible" }).ToArray();
 
-		var limit = CliArgumentReader.GetInt(args, "--limit", defaults.TreeLimit);
+		var limit = CliArgumentReader.GetInt(args, "--limit", defaults.Commands.Tree.Limit);
 		using var session = OpenSession(services, commonOptions);
-		var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.TreeLimit, limit));
+		var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.Commands.Tree.Limit, limit));
 		var options = new TreeSnapshotOptions
 		{
-			Shape = CliArgumentReader.GetOption(args, "--shape") ?? defaults.TreeShape,
-			RootTargetId = CliArgumentReader.GetOption(args, "--root", "--target-id"),
-			MaxDepth = CliArgumentReader.GetInt(args, "--max-depth", defaults.TreeMaxDepth),
+			Shape = CliArgumentReader.GetOption(args, "--shape") ?? defaults.Commands.Tree.Shape,
+			RootTargetId = CliArgumentReader.GetOption(args, "--root", "--target-id") ?? defaults.Commands.Tree.Root,
+			MaxDepth = CliArgumentReader.GetInt(args, "--max-depth", defaults.Commands.Tree.MaxDepth),
 			Limit = limit,
-			IncludeHidden = CliArgumentReader.HasOption(args, "--include-hidden"),
-			IncludeTypeNames = CliArgumentReader.HasOption(args, "--type-names"),
-			IncludePath = CliArgumentReader.HasOption(args, "--include-path"),
+			IncludeHidden = CliArgumentReader.HasOption(args, "--include-hidden") || defaults.Commands.Tree.IncludeHidden,
+			IncludeTypeNames = CliArgumentReader.HasOption(args, "--type-names") || defaults.Commands.Tree.TypeNames is { Count: > 0 },
+			IncludePath = CliArgumentReader.HasOption(args, "--include-path") || defaults.Commands.Tree.IncludePath,
 			UseShortIds = commonOptions.UseShortIds,
 			Properties = properties,
 		};
@@ -276,8 +278,8 @@ public static class Program
 	private static ScreenshotResultData ExecuteScreenshot(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		using var session = OpenSession(services, commonOptions);
-		var format = ScreenshotFileService.NormalizeFormat(CliArgumentReader.GetOption(args, "--image-format") ?? defaults.ScreenshotFormat);
-		var targetId = CliArgumentReader.GetOption(args, "--target", "--target-id");
+		var format = ScreenshotFileService.NormalizeFormat(CliArgumentReader.GetOption(args, "--image-format") ?? defaults.Commands.Screenshot.ImageFormat);
+		var targetId = CliArgumentReader.GetOption(args, "--target", "--target-id") ?? defaults.Commands.Screenshot.TargetId;
 		var selector = ElementSelector.FromArgs(args);
 		if (string.IsNullOrWhiteSpace(targetId) && !selector.IsEmpty)
 			targetId = new ElementResolver().Resolve(ReadSnapshot(session, commonOptions, defaults.PropertyNames, defaults.TreeLimit), selector).TargetId;
@@ -297,8 +299,8 @@ public static class Program
 			commonOptions.TimeoutMs);
 		return new ScreenshotFileService().Process(response, new ScreenshotFileOptions
 		{
-			OutputPath = CliArgumentReader.GetOption(args, "--output", "--out"),
-			IncludeBase64 = CliArgumentReader.HasOption(args, "--base64"),
+			OutputPath = CliArgumentReader.GetOption(args, "--output", "--out") ?? defaults.Commands.Screenshot.OutputPath,
+			IncludeBase64 = CliArgumentReader.HasOption(args, "--base64") || defaults.Commands.Screenshot.Base64,
 		});
 	}
 
@@ -312,8 +314,8 @@ public static class Program
 		if (CliArgumentReader.HasOption(args, "--require-enabled"))
 			options.Enabled = true;
 
-		var interval = CliArgumentReader.GetInt(args, "--interval-ms", defaults.WaitIntervalMs);
-		var requiredMatches = CliArgumentReader.GetInt(args, "--match-count", defaults.WaitMatchCount);
+		var interval = CliArgumentReader.GetInt(args, "--interval-ms", defaults.Commands.Wait.IntervalMs);
+		var requiredMatches = CliArgumentReader.GetInt(args, "--match-count", defaults.Commands.Wait.MatchCount);
 		if (interval <= 0)
 			throw new CliException(CliErrorCodes.InvalidArguments, "Wait interval must be greater than zero.");
 		if (requiredMatches <= 0)
@@ -358,14 +360,14 @@ public static class Program
 		if (interval < 50)
 			throw new CliException(CliErrorCodes.InvalidArguments, "Stream interval must be at least 50 ms.");
 
-		var duration = CliArgumentReader.GetInt(args, "--duration-ms", interval);
+		var duration = CliArgumentReader.GetInt(args, "--duration-ms", defaults.StreamDurationMs);
 		if (duration < 0)
 			throw new CliException(CliErrorCodes.InvalidArguments, "Stream duration must be zero or greater.");
 
 		var format = streamKind == ProtocolConstants.StreamKinds.Screenshot
-			? ScreenshotFileService.NormalizeFormat(CliArgumentReader.GetOption(args, "--image-format") ?? defaults.ScreenshotFormat)
-			: defaults.ScreenshotFormat;
-		var properties = GetRequestedProperties(args, defaults);
+			? ScreenshotFileService.NormalizeFormat(CliArgumentReader.GetOption(args, "--image-format") ?? defaults.Commands.Stream.ImageFormat)
+			: defaults.Commands.Stream.ImageFormat;
+		var properties = CliArgumentReader.GetStringList(args, "--props", defaults.Commands.Stream.Props);
 		using var session = OpenSession(services, commonOptions);
 		var request = new StartSendingCommandRequest
 		{
@@ -384,15 +386,24 @@ public static class Program
 		};
 
 		var stopwatch = Stopwatch.StartNew();
-		while (stopwatch.ElapsedMilliseconds <= duration)
+		try
 		{
-			var remaining = duration - (int)stopwatch.ElapsedMilliseconds;
-			var readTimeout = Math.Max(interval, Math.Min(commonOptions.TimeoutMs, remaining + interval));
-			var frame = stream.ReadFrame(readTimeout, cancellation.Token);
-			if (frame is null)
-				break;
+			while (duration == 0 || stopwatch.ElapsedMilliseconds <= duration)
+			{
+				cancellation.Token.ThrowIfCancellationRequested();
+				var remaining = duration == 0 ? commonOptions.TimeoutMs : duration - (int)stopwatch.ElapsedMilliseconds;
+				var readTimeout = duration == 0
+					? commonOptions.TimeoutMs
+					: Math.Max(interval, Math.Min(commonOptions.TimeoutMs, remaining + interval));
+				var frame = stream.ReadFrame(readTimeout, cancellation.Token);
+				if (frame is null)
+					break;
 
-			envelopes.Add(CliResponseFactory.Success($"stream {streamKind} frame", frame, Stopwatch.StartNew()));
+				envelopes.Add(CliResponseFactory.Success($"stream {streamKind} frame", frame, Stopwatch.StartNew()));
+			}
+		}
+		catch (OperationCanceledException)
+		{
 		}
 
 		var stop = session.Send<StopSendingCommandResponse>(
@@ -439,25 +450,37 @@ public static class Program
 	{
 		return new FindSnapshotOptions
 		{
-			TypeName = CliArgumentReader.GetOption(args, "--type"),
-			TypeContains = CliArgumentReader.GetOption(args, "--type-contains"),
-			Name = CliArgumentReader.GetOption(args, "--name"),
-			AutomationId = CliArgumentReader.GetOption(args, "--automation-id"),
-			Text = CliArgumentReader.GetOption(args, "--text"),
-			PropertyEquals = CliArgumentReader.GetKeyValue(args, "--property", "--prop"),
-			PropertyContains = CliArgumentReader.GetKeyValue(args, "--property-contains", "--contains"),
-			PropertyRegex = CliArgumentReader.GetKeyValue(args, "--property-regex", "--regex"),
-			Visible = CliArgumentReader.HasOption(args, "--visible") ? true : null,
-			Enabled = CliArgumentReader.HasOption(args, "--enabled") ? true : null,
-			CaseSensitive = CliArgumentReader.HasOption(args, "--case-sensitive"),
+			TypeName = CliArgumentReader.GetOption(args, "--type") ?? defaults.Commands.Find.Type,
+			TypeContains = CliArgumentReader.GetOption(args, "--type-contains") ?? defaults.Commands.Find.TypeContains,
+			Name = CliArgumentReader.GetOption(args, "--name") ?? defaults.Commands.Find.Name,
+			AutomationId = CliArgumentReader.GetOption(args, "--automation-id") ?? defaults.Commands.Find.AutomationId,
+			Text = CliArgumentReader.GetOption(args, "--text") ?? defaults.Commands.Find.Text,
+			PropertyEquals = CliArgumentReader.GetKeyValue(args, "--property", "--prop") ?? ParseDefaultKeyValue(defaults.Commands.Find.PropertyEquals),
+			PropertyContains = CliArgumentReader.GetKeyValue(args, "--property-contains", "--contains") ?? ParseDefaultKeyValue(defaults.Commands.Find.PropertyContains),
+			PropertyRegex = CliArgumentReader.GetKeyValue(args, "--property-regex", "--regex") ?? ParseDefaultKeyValue(defaults.Commands.Find.PropertyRegex),
+			Visible = CliArgumentReader.HasOption(args, "--visible") || defaults.Commands.Find.Visible ? true : null,
+			Enabled = CliArgumentReader.HasOption(args, "--enabled") || defaults.Commands.Find.Enabled ? true : null,
+			CaseSensitive = CliArgumentReader.HasOption(args, "--case-sensitive") || defaults.Commands.Find.CaseSensitive,
 			Limit = CliArgumentReader.GetInt(args, "--limit", defaults.FindLimit),
-			IncludePath = CliArgumentReader.HasOption(args, "--include-path"),
-			IncludeProperties = CliArgumentReader.HasOption(args, "--include-properties"),
+			IncludePath = CliArgumentReader.HasOption(args, "--include-path") || defaults.Commands.Find.Include.Contains("path", StringComparer.OrdinalIgnoreCase),
+			IncludeProperties = CliArgumentReader.HasOption(args, "--include-properties") || defaults.Commands.Find.Include.Contains("properties", StringComparer.OrdinalIgnoreCase),
 			IncludeChildren = CliArgumentReader.HasOption(args, "--include-children"),
 			IncludeAncestors = CliArgumentReader.HasOption(args, "--include-ancestors"),
 			UseShortIds = commonOptions.UseShortIds,
 			Properties = properties,
 		};
+	}
+
+	private static KeyValuePair<string, string>? ParseDefaultKeyValue(string? value)
+	{
+		if (string.IsNullOrWhiteSpace(value))
+			return null;
+
+		var separator = value.IndexOf('=');
+		if (separator <= 0)
+			throw new CliException(CliErrorCodes.InvalidConfig, $"Default selector value '{value}' must use name=value.");
+
+		return new KeyValuePair<string, string>(value[..separator], value[(separator + 1)..]);
 	}
 
 	private static NodeSnapshotOptions CreateNodeOptions(string[] args, CliCommonOptions commonOptions, IReadOnlyList<string> properties)
@@ -487,9 +510,9 @@ public static class Program
 	private static ActionCommandResult ExecuteClick(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("click", commonOptions);
-		var button = (CliArgumentReader.GetOption(args, "--button") ?? "left").ToLowerInvariant();
+		var button = (CliArgumentReader.GetOption(args, "--button") ?? defaults.Commands.Click.Button).ToLowerInvariant();
 		var count = CliArgumentReader.GetInt(args, "--count", 1);
-		var isDouble = CliArgumentReader.HasOption(args, "--double");
+		var isDouble = CliArgumentReader.HasOption(args, "--double") || defaults.Commands.Click.Double;
 		if (count <= 0)
 			throw new CliException(CliErrorCodes.InvalidArguments, "Click count must be greater than zero.");
 		if (button is not ("left" or "right" or "double"))
@@ -541,7 +564,7 @@ public static class Program
 	private static ActionCommandResult ExecuteType(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("type", commonOptions);
-		var text = CliArgumentReader.GetOption(args, "--value", "--text");
+		var text = CliArgumentReader.GetOption(args, "--value", "--text") ?? defaults.Commands.Type.Text;
 		if (text is null)
 			throw new CliException(CliErrorCodes.InvalidArguments, "The type command requires --value or --text.");
 
@@ -559,7 +582,7 @@ public static class Program
 			{
 				Text = text,
 				TargetId = targetId,
-				ClearFirst = CliArgumentReader.HasOption(args, "--clear-first"),
+				ClearFirst = CliArgumentReader.HasOption(args, "--clear-first") || defaults.Commands.Type.ClearFirst,
 			},
 			requireElementTarget: false,
 			afterProperties: new[] { "Text", "Content" });
@@ -568,7 +591,7 @@ public static class Program
 	private static ActionCommandResult ExecuteKey(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("key", commonOptions);
-		var keys = CliArgumentReader.GetOption(args, "--keys");
+		var keys = CliArgumentReader.GetOption(args, "--keys") ?? defaults.Commands.Key.Keys;
 		if (string.IsNullOrWhiteSpace(keys))
 			throw new CliException(CliErrorCodes.InvalidArguments, "The key command requires --keys.");
 		ValidateKeys(keys!);
@@ -587,7 +610,7 @@ public static class Program
 				Keys = keys,
 				TargetId = targetId,
 				DelayMs = CliArgumentReader.GetInt(args, "--delay-ms", defaults.KeyDelayMs),
-				EnsureForeground = defaults.EnsureForeground,
+				EnsureForeground = defaults.Commands.Key.Foreground,
 			},
 			requireElementTarget: false,
 			afterProperties: new[] { "Text", "Content", "IsKeyboardFocused", "IsKeyboardFocusWithin" });
@@ -596,11 +619,11 @@ public static class Program
 	private static ActionCommandResult ExecuteSet(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("set", commonOptions);
-		var property = CliArgumentReader.GetOption(args, "--property");
+		var property = CliArgumentReader.GetOption(args, "--property") ?? defaults.Commands.Set.Property;
 		if (string.IsNullOrWhiteSpace(property))
 			throw new CliException(CliErrorCodes.InvalidArguments, "The set command requires --property.");
 
-		var rawValue = CliArgumentReader.GetOption(args, "--value");
+		var rawValue = CliArgumentReader.GetOption(args, "--value") ?? defaults.Commands.Set.Value;
 		if (rawValue is null)
 			throw new CliException(CliErrorCodes.InvalidArguments, "The set command requires --value.");
 
@@ -624,7 +647,7 @@ public static class Program
 	private static ActionCommandResult ExecuteRaise(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("raise", commonOptions);
-		var eventName = CliArgumentReader.GetOption(args, "--event");
+		var eventName = CliArgumentReader.GetOption(args, "--event") ?? defaults.Commands.Raise.Event;
 		if (string.IsNullOrWhiteSpace(eventName))
 			throw new CliException(CliErrorCodes.InvalidArguments, "The raise command requires --event.");
 		if (!KnownRoutedEvents.Contains(eventName!))
@@ -647,8 +670,8 @@ public static class Program
 
 	private static ActionCommandResult ExecuteInvoke(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		var code = CliArgumentReader.GetOption(args, "--code");
-		var operation = CliArgumentReader.GetOption(args, "--operation");
+		var code = CliArgumentReader.GetOption(args, "--code") ?? defaults.Commands.Invoke.Code;
+		var operation = CliArgumentReader.GetOption(args, "--operation") ?? defaults.Commands.Invoke.Operation;
 		var arbitrary = !string.IsNullOrWhiteSpace(code);
 		new ActionGate().Demand("invoke", commonOptions, arbitraryInvoke: arbitrary);
 		if (string.IsNullOrWhiteSpace(operation) && string.IsNullOrWhiteSpace(code))

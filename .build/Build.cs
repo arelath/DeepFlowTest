@@ -274,6 +274,14 @@ internal sealed class Build
 			Path.Combine(rootDirectory, "bin", configuration, "DeepFlowTestResources"),
 			Path.Combine(contentRoot, "DeepFlowTestResources"),
 			IsPackageResourceFile);
+		CopyDirectoryIfExists(
+			Path.Combine(rootDirectory, "DeepFlowTest", "contentFiles", "any", "any"),
+			contentRoot,
+			IsPackageResourceFile);
+		CopyDirectoryIfExists(
+			Path.Combine(rootDirectory, "Tools", "DeepFlowTestResources"),
+			Path.Combine(contentRoot, "DeepFlowTestResources"),
+			IsPackageResourceFile);
 
 		File.WriteAllText(
 			Path.Combine(packageDirectory, "DeepFlowTest.package.md"),
@@ -305,6 +313,12 @@ internal sealed class Build
 			Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
 			File.Copy(sourceFile, destinationFile, overwrite: true);
 		}
+	}
+
+	private static void CopyDirectoryIfExists(string sourceDirectory, string destinationDirectory, Func<string, bool>? filter = null)
+	{
+		if (Directory.Exists(sourceDirectory))
+			CopyDirectory(sourceDirectory, destinationDirectory, filter);
 	}
 
 	private static void CI()

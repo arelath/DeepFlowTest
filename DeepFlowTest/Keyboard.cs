@@ -54,6 +54,8 @@ public sealed class Keyboard
 			for (var i = heldModifiers.Count - 1; i >= 0; i--)
 				SendVirtualKey(heldModifiers[i], isKeyDown: false);
 		}
+
+		driver.RefreshAfterPhysicalInput();
 	}
 
 	public void Type(string text)
@@ -84,6 +86,8 @@ public sealed class Keyboard
 			if (DelayMs > 0)
 				Thread.Sleep(Math.Min(DelayMs, 50));
 		}
+
+		driver.RefreshAfterPhysicalInput();
 	}
 
 	public void Type(Element element, string text, bool clearFirst = false)

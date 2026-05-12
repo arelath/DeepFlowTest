@@ -45,11 +45,20 @@ public sealed class CliCommonOptions
 		_ = defaults ?? throw new ArgumentNullException(nameof(defaults));
 		var options = new CliCommonOptions
 		{
-			TimeoutMs = defaults.TimeoutMs,
-			Format = defaults.OutputFormat,
-			HideEmpty = defaults.HideEmpty,
-			UseShortIds = defaults.UseShortIds,
-			After = defaults.AfterSnapshot,
+			Pid = defaults.Common.Pid,
+			ProcessName = defaults.Common.Process,
+			WindowTitle = defaults.Common.WindowTitle,
+			TimeoutMs = defaults.Common.TimeoutMs,
+			Debug = defaults.Common.Debug,
+			NoInject = defaults.Common.NoInject,
+			PipeId = defaults.Common.PipeId,
+			Format = defaults.Common.Format,
+			Pretty = defaults.Common.Pretty,
+			HideEmpty = defaults.Common.HideEmpty,
+			UseShortIds = defaults.Common.UseShortIds,
+			AllowActions = defaults.Common.AllowActions,
+			AllowArbitraryInvoke = defaults.Common.AllowArbitraryInvoke,
+			After = defaults.Common.After,
 		};
 
 		for (var i = 0; i < args.Count; i++)

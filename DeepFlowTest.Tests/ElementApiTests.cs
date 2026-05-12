@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using DeepFlowTest;
-using DeepFlowTest.Assert;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Tests.Fakes;
@@ -284,6 +283,15 @@ public sealed class ElementApiTests
 				Height = 1,
 				ByteCount = 2,
 				BytesBase64 = Convert.ToBase64String(new byte[] { 9, 10 }),
+			},
+			new ScreenshotCommandResponse
+			{
+				TargetId = "button",
+				Format = "jpeg",
+				Width = 1,
+				Height = 1,
+				ByteCount = 2,
+				BytesBase64 = Convert.ToBase64String(new byte[] { 9, 10 }),
 			});
 		var driver = CreateDriver(session);
 		var element = driver.GetElement(ElementSelector.ByName("submit"));
@@ -333,13 +341,31 @@ public sealed class ElementApiTests
 		var driver = CreateDriver(new FakeSession(match, refreshed, refreshed, refreshed));
 		var element = driver.GetElement(ElementSelector.ByName("submit"));
 
-		var exception = Assert.Throws<AppDriverAssertionException>(() => element.Assert(x => x["Content"] == "Save", timeoutMs: 1));
+		var exception = Assert.Throws<AssertionException>(() => element.Assert(x => x["Content"] == "Save", timeoutMs: 1));
 
-		Assert.That(exception, Is.InstanceOf<AssertionFailedException>());
 		Assert.That(exception!.Message, Does.Contain("Expected:"));
 		Assert.That(exception.Message, Does.Contain("Actual:"));
 		Assert.That(exception.Message, Does.Contain("Content == \"Cancel\""));
 		Assert.That(exception.Message, Does.Contain("TargetId == \"button\""));
+	}
+
+	[Test]
+	public void ElementScreenshotWaitsForAdjacentStableCapture()
+	{
+		var first = Convert.ToBase64String(new byte[] { 1 });
+		var stable = Convert.ToBase64String(new byte[] { 2 });
+		var session = new FakeSession(
+			FindMatch("image-target", "image"),
+			new ScreenshotCommandResponse { TargetId = "image-target", Format = "png", ByteCount = 1, BytesBase64 = first },
+			new ScreenshotCommandResponse { TargetId = "image-target", Format = "png", ByteCount = 1, BytesBase64 = stable },
+			new ScreenshotCommandResponse { TargetId = "image-target", Format = "png", ByteCount = 1, BytesBase64 = stable });
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(ElementSelector.ByName("image"));
+
+		var bytes = element.Screenshot(ImageFormat.Png);
+
+		Assert.That(bytes, Is.EqualTo(new byte[] { 2 }));
+		Assert.That(session.SentCommands.OfType<ScreenshotCommandRequest>().Count(), Is.EqualTo(3));
 	}
 
 	private static AppDriver CreateDriver(IAppDriverCommandSession session)

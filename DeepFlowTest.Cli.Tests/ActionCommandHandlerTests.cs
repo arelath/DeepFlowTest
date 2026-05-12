@@ -62,6 +62,31 @@ public sealed class ActionCommandHandlerTests
 	}
 
 	[Test]
+	public void CommandSpecificDefaultsFeedActionHandlers()
+	{
+		var store = new CliDefaultsStore(CliTestHost.CreateTempConfigPath());
+		store.Set("commands.click.button", "right");
+		store.Set("commands.type.text", "from-default");
+		store.Set("commands.type.clearFirst", "true");
+		store.Set("commands.key.keys", "Enter");
+		store.Set("commands.key.delayMs", "15");
+		store.Set("commands.key.foreground", "false");
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(defaultsStore: store, targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		Assert.That(CliTestHost.Run(new[] { "click", "--pid", "1234", "--target", "0002" }, services).ExitCode, Is.EqualTo(0));
+		Assert.That(CliTestHost.Run(new[] { "type", "--pid", "1234", "--target", "0002" }, services).ExitCode, Is.EqualTo(0));
+		Assert.That(CliTestHost.Run(new[] { "key", "--pid", "1234", "--target", "0002" }, services).ExitCode, Is.EqualTo(0));
+
+		Assert.That(session.Session.Commands.OfType<ClickCommandRequest>().Single().MouseButton, Is.EqualTo("right"));
+		Assert.That(session.Session.Commands.OfType<TypeTextCommandRequest>().Single().Text, Is.EqualTo("from-default"));
+		Assert.That(session.Session.Commands.OfType<TypeTextCommandRequest>().Single().ClearFirst, Is.True);
+		Assert.That(session.Session.Commands.OfType<KeyPressCommandRequest>().Single().Keys, Is.EqualTo("Enter"));
+		Assert.That(session.Session.Commands.OfType<KeyPressCommandRequest>().Single().DelayMs, Is.EqualTo(15));
+		Assert.That(session.Session.Commands.OfType<KeyPressCommandRequest>().Single().EnsureForeground, Is.False);
+	}
+
+	[Test]
 	public void FocusTypeKeySetRaiseAndInvokeCreateExpectedPayloads()
 	{
 		var session = new FakeAppSessionService();

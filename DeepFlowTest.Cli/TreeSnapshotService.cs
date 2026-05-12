@@ -186,8 +186,7 @@ public sealed class TreeSnapshotService
 
 	private static string NormalizeShape(string shape)
 	{
-		if (string.Equals(shape, "tree", StringComparison.OrdinalIgnoreCase) ||
-			string.Equals(shape, "nested", StringComparison.OrdinalIgnoreCase))
+		if (string.Equals(shape, "nested", StringComparison.OrdinalIgnoreCase))
 			return "nested";
 
 		if (string.Equals(shape, "flat", StringComparison.OrdinalIgnoreCase))

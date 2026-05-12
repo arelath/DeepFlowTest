@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Cli.Tests;
 
 using System.IO;
+using System.Text.Json.Nodes;
 using NUnit.Framework;
 
 [TestFixture]
@@ -12,6 +13,9 @@ public sealed class CliDefaultsTests
 		var defaults = new CliDefaults();
 
 		Assert.That(defaults.TimeoutMs, Is.EqualTo(10_000));
+		Assert.That(defaults.SchemaVersion, Is.EqualTo(1));
+		Assert.That(defaults.Common.TimeoutMs, Is.EqualTo(10_000));
+		Assert.That(defaults.Commands.Tree.Shape, Is.EqualTo("flat"));
 		Assert.That(defaults.OutputFormat, Is.EqualTo("json"));
 		Assert.That(defaults.HideEmpty, Is.True);
 		Assert.That(defaults.UseShortIds, Is.True);
@@ -61,7 +65,7 @@ public sealed class CliDefaultsTests
 
 		Assert.That(store.Load().TreeLimit, Is.EqualTo(25));
 		Assert.That(store.Load().OutputFormat, Is.EqualTo("text"));
-		Assert.That(store.Get("commands.tree.limit"), Is.EqualTo(25));
+		Assert.That(((JsonValue)store.Get("commands.tree.limit")!).GetValue<int>(), Is.EqualTo(25));
 
 		store.Clear("commands.tree.limit");
 
@@ -92,12 +96,12 @@ public sealed class CliDefaultsTests
 
 		var set = CliTestHost.Run(new[] { "config", "set", "timeoutMs", "333" }, services);
 		var clear = CliTestHost.Run(new[] { "config", "clear", "timeoutMs" }, services);
-		var reset = CliTestHost.Run(new[] { "config", "reset" }, services);
+		var reset = CliTestHost.Run(new[] { "config", "reset", "--yes" }, services);
 
 		Assert.That(set.ExitCode, Is.EqualTo(0));
 		Assert.That(clear.ExitCode, Is.EqualTo(0));
 		Assert.That(reset.ExitCode, Is.EqualTo(0));
-		Assert.That(File.Exists(path), Is.False);
+		Assert.That(File.Exists(path), Is.True);
 		Assert.That(store.Load().TimeoutMs, Is.EqualTo(10_000));
 	}
 
@@ -114,18 +118,33 @@ public sealed class CliDefaultsTests
 	}
 
 	[Test]
-	public void StringListConfigParsingErrorsMapToCliExceptionsAndNullClears()
+	public void StringListConfigJsonParsingErrorsMapToCliExceptionsAndNullClears()
 	{
 		var store = new CliDefaultsStore(CliTestHost.CreateTempConfigPath());
 
 		Assert.That(
-			() => store.Set("propertyNames", "[1]"),
+			() => store.Set("propertyNames", "[1]", json: true),
 			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
 
-		store.Set("timeoutMs", "333");
-		store.Set("timeoutMs", "null");
+		store.Set("common.process", "DeepFlowTestHarness");
+		store.Set("common.process", "null");
 
-		Assert.That(store.Load().TimeoutMs, Is.EqualTo(10_000));
+		Assert.That(store.Load().Common.Process, Is.Null);
+	}
+
+	[Test]
+	public void ConfigSetJsonPreservesNestedSchema()
+	{
+		var path = CliTestHost.CreateTempConfigPath();
+		var store = new CliDefaultsStore(path);
+		var services = CliTestHost.CreateServices(defaultsStore: store);
+
+		var result = CliTestHost.Run(new[] { "config", "set", "commands.stream.props", "[\"Name\",\"Text\"]", "--json" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(store.Load().Commands.Stream.Props, Is.EqualTo(new[] { "Name", "Text" }));
+		Assert.That(File.ReadAllText(path), Does.Contain("\"commands\""));
+		Assert.That(File.ReadAllText(path), Does.Contain("\"stream\""));
 	}
 
 	[Test]
@@ -136,10 +155,22 @@ public sealed class CliDefaultsTests
 		File.WriteAllText(path, "{");
 		var services = CliTestHost.CreateServices(defaultsStore: new CliDefaultsStore(path));
 
-		var result = CliTestHost.Run(new[] { "config", "reset" }, services);
+		var result = CliTestHost.Run(new[] { "config", "reset", "--yes" }, services);
 
 		Assert.That(result.ExitCode, Is.EqualTo(0));
-		Assert.That(File.Exists(path), Is.False);
+		Assert.That(File.Exists(path), Is.True);
+		Assert.That(new CliDefaultsStore(path).Load().SchemaVersion, Is.EqualTo(1));
+	}
+
+	[Test]
+	public void ConfigResetRequiresConfirmation()
+	{
+		var services = CliTestHost.CreateServices(defaultsStore: new CliDefaultsStore(CliTestHost.CreateTempConfigPath()));
+
+		var result = CliTestHost.Run(new[] { "config", "reset" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(1));
+		Assert.That(result.Stdout, Does.Contain("requires --yes"));
 	}
 
 	[Test]
@@ -162,5 +193,6 @@ public sealed class CliDefaultsTests
 		var store = new CliDefaultsStore(CliTestHost.CreateTempConfigPath());
 
 		Assert.That(() => store.Set("outputFormat", "yaml"), Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidConfig));
+		Assert.That(() => store.Set("commands.tree.shape", "tree"), Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidConfig));
 	}
 }

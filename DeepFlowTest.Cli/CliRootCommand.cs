@@ -59,6 +59,7 @@ public static class CliRootCommand
 	{
 		var root = new RootCommand("Drive DeepFlowTest automation workflows.");
 		root.SetAction(_ => 0);
+		AddTargetOptions(root, recursive: true);
 
 		root.Add(CreateConfigCommand());
 		root.Add(CreateProcessesCommand());
@@ -93,10 +94,16 @@ public static class CliRootCommand
 	public static string GetCommandPath(IReadOnlyList<string> args)
 	{
 		var tokens = new List<string>();
-		foreach (var arg in args)
+		for (var index = 0; index < args.Count; index++)
 		{
+			var arg = args[index];
 			if (arg.StartsWith("-", StringComparison.Ordinal))
-				break;
+			{
+				var optionName = arg.Split('=', 2)[0];
+				if (!arg.Contains('=', StringComparison.Ordinal) && OptionHasSeparateValue(optionName) && index + 1 < args.Count)
+					index++;
+				continue;
+			}
 
 			if (tokens.Count == 0 && !TopLevelCommands.Contains(arg))
 				return arg;
@@ -123,22 +130,20 @@ public static class CliRootCommand
 		var get = new Command("get", "Get one default or all defaults.");
 		var getKey = new Argument<string>("key") { Arity = ArgumentArity.ZeroOrOne, Description = "Default key." };
 		get.Add(getKey);
-		AddOutputOptions(get);
 		get.SetAction(_ => 0);
 
 		var set = new Command("set", "Set a default value.");
 		set.Add(new Argument<string>("key") { Description = "Default key." });
 		set.Add(new Argument<string>("value") { Description = "Default value." });
-		AddOutputOptions(set);
+		set.Add(CreateOption<bool>("--json", "Parse the value as JSON."));
 		set.SetAction(_ => 0);
 
 		var clear = new Command("clear", "Clear one default value.");
 		clear.Add(new Argument<string>("key") { Description = "Default key." });
-		AddOutputOptions(clear);
 		clear.SetAction(_ => 0);
 
 		var reset = new Command("reset", "Reset all CLI defaults.");
-		AddOutputOptions(reset);
+		reset.Add(CreateOption<bool>("--yes", "Confirm the reset."));
 		reset.SetAction(_ => 0);
 
 		config.Add(get);
@@ -151,7 +156,6 @@ public static class CliRootCommand
 	private static Command CreateProcessesCommand()
 	{
 		var command = new Command("processes", "List candidate target processes without injection.");
-		AddOutputOptions(command);
 		command.Add(CreateOption<bool>("--candidates-only", "Only show likely WPF candidates."));
 		command.Add(CreateOption<bool>("--show-all", "Show all processes. This is the default and is accepted for compatibility."));
 		command.SetAction(_ => 0);
@@ -180,7 +184,6 @@ public static class CliRootCommand
 	private static Command CreateVersionCommand()
 	{
 		var version = new Command("version", "Print product version information.");
-		AddOutputOptions(version);
 		version.SetAction(_ => 0);
 		return version;
 	}
@@ -188,33 +191,32 @@ public static class CliRootCommand
 	private static Command CreateTargetCommand(string name, string description, Action<Command>? configure = null)
 	{
 		var command = new Command(name, description);
-		AddTargetOptions(command);
 		configure?.Invoke(command);
 		command.SetAction(_ => 0);
 		return command;
 	}
 
-	private static void AddTargetOptions(Command command)
+	private static void AddTargetOptions(Command command, bool recursive = false)
 	{
-		command.Add(CreateOption<int?>("--pid", "Target process ID."));
-		command.Add(CreateOption<string?>("--process", "Target process name."));
-		command.Add(CreateOption<string?>("--window-title", "Substring of a top-level window title."));
-		command.Add(CreateOption<int>("--timeout-ms", "Command timeout in milliseconds."));
-		command.Add(CreateOption<bool>("--debug", "Write debug diagnostics to stderr."));
-		command.Add(CreateOption<bool>("--no-inject", "Only connect to an existing listener."));
-		command.Add(CreateOption<string?>("--pipe-id", "Custom reusable pipe ID."));
-		command.Add(CreateOption<bool>("--allow-actions", "Allow target-mutating commands."));
-		command.Add(CreateOption<bool>("--allow-arbitrary-invoke", "Allow arbitrary target-side invoke."));
-		command.Add(CreateOption<string>("--after", "Snapshot after command: none, target, or tree."));
-		AddOutputOptions(command);
+		command.Add(CreateOption<int?>("--pid", "Target process ID.", recursive: recursive));
+		command.Add(CreateOption<string?>("--process", "Target process name.", recursive: recursive));
+		command.Add(CreateOption<string?>("--window-title", "Substring of a top-level window title.", recursive: recursive));
+		command.Add(CreateOption<int>("--timeout-ms", "Command timeout in milliseconds.", recursive: recursive));
+		command.Add(CreateOption<bool>("--debug", "Write debug diagnostics to stderr.", recursive: recursive));
+		command.Add(CreateOption<bool>("--no-inject", "Only connect to an existing listener.", recursive: recursive));
+		command.Add(CreateOption<string?>("--pipe-id", "Custom reusable pipe ID.", recursive: recursive));
+		command.Add(CreateOption<bool>("--allow-actions", "Allow target-mutating commands.", recursive: recursive));
+		command.Add(CreateOption<bool>("--allow-arbitrary-invoke", "Allow arbitrary target-side invoke.", recursive: recursive));
+		command.Add(CreateOption<string>("--after", "Snapshot after command: none, target, or tree.", recursive: recursive));
+		AddOutputOptions(command, recursive);
 	}
 
-	private static void AddOutputOptions(Command command)
+	private static void AddOutputOptions(Command command, bool recursive = false)
 	{
-		command.Add(CreateOption<string>("--format", "Output format: json or text."));
-		command.Add(CreateOption<bool>("--pretty", "Pretty-print JSON output."));
-		command.Add(CreateOption<bool>("--hide-empty", "Hide null and empty optional JSON fields."));
-		command.Add(CreateOption<bool>("--use-short-ids", "Use short target IDs where possible."));
+		command.Add(CreateOption<string>("--format", "Output format: json or text.", recursive: recursive));
+		command.Add(CreateOption<bool>("--pretty", "Pretty-print JSON output.", recursive: recursive));
+		command.Add(CreateOption<bool>("--hide-empty", "Hide null and empty optional JSON fields.", recursive: recursive));
+		command.Add(CreateOption<bool>("--use-short-ids", "Use short target IDs where possible.", recursive: recursive));
 	}
 
 	private static void AddTreeOptions(Command command)
@@ -363,8 +365,55 @@ public static class CliRootCommand
 	}
 
 	private static Option<T> CreateOption<T>(string name, string description, params string[] aliases) =>
+		CreateOption<T>(name, description, recursive: false, aliases);
+
+	private static Option<T> CreateOption<T>(string name, string description, bool recursive, params string[] aliases) =>
 		new(name, aliases)
 		{
 			Description = description,
+			Recursive = recursive,
 		};
+
+	private static bool OptionHasSeparateValue(string optionName) =>
+		optionName is "--pid"
+			or "--process"
+			or "--window-title"
+			or "--timeout-ms"
+			or "--pipe-id"
+			or "--after"
+			or "--format"
+			or "--root"
+			or "--target-id"
+			or "--target"
+			or "--max-depth"
+			or "--limit"
+			or "--shape"
+			or "--props"
+			or "--name"
+			or "--automation-id"
+			or "--text"
+			or "--type"
+			or "--type-contains"
+			or "--property"
+			or "--prop"
+			or "--property-contains"
+			or "--contains"
+			or "--property-regex"
+			or "--regex"
+			or "--image-format"
+			or "--output"
+			or "--out"
+			or "--duration-ms"
+			or "--interval-ms"
+			or "--match-count"
+			or "--subtree-depth"
+			or "--button"
+			or "--count"
+			or "--value"
+			or "--selector-text"
+			or "--keys"
+			or "--delay-ms"
+			or "--event"
+			or "--code"
+			or "--operation";
 }

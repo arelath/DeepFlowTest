@@ -3,6 +3,7 @@ namespace DeepFlowTest.Tests;
 using System;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading.Tasks;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Tests.Fakes;
@@ -76,6 +77,26 @@ public sealed class ExpressionPayloadSerializerTests
 		var command = session.SentCommands.OfType<FindElementCommandRequest>().Single();
 		Assert.That(command.MatcherHash, Is.Not.Empty);
 		Assert.That(command.MatcherCode, Is.Not.Null);
+	}
+
+	[Test]
+	public void SyncOverAsyncExpressionsAreBlockedByDefaultAndCanBeAllowed()
+	{
+		Expression<Func<MatcherTarget, int>> unsafeExpression = _ => Task.FromResult(5).Result;
+
+		var exception = Assert.Throws<InvalidOperationException>(() => ExpressionPayloadSerializer.Serialize(unsafeExpression));
+
+		Assert.That(exception!.Message, Does.Contain("Task.Result"));
+
+		try
+		{
+			ExpressionPayloadOptions.AllowUnsafeSyncOverAsync = true;
+			Assert.That(ExpressionPayloadSerializer.Serialize(unsafeExpression).ExpressionJson, Is.Not.Empty);
+		}
+		finally
+		{
+			ExpressionPayloadOptions.AllowUnsafeSyncOverAsync = false;
+		}
 	}
 
 	private static ExpressionMatcherPayload CreatePayload(string expectedName, int minimumCount)

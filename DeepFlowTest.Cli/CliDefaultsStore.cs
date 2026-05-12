@@ -5,57 +5,41 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 public sealed class CliDefaultsStore
 {
-	private static readonly IReadOnlyDictionary<string, DefaultValueDefinition> Definitions =
-		new Dictionary<string, DefaultValueDefinition>(StringComparer.Ordinal)
-		{
-			["timeoutMs"] = DefaultValueDefinition.Int(d => d.TimeoutMs, (d, value) => d.TimeoutMs = value),
-			["outputFormat"] = DefaultValueDefinition.String(d => d.OutputFormat, (d, value) => d.OutputFormat = value, new[] { "json", "text" }),
-			["hideEmpty"] = DefaultValueDefinition.Bool(d => d.HideEmpty, (d, value) => d.HideEmpty = value),
-			["useShortIds"] = DefaultValueDefinition.Bool(d => d.UseShortIds, (d, value) => d.UseShortIds = value),
-			["afterSnapshot"] = DefaultValueDefinition.String(d => d.AfterSnapshot, (d, value) => d.AfterSnapshot = value, new[] { "none", "target", "tree" }),
-			["treeShape"] = DefaultValueDefinition.String(d => d.TreeShape, (d, value) => d.TreeShape = value, new[] { "flat", "tree" }),
-			["treeMaxDepth"] = DefaultValueDefinition.Int(d => d.TreeMaxDepth, (d, value) => d.TreeMaxDepth = value),
-			["treeLimit"] = DefaultValueDefinition.Int(d => d.TreeLimit, (d, value) => d.TreeLimit = value),
-			["propertyNames"] = DefaultValueDefinition.StringList(d => d.PropertyNames, (d, value) => d.PropertyNames = value),
-			["findLimit"] = DefaultValueDefinition.Int(d => d.FindLimit, (d, value) => d.FindLimit = value),
-			["waitIntervalMs"] = DefaultValueDefinition.Int(d => d.WaitIntervalMs, (d, value) => d.WaitIntervalMs = value),
-			["waitMatchCount"] = DefaultValueDefinition.Int(d => d.WaitMatchCount, (d, value) => d.WaitMatchCount = value),
-			["streamIntervalMs"] = DefaultValueDefinition.Int(d => d.StreamIntervalMs, (d, value) => d.StreamIntervalMs = value),
-			["screenshotFormat"] = DefaultValueDefinition.String(
-				d => d.ScreenshotFormat,
-				(d, value) => d.ScreenshotFormat = ScreenshotFileService.NormalizeFormat(value),
-				new[] { "png", "bmp", "gif", "jpg", "jpeg" }),
-			["keyDelayMs"] = DefaultValueDefinition.Int(d => d.KeyDelayMs, (d, value) => d.KeyDelayMs = value),
-			["ensureForeground"] = DefaultValueDefinition.Bool(d => d.EnsureForeground, (d, value) => d.EnsureForeground = value),
-		};
-
 	private static readonly IReadOnlyDictionary<string, string> PathAliases =
 		new Dictionary<string, string>(StringComparer.Ordinal)
 		{
-			["common.timeoutMs"] = "timeoutMs",
-			["common.format"] = "outputFormat",
-			["common.hideEmpty"] = "hideEmpty",
-			["common.useShortIds"] = "useShortIds",
-			["common.after"] = "afterSnapshot",
-			["commands.tree.shape"] = "treeShape",
-			["commands.tree.maxDepth"] = "treeMaxDepth",
-			["commands.tree.limit"] = "treeLimit",
-			["commands.tree.props"] = "propertyNames",
-			["commands.find.limit"] = "findLimit",
-			["commands.wait.intervalMs"] = "waitIntervalMs",
-			["commands.wait.matchCount"] = "waitMatchCount",
-			["commands.stream.intervalMs"] = "streamIntervalMs",
-			["commands.stream.props"] = "propertyNames",
-			["commands.stream.imageFormat"] = "screenshotFormat",
-			["commands.screenshot.imageFormat"] = "screenshotFormat",
-			["commands.key.delayMs"] = "keyDelayMs",
-			["commands.key.foreground"] = "ensureForeground",
+			["timeoutMs"] = "common.timeoutMs",
+			["outputFormat"] = "common.format",
+			["hideEmpty"] = "common.hideEmpty",
+			["useShortIds"] = "common.useShortIds",
+			["afterSnapshot"] = "common.after",
+			["treeShape"] = "commands.tree.shape",
+			["treeMaxDepth"] = "commands.tree.maxDepth",
+			["treeLimit"] = "commands.tree.limit",
+			["propertyNames"] = "commands.tree.props",
+			["findLimit"] = "commands.find.limit",
+			["waitIntervalMs"] = "commands.wait.intervalMs",
+			["waitMatchCount"] = "commands.wait.matchCount",
+			["streamDurationMs"] = "commands.stream.durationMs",
+			["streamIntervalMs"] = "commands.stream.intervalMs",
+			["screenshotFormat"] = "commands.screenshot.imageFormat",
+			["keyDelayMs"] = "commands.key.delayMs",
+			["ensureForeground"] = "commands.key.foreground",
 		};
+
+	private static readonly JsonSerializerOptions JsonOptions = new()
+	{
+		DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+		WriteIndented = true,
+	};
 
 	public CliDefaultsStore(string? configPath = null)
 	{
@@ -72,105 +56,162 @@ public sealed class CliDefaultsStore
 
 	public CliDefaults Load()
 	{
-		var defaults = new CliDefaults();
 		if (!File.Exists(ConfigPath))
-			return defaults;
+			return new CliDefaults();
 
-		var root = ReadConfigObject();
-		foreach (var (key, definition) in Definitions)
+		try
 		{
-			if (!root.TryGetPropertyValue(key, out var node) || node is null)
-				continue;
-
-			definition.Apply(defaults, node, key);
+			var document = ReadDocument();
+			var defaults = document.Deserialize<CliDefaults>(JsonOptions)
+				?? throw new CliException(CliErrorCodes.InvalidConfig, "CLI defaults config must be a JSON object.");
+			ApplyLegacyFlatValues(defaults, document);
+			Validate(defaults);
+			return defaults;
 		}
-
-		Validate(defaults);
-		return defaults;
+		catch (CliException)
+		{
+			throw;
+		}
+		catch (Exception ex) when (ex is IOException or JsonException or NotSupportedException)
+		{
+			throw new CliException(CliErrorCodes.InvalidConfig, $"CLI defaults config is invalid: {ex.Message}");
+		}
 	}
 
-	public object Get(string? key)
+	public object? Get(string? key)
 	{
-		var defaults = Load();
+		var document = CreateCurrentDocument();
 		if (string.IsNullOrWhiteSpace(key))
-			return ToDictionary(defaults);
+			return document;
 
-		var definition = GetDefinition(key);
-		return definition.Get(defaults) ?? new object();
+		var info = ResolvePath(NormalizeKey(key));
+		return GetValue(document, info.Parts)?.DeepClone();
 	}
 
 	public void Set(string key, string value)
 	{
-		key = NormalizeKey(key);
-		var definition = GetDefinition(key);
-		var root = ReadConfigObjectOrEmpty();
-		if (string.Equals(value, "null", StringComparison.OrdinalIgnoreCase))
-		{
-			root.Remove(key);
-			Save(root);
-			return;
-		}
+		Set(key, value, json: false);
+	}
 
-		root[key] = definition.Parse(value, key);
-		Save(root);
-		Load();
+	public void Set(string key, string value, bool json)
+	{
+		var info = ResolvePath(NormalizeKey(key));
+		RequireEditableLeaf(info);
+		var parsed = ParseValue(info, value, json);
+		var document = CreateCurrentDocument();
+		SetValue(document, info.Parts, parsed?.DeepClone());
+		ValidateDocument(document);
+		Save(document);
 	}
 
 	public void Clear(string key)
 	{
-		key = NormalizeKey(key);
-		_ = GetDefinition(key);
-		var root = ReadConfigObjectOrEmpty();
-		root.Remove(key);
-		Save(root);
+		var info = ResolvePath(NormalizeKey(key));
+		RequireEditableLeaf(info);
+		var document = CreateCurrentDocument();
+		SetValue(document, info.Parts, info.BuiltInValue?.DeepClone());
+		ValidateDocument(document);
+		Save(document);
 	}
 
 	public void Reset()
 	{
-		if (File.Exists(ConfigPath))
-			File.Delete(ConfigPath);
+		Save(CreateBuiltInDocument());
 	}
+
+	public JsonObject ToDocument(CliDefaults defaults) =>
+		JsonSerializer.SerializeToNode(defaults, JsonOptions) as JsonObject
+			?? throw new CliException(CliErrorCodes.InvalidConfig, "Could not serialize CLI defaults.");
 
 	public IReadOnlyDictionary<string, object?> ToDictionary(CliDefaults defaults)
 	{
-		return Definitions.ToDictionary(
-			static pair => pair.Key,
-			pair => pair.Value.Get(defaults),
-			StringComparer.Ordinal);
+		var document = ToDocument(defaults);
+		return document.ToDictionary(static pair => pair.Key, static pair => (object?)pair.Value, StringComparer.Ordinal);
 	}
 
 	private static void Validate(CliDefaults defaults)
 	{
-		foreach (var (key, definition) in Definitions)
-			definition.Validate(definition.Get(defaults), key);
+		if (defaults.SchemaVersion != 1)
+			throw new CliException(CliErrorCodes.InvalidConfig, "schemaVersion must be 1.");
+		if (defaults.Common is null)
+			throw new CliException(CliErrorCodes.InvalidConfig, "common must be a JSON object.");
+		if (defaults.Commands is null)
+			throw new CliException(CliErrorCodes.InvalidConfig, "commands must be a JSON object.");
+
+		RequireOneOf(defaults.Common.Format, "common.format", "json", "text");
+		RequireOneOf(defaults.Common.After, "common.after", "none", "target", "tree");
+		RequireOneOf(defaults.Commands.Tree.Shape, "commands.tree.shape", "flat", "nested");
+		RequireStringList(defaults.Commands.Tree.Props, "commands.tree.props");
+		RequireNullableStringList(defaults.Commands.Tree.TypeNames, "commands.tree.typeNames");
+		RequireStringList(defaults.Commands.Find.Include, "commands.find.include");
+		RequireStringList(defaults.Commands.Props.Props, "commands.props.props");
+		RequireImageFormat(defaults.Commands.Screenshot.ImageFormat, "commands.screenshot.imageFormat");
+		RequireStringList(defaults.Commands.Stream.Props, "commands.stream.props");
+		RequireImageFormat(defaults.Commands.Stream.ImageFormat, "commands.stream.imageFormat");
+		RequireOneOf(defaults.Commands.Click.Button, "commands.click.button", "left", "right", "Left", "Right");
 	}
 
-	private DefaultValueDefinition GetDefinition(string key)
+	private static void ValidateDocument(JsonObject document)
 	{
-		key = NormalizeKey(key);
-		if (!Definitions.TryGetValue(key, out var definition))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Unknown config key '{key}'.");
+		CliDefaults defaults;
+		try
+		{
+			defaults = document.Deserialize<CliDefaults>(JsonOptions)
+				?? throw new CliException(CliErrorCodes.InvalidConfig, "CLI defaults config must be a JSON object.");
+		}
+		catch (JsonException ex)
+		{
+			throw new CliException(CliErrorCodes.InvalidConfig, $"CLI defaults config is invalid: {ex.Message}");
+		}
 
-		return definition;
+		Validate(defaults);
 	}
 
-	private static string NormalizeKey(string key) =>
-		PathAliases.TryGetValue(key, out var normalized) ? normalized : key;
-
-	private JsonObject ReadConfigObjectOrEmpty()
-	{
-		if (!File.Exists(ConfigPath))
-			return new JsonObject();
-
-		return ReadConfigObject();
-	}
-
-	private JsonObject ReadConfigObject()
+	private static void RequireImageFormat(string value, string path)
 	{
 		try
 		{
-			var text = File.ReadAllText(ConfigPath);
-			var node = JsonNode.Parse(text);
+			RequireOneOf(ScreenshotFileService.NormalizeFormat(value), path, "png", "jpeg", "bmp", "gif");
+		}
+		catch (CliException ex) when (ex.ErrorCode == CliErrorCodes.InvalidArguments)
+		{
+			throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{value}'.");
+		}
+	}
+
+	private static void RequireOneOf(string? value, string path, params string[] allowedValues)
+	{
+		if (value is null || !allowedValues.Contains(value, StringComparer.Ordinal))
+			throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{value}'.");
+	}
+
+	private static void RequireStringList(IReadOnlyList<string>? values, string path)
+	{
+		if (values is null)
+			throw new CliException(CliErrorCodes.InvalidConfig, $"{path} must be an array.");
+
+		for (var index = 0; index < values.Count; index++)
+			if (string.IsNullOrWhiteSpace(values[index]))
+				throw new CliException(CliErrorCodes.InvalidConfig, $"{path}[{index}] must be a non-empty string.");
+	}
+
+	private static void RequireNullableStringList(IReadOnlyList<string>? values, string path)
+	{
+		if (values is not null)
+			RequireStringList(values, path);
+	}
+
+	private JsonObject CreateCurrentDocument() => ToDocument(Load());
+
+	private static JsonObject CreateBuiltInDocument() =>
+		JsonSerializer.SerializeToNode(new CliDefaults(), JsonOptions) as JsonObject
+			?? throw new CliException(CliErrorCodes.InvalidConfig, "Could not create built-in CLI defaults.");
+
+	private JsonObject ReadDocument()
+	{
+		try
+		{
+			var node = JsonNode.Parse(File.ReadAllText(ConfigPath));
 			return node as JsonObject
 				?? throw new CliException(CliErrorCodes.InvalidConfig, "CLI defaults config must be a JSON object.");
 		}
@@ -190,166 +231,207 @@ public sealed class CliDefaultsStore
 		if (!string.IsNullOrEmpty(directory))
 			Directory.CreateDirectory(directory);
 
-		File.WriteAllText(ConfigPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+		File.WriteAllText(ConfigPath, root.ToJsonString(JsonOptions));
 	}
 
-	private sealed class DefaultValueDefinition
+	private static void ApplyLegacyFlatValues(CliDefaults defaults, JsonObject root)
 	{
-		private readonly Func<CliDefaults, object?> getter;
-		private readonly Action<CliDefaults, JsonNode, string> apply;
-		private readonly Func<string, string, JsonNode?> parse;
-		private readonly Action<object?, string> validate;
-
-		private DefaultValueDefinition(
-			Func<CliDefaults, object?> getter,
-			Action<CliDefaults, JsonNode, string> apply,
-			Func<string, string, JsonNode?> parse,
-			Action<object?, string> validate)
+		foreach (var (legacyKey, canonicalPath) in PathAliases)
 		{
-			this.getter = getter;
-			this.apply = apply;
-			this.parse = parse;
-			this.validate = validate;
-		}
+			if (!root.TryGetPropertyValue(legacyKey, out var value) || value is null)
+				continue;
 
-		public object? Get(CliDefaults defaults) => getter(defaults);
-
-		public void Apply(CliDefaults defaults, JsonNode node, string key) => apply(defaults, node, key);
-
-		public JsonNode? Parse(string value, string key) => parse(value, key);
-
-		public void Validate(object? value, string key) => validate(value, key);
-
-		public static DefaultValueDefinition Int(Func<CliDefaults, int> get, Action<CliDefaults, int> set) =>
-			new(
-				d => get(d),
-				(d, node, key) =>
-				{
-					try
-					{
-						set(d, node.GetValue<int>());
-					}
-					catch (InvalidOperationException ex)
-					{
-						throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' must be an integer: {ex.Message}");
-					}
-				},
-				(value, key) =>
-				{
-					if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-						throw new CliException(CliErrorCodes.InvalidArguments, $"Config key '{key}' must be an integer.");
-
-					return JsonValue.Create(parsed);
-				},
-				(_, _) => { });
-
-		public static DefaultValueDefinition Bool(Func<CliDefaults, bool> get, Action<CliDefaults, bool> set) =>
-			new(
-				d => get(d),
-				(d, node, key) =>
-				{
-					try
-					{
-						set(d, node.GetValue<bool>());
-					}
-					catch (InvalidOperationException ex)
-					{
-						throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' must be a boolean: {ex.Message}");
-					}
-				},
-				(value, key) =>
-				{
-					if (!bool.TryParse(value, out var parsed))
-						throw new CliException(CliErrorCodes.InvalidArguments, $"Config key '{key}' must be a boolean.");
-
-					return JsonValue.Create(parsed);
-				},
-				(_, _) => { });
-
-		public static DefaultValueDefinition String(
-			Func<CliDefaults, string> get,
-			Action<CliDefaults, string> set,
-			IReadOnlyCollection<string>? allowedValues = null) =>
-			new(
-				d => get(d),
-				(d, node, key) =>
-				{
-					try
-					{
-						var value = node.GetValue<string>();
-						ValidateAllowed(value, key, allowedValues);
-						set(d, value);
-					}
-					catch (InvalidOperationException ex)
-					{
-						throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' must be a string: {ex.Message}");
-					}
-				},
-				(value, key) =>
-				{
-					ValidateAllowed(value, key, allowedValues);
-					return JsonValue.Create(value);
-				},
-				(value, key) => ValidateAllowed((string?)value ?? string.Empty, key, allowedValues));
-
-		public static DefaultValueDefinition StringList(Func<CliDefaults, List<string>> get, Action<CliDefaults, List<string>> set) =>
-			new(
-				d => get(d),
-				(d, node, key) =>
-				{
-					if (node is not JsonArray array)
-						throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' must be a string array.");
-
-					var values = new List<string>();
-					try
-					{
-						foreach (var item in array)
-							values.Add(item?.GetValue<string>() ?? throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' must contain only strings."));
-					}
-					catch (InvalidOperationException ex)
-					{
-						throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' must contain only strings: {ex.Message}");
-					}
-					set(d, values);
-				},
-				(value, _) =>
-				{
-					var array = new JsonArray();
-					try
-					{
-						if (value.TrimStart().StartsWith("[", StringComparison.Ordinal))
-						{
-							var parsed = JsonNode.Parse(value) as JsonArray
-								?? throw new CliException(CliErrorCodes.InvalidArguments, "String-list config values must be JSON arrays or comma-separated strings.");
-							foreach (var item in parsed)
-								array.Add(item?.GetValue<string>() ?? throw new CliException(CliErrorCodes.InvalidArguments, "String-list config values must contain only strings."));
-						}
-						else
-						{
-							foreach (var item in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-								array.Add(item);
-						}
-					}
-					catch (CliException)
-					{
-						throw;
-					}
-					catch (Exception ex) when (ex is JsonException or InvalidOperationException)
-					{
-						throw new CliException(CliErrorCodes.InvalidArguments, $"String-list config value is invalid: {ex.Message}");
-					}
-
-					return array;
-				},
-				(_, _) => { });
-
-		private static void ValidateAllowed(string value, string key, IReadOnlyCollection<string>? allowedValues)
-		{
-			if (allowedValues is null)
-				return;
-
-			if (!allowedValues.Contains(value, StringComparer.Ordinal))
-				throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{key}' has invalid value '{value}'.");
+			var info = ResolvePath(canonicalPath);
+			ApplyValue(defaults, info.Parts, value);
 		}
 	}
+
+	private static void ApplyValue(CliDefaults defaults, IReadOnlyList<string> parts, JsonNode value)
+	{
+		var document = JsonSerializer.SerializeToNode(defaults, JsonOptions) as JsonObject
+			?? throw new CliException(CliErrorCodes.InvalidConfig, "Could not serialize CLI defaults.");
+		SetValue(document, parts, value.DeepClone());
+		var updated = document.Deserialize<CliDefaults>(JsonOptions)
+			?? throw new CliException(CliErrorCodes.InvalidConfig, "Could not deserialize CLI defaults.");
+		defaults.SchemaVersion = updated.SchemaVersion;
+		defaults.Common = updated.Common;
+		defaults.Commands = updated.Commands;
+	}
+
+	private static CliDefaultsPathInfo ResolvePath(string path)
+	{
+		if (string.IsNullOrWhiteSpace(path) || path.Contains('[', StringComparison.Ordinal) || path.Contains(']', StringComparison.Ordinal))
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Config path '{path}' is not valid.");
+
+		var parts = path.Split('.', StringSplitOptions.RemoveEmptyEntries);
+		if (parts.Length == 0 || string.Join(".", parts) != path)
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Config path '{path}' is not valid.");
+
+		var currentType = typeof(CliDefaults);
+		PropertyInfo? property = null;
+		foreach (var part in parts)
+		{
+			property = currentType.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+				.FirstOrDefault(candidate => string.Equals(JsonOptions.PropertyNamingPolicy!.ConvertName(candidate.Name), part, StringComparison.Ordinal));
+			if (property is null || property.GetCustomAttribute<JsonIgnoreAttribute>() is not null)
+				throw new CliException(CliErrorCodes.InvalidArguments, $"Unknown config key '{path}'.");
+
+			currentType = property.PropertyType;
+		}
+
+		var builtInValue = GetValue(CreateBuiltInDocument(), parts)?.DeepClone();
+		return new CliDefaultsPathInfo(path, parts, currentType, IsLeafType(currentType), string.Equals(path, "schemaVersion", StringComparison.Ordinal), IsJsonNull(builtInValue), builtInValue);
+	}
+
+	private static bool IsLeafType(Type type)
+	{
+		type = Nullable.GetUnderlyingType(type) ?? type;
+		return type == typeof(string) || type == typeof(bool) || type == typeof(int) || type == typeof(List<string>);
+	}
+
+	private static void RequireEditableLeaf(CliDefaultsPathInfo info)
+	{
+		if (info.IsReadOnly)
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Config path '{info.Path}' is read-only.");
+		if (!info.IsLeaf)
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Config path '{info.Path}' is an object. Set or clear a leaf value instead.");
+	}
+
+	private static JsonNode? ParseValue(CliDefaultsPathInfo path, string rawValue, bool json)
+	{
+		JsonNode? value;
+		if (json)
+		{
+			try
+			{
+				value = JsonNode.Parse(rawValue);
+			}
+			catch (JsonException ex)
+			{
+				throw new CliException(CliErrorCodes.InvalidArguments, $"Value is not valid JSON: {ex.Message}");
+			}
+		}
+		else
+		{
+			value = ParseText(path, rawValue);
+		}
+
+		ValidateValueType(path, value);
+		if (string.Equals(path.Path, "commands.screenshot.imageFormat", StringComparison.Ordinal)
+			|| string.Equals(path.Path, "commands.stream.imageFormat", StringComparison.Ordinal)
+			|| string.Equals(path.Path, "screenshotFormat", StringComparison.Ordinal))
+		{
+			value = JsonValue.Create(ScreenshotFileService.NormalizeFormat(value!.GetValue<string>()));
+		}
+
+		return value;
+	}
+
+	private static JsonNode? ParseText(CliDefaultsPathInfo path, string rawValue)
+	{
+		if (string.Equals(rawValue, "null", StringComparison.OrdinalIgnoreCase))
+			return null;
+
+		var type = Nullable.GetUnderlyingType(path.ValueType) ?? path.ValueType;
+		if (type == typeof(bool))
+		{
+			if (bool.TryParse(rawValue, out var value))
+				return JsonValue.Create(value);
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Config key '{path.Path}' must be a boolean.");
+		}
+
+		if (type == typeof(int))
+		{
+			if (int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+				return JsonValue.Create(value);
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Config key '{path.Path}' must be an integer.");
+		}
+
+		if (type == typeof(string))
+			return JsonValue.Create(rawValue);
+
+		if (type == typeof(List<string>))
+		{
+			var array = new JsonArray();
+			foreach (var item in rawValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+				array.Add(item);
+			return array;
+		}
+
+		throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported config value type '{path.ValueType.Name}'.");
+	}
+
+	private static void ValidateValueType(CliDefaultsPathInfo path, JsonNode? value)
+	{
+		if (IsJsonNull(value))
+		{
+			if (path.BuiltInDefaultIsNull)
+				return;
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Null is not allowed for config key '{path.Path}'.");
+		}
+
+		var type = Nullable.GetUnderlyingType(path.ValueType) ?? path.ValueType;
+		if (type == typeof(bool) && value is JsonValue boolValue && boolValue.TryGetValue<bool>(out _))
+			return;
+		if (type == typeof(int) && value is JsonValue intValue && intValue.TryGetValue<int>(out _))
+			return;
+		if (type == typeof(string) && value is JsonValue stringValue && stringValue.TryGetValue<string>(out _))
+			return;
+		if (type == typeof(List<string>) && value is JsonArray array)
+		{
+			for (var index = 0; index < array.Count; index++)
+			{
+				if (array[index] is not JsonValue item || !item.TryGetValue<string>(out var text) || string.IsNullOrWhiteSpace(text))
+					throw new CliException(CliErrorCodes.InvalidArguments, $"Config key '{path.Path}' list item {index} must be a non-empty string.");
+			}
+
+			return;
+		}
+
+		throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid value for config key '{path.Path}'.");
+	}
+
+	private static JsonNode? GetValue(JsonObject document, IReadOnlyList<string> parts)
+	{
+		JsonNode? node = document;
+		foreach (var part in parts)
+		{
+			if (node is not JsonObject obj || !obj.TryGetPropertyValue(part, out node))
+				return null;
+		}
+
+		return node;
+	}
+
+	private static void SetValue(JsonObject document, IReadOnlyList<string> parts, JsonNode? value)
+	{
+		var current = document;
+		foreach (var part in parts.Take(parts.Count - 1))
+		{
+			if (current[part] is not JsonObject child)
+			{
+				child = new JsonObject();
+				current[part] = child;
+			}
+
+			current = child;
+		}
+
+		current[parts[^1]] = value;
+	}
+
+	private static bool IsJsonNull(JsonNode? node) =>
+		node is null || node.GetValueKind() == JsonValueKind.Null;
+
+	private static string NormalizeKey(string key) =>
+		PathAliases.TryGetValue(key, out var normalized) ? normalized : key;
+
+	private sealed record CliDefaultsPathInfo(
+		string Path,
+		IReadOnlyList<string> Parts,
+		Type ValueType,
+		bool IsLeaf,
+		bool IsReadOnly,
+		bool BuiltInDefaultIsNull,
+		JsonNode? BuiltInValue);
 }

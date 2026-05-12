@@ -7,6 +7,8 @@ public enum TargetObjectKind
 	WpfVisual,
 	WpfLogicalObject,
 	WpfAutomationPeer,
+	WebBrowser,
+	SystemResource,
 	Resource,
 	Image,
 	WinFormsControl,

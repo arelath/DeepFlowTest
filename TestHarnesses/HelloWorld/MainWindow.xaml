@@ -2,37 +2,318 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="DeepFlowTest HelloWorld"
-        Width="360"
-        Height="220"
+        Width="900"
+        Height="680"
         Name="HelloWorldWindow"
         AutomationProperties.AutomationId="HelloWorldWindow"
         AutomationProperties.Name="HelloWorld Window">
-  <Grid Margin="16">
+  <Grid>
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <TextBlock Text="HelloWorld Harness" />
+    <ScrollViewer Grid.Row="1"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+      <Grid x:Name="RootGrid"
+            Margin="16">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-    <TextBox x:Name="InputTextBox"
-             Grid.Row="1"
-             Margin="0,12,0,0"
-             Text="Ready"
-             AutomationProperties.AutomationId="HelloWorldInput"
-             AutomationProperties.Name="HelloWorld Input" />
+        <GroupBox Header="Events"
+                  Grid.ColumnSpan="2"
+                  Margin="0,0,0,12">
+          <StackPanel Orientation="Horizontal"
+                      Margin="8">
+            <TextBox x:Name="EventDisplay"
+                     Width="320"
+                     Height="30"
+                     Text="Event Displayer"
+                     AutomationProperties.AutomationId="HelloWorldInput"
+                     AutomationProperties.Name="EventDisplay" />
+            <TextBlock x:Name="DelayedReadyText"
+                       Margin="16,6,0,0"
+                       Text="Delayed ready"
+                       Visibility="Collapsed"
+                       AutomationProperties.AutomationId="DelayedReadyText"
+                       AutomationProperties.Name="DelayedReadyText" />
+          </StackPanel>
+        </GroupBox>
 
-    <Button x:Name="ActionButton"
-            Grid.Row="2"
-            Width="120"
-            Height="32"
-            Margin="0,12,0,0"
-            HorizontalAlignment="Left"
-            VerticalAlignment="Top"
-            Content="Press Me"
-            Click="ActionButton_Click"
-            AutomationProperties.AutomationId="HelloWorldButton"
-            AutomationProperties.Name="HelloWorld Button" />
+        <GroupBox Header="Buttons"
+                  Grid.Row="1"
+                  Margin="0,0,12,12"
+                  AutomationProperties.AutomationId="ButtonControls"
+                  AutomationProperties.Name="Button Controls">
+          <WrapPanel Margin="8"
+                     ItemWidth="180"
+                     ItemHeight="40">
+            <Button x:Name="HelloWorldButton"
+                    Width="140"
+                    Height="32"
+                    Content="Click here"
+                    Click="HelloWorldButton_Click"
+                    MouseDoubleClick="HelloWorldButton_DoubleClick"
+                    MouseRightButtonDown="HelloWorldButton_RightClick"
+                    ToolTipOpening="HelloWorldButton_ToolTipOpening"
+                    AutomationProperties.AutomationId="HelloWorldButton"
+                    AutomationProperties.Name="HelloWorldButton">
+              <Button.ToolTip>
+                <ToolTip>
+                  Click Tooltip
+                </ToolTip>
+              </Button.ToolTip>
+              <Button.ContextMenu>
+                <ContextMenu x:Name="PrimaryButtonContextMenu"
+                             AutomationProperties.AutomationId="PrimaryButtonContextMenu"
+                             AutomationProperties.Name="Primary Button Context Menu">
+                  <MenuItem x:Name="FileContextMenuItem"
+                            Header="File"
+                            Click="HelloWorldContextMenuFile_Click"
+                            AutomationProperties.AutomationId="FileContextMenuItem"
+                            AutomationProperties.Name="FileContextMenuItem" />
+                  <MenuItem Header="Save" />
+                  <MenuItem Header="SaveAs" />
+                  <MenuItem Header="Recent Files">
+                    <MenuItem Header="ReadMe.txt" />
+                    <MenuItem Header="Schedule.xls" />
+                  </MenuItem>
+                </ContextMenu>
+              </Button.ContextMenu>
+            </Button>
+
+            <Button x:Name="OpenMessageBoxButton"
+                    Width="150"
+                    Height="32"
+                    Content="Open a message box"
+                    Click="OpenMessageBox_Click"
+                    AutomationProperties.AutomationId="OpenMessageBoxButton"
+                    AutomationProperties.Name="OpenMessageBoxButton" />
+            <Button x:Name="OpenFileDialogButton"
+                    Width="150"
+                    Height="32"
+                    Content="Open file dialog"
+                    Click="OpenFileDialog_Click"
+                    AutomationProperties.AutomationId="OpenFileDialogButton"
+                    AutomationProperties.Name="OpenFileDialogButton" />
+            <Button x:Name="OpenNewWindowButton"
+                    Width="150"
+                    Height="32"
+                    Content="Open other window"
+                    Click="OpenOtherWindow_Click"
+                    AutomationProperties.AutomationId="OpenNewWindowButton"
+                    AutomationProperties.Name="OpenNewWindowButton" />
+            <Button x:Name="DelayedRevealButton"
+                    Width="150"
+                    Height="32"
+                    Content="Reveal after delay"
+                    Click="DelayedReveal_Click"
+                    AutomationProperties.AutomationId="DelayedRevealButton"
+                    AutomationProperties.Name="DelayedRevealButton" />
+            <Button x:Name="DisabledWaitButton"
+                    Width="150"
+                    Height="32"
+                    Content="Disabled Wait Target"
+                    IsEnabled="False"
+                    AutomationProperties.AutomationId="DisabledWaitButton"
+                    AutomationProperties.Name="DisabledWaitButton" />
+            <Button x:Name="ThrowExceptionButton"
+                    Width="150"
+                    Height="32"
+                    Content="Throw Exception"
+                    Click="ThrowException_Click"
+                    AutomationProperties.AutomationId="ThrowExceptionButton"
+                    AutomationProperties.Name="ThrowExceptionButton" />
+          </WrapPanel>
+        </GroupBox>
+
+        <GroupBox Header="Input"
+                  Grid.Row="1"
+                  Grid.Column="1"
+                  Margin="0,0,0,12"
+                  AutomationProperties.AutomationId="InputControls"
+                  AutomationProperties.Name="Input Controls">
+          <StackPanel Margin="8">
+            <CheckBox x:Name="MainCheckbox"
+                      x:Uid="MainCheckbox"
+                      Height="28"
+                      IsChecked="True"
+                      Checked="MainCheckbox_Checked"
+                      Unchecked="MainCheckbox_Unchecked"
+                      AutomationProperties.AutomationId="MainCheckbox"
+                      AutomationProperties.Name="MainCheckbox">
+              Cool Checkbox
+            </CheckBox>
+            <TextBox x:Name="TextBox1"
+                     Height="30"
+                     Width="260"
+                     Margin="0,10,0,0"
+                     HorizontalAlignment="Left"
+                     Text="Hello! I am a TextBox."
+                     TextChanged="TextBox1_TextChanged"
+                     GotKeyboardFocus="TextBox1_GotKeyboardFocus"
+                     TouchDown="TextBox1_TouchDown"
+                     SelectionChanged="TextBox1_SelectionChanged"
+                     AutomationProperties.AutomationId="TextBox1"
+                     AutomationProperties.Name="TextBox1" />
+          </StackPanel>
+        </GroupBox>
+
+        <GroupBox Header="Popup"
+                  Grid.Row="2"
+                  Margin="0,0,12,12"
+                  AutomationProperties.AutomationId="PopupControls"
+                  AutomationProperties.Name="Popup Controls">
+          <StackPanel Margin="8">
+            <ToggleButton x:Name="TogglePopupButton"
+                          Width="220"
+                          Height="42"
+                          HorizontalAlignment="Left"
+                          AutomationProperties.AutomationId="TogglePopupButton"
+                          AutomationProperties.Name="TogglePopupButton">
+              <TextBlock VerticalAlignment="Center"
+                         HorizontalAlignment="Center">
+                <Run Text="Is button toggled? " />
+                <Run Text="{Binding IsChecked, ElementName=TogglePopupButton}" />
+              </TextBlock>
+            </ToggleButton>
+            <Popup x:Name="myPopup"
+                   PlacementTarget="{Binding ElementName=TogglePopupButton}"
+                   Placement="Bottom"
+                   IsOpen="{Binding IsChecked, ElementName=TogglePopupButton}"
+                   AutomationProperties.AutomationId="myPopup"
+                   AutomationProperties.Name="myPopup">
+              <Border BorderThickness="1"
+                      BorderBrush="DarkGray">
+                <TextBlock x:Name="myPopupText"
+                           Background="LightBlue"
+                           Foreground="Blue"
+                           Padding="30"
+                           Text="Popup Text"
+                           AutomationProperties.AutomationId="myPopupText"
+                           AutomationProperties.Name="myPopupText" />
+              </Border>
+            </Popup>
+          </StackPanel>
+        </GroupBox>
+
+        <GroupBox Header="Selection"
+                  Grid.Row="2"
+                  Grid.Column="1"
+                  Margin="0,0,0,12"
+                  AutomationProperties.AutomationId="SelectionControls"
+                  AutomationProperties.Name="Selection Controls">
+          <ListBox x:Name="SampleListBox"
+                   Height="110"
+                   Margin="8"
+                   SelectionChanged="ListBox_SelectionChanged"
+                   SelectionMode="Single"
+                   AutomationProperties.AutomationId="SampleListBox"
+                   AutomationProperties.Name="SampleListBox">
+            <ListBoxItem x:Name="ListBoxItem1"
+                         Content="ListBox Item #1"
+                         AutomationProperties.AutomationId="ListBoxItem1"
+                         AutomationProperties.Name="ListBoxItem1" />
+            <ListBoxItem x:Name="ListBoxItem2"
+                         Content="ListBox Item #2"
+                         AutomationProperties.AutomationId="ListBoxItem2"
+                         AutomationProperties.Name="ListBoxItem2" />
+            <ListBoxItem x:Name="ListBoxItem3"
+                         Content="ListBox Item #3"
+                         AutomationProperties.AutomationId="ListBoxItem3"
+                         AutomationProperties.Name="ListBoxItem3" />
+          </ListBox>
+        </GroupBox>
+
+        <GroupBox Header="Expander"
+                  Grid.Row="3"
+                  Grid.ColumnSpan="2"
+                  Margin="0,0,0,12"
+                  AutomationProperties.AutomationId="ExpanderControls"
+                  AutomationProperties.Name="Expander Controls">
+          <Expander x:Name="ExpanderControl"
+                    Margin="8"
+                    Header="ExpanderControl"
+                    Background="LavenderBlush"
+                    ExpandDirection="Down"
+                    IsExpanded="False"
+                    Width="500"
+                    HorizontalAlignment="Left"
+                    FontSize="18"
+                    FontWeight="Bold"
+                    Foreground="Green"
+                    Expanded="ExpanderControl_Expanded"
+                    Collapsed="ExpanderControl_Collapsed"
+                    AutomationProperties.AutomationId="ExpanderControl"
+                    AutomationProperties.Name="ExpanderControl">
+            <ScrollViewer x:Name="ScrollViewer"
+                          Height="110"
+                          VerticalAlignment="Top"
+                          AutomationProperties.AutomationId="ScrollViewer"
+                          AutomationProperties.Name="ScrollViewer">
+              <StackPanel Orientation="Vertical">
+                <TextBlock TextWrapping="Wrap"
+                           FontSize="14"
+                           FontWeight="Light"
+                           Foreground="Black"
+                           Text="This is an Expander control. Within this control, all contents will be wrapped. At run-time, you may expand or collapse this control. Type more text here to be typed. Jump around and hype." />
+                <TextBlock x:Name="SecondTextBlock"
+                           TextWrapping="Wrap"
+                           FontSize="14"
+                           FontWeight="Light"
+                           Foreground="Black"
+                           Text="This is an Expander control. Within this control, all contents will be wrapped. At run-time, you may expand or collapse this control. Type more text here to be typed. Jump around and hype."
+                           AutomationProperties.AutomationId="SecondTextBlock"
+                           AutomationProperties.Name="SecondTextBlock" />
+              </StackPanel>
+            </ScrollViewer>
+          </Expander>
+        </GroupBox>
+
+        <GroupBox Header="Hosted WinForms"
+                  Grid.Row="4"
+                  Grid.ColumnSpan="2"
+                  AutomationProperties.AutomationId="HostedWinFormsControls"
+                  AutomationProperties.Name="Hosted WinForms Controls">
+          <Grid x:Name="HostedWinFormsContainer"
+                Margin="8"
+                Height="150"
+                Visibility="Collapsed"
+                AutomationProperties.AutomationId="HostedWinFormsContainer"
+                AutomationProperties.Name="HostedWinFormsContainer" />
+        </GroupBox>
+      </Grid>
+    </ScrollViewer>
+
+    <Menu x:Name="MainMenu"
+          Grid.Row="0"
+          AutomationProperties.AutomationId="MainMenu"
+          AutomationProperties.Name="Main Menu">
+      <MenuItem Header="Menu Header"
+                AutomationProperties.AutomationId="MenuHeader"
+                AutomationProperties.Name="Menu Header">
+        <MenuItem x:Name="MenuItemOne"
+                  Header="MenuItemOne"
+                  IsCheckable="True"
+                  AutomationProperties.AutomationId="MenuItemOne"
+                  AutomationProperties.Name="MenuItemOne" />
+        <Separator />
+        <MenuItem x:Name="MenuItemTwo"
+                  Header="MenuItemTwo"
+                  AutomationProperties.AutomationId="MenuItemTwo"
+                  AutomationProperties.Name="MenuItemTwo" />
+      </MenuItem>
+    </Menu>
   </Grid>
 </Window>

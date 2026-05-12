@@ -2,6 +2,8 @@ namespace DeepFlowTest.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
@@ -21,6 +23,15 @@ public sealed class LibraryApiTests
 			StandardIpcResponse.Ok(),
 			FindMatch("input", "nameBox", "TextBox"),
 			StandardIpcResponse.Ok(),
+			new ScreenshotCommandResponse
+			{
+				TargetId = "input",
+				Format = "png",
+				Width = 12,
+				Height = 8,
+				ByteCount = 3,
+				BytesBase64 = Convert.ToBase64String(new byte[] { 1, 2, 3 }),
+			},
 			new ScreenshotCommandResponse
 			{
 				TargetId = "input",
@@ -57,6 +68,14 @@ public sealed class LibraryApiTests
 			Height = 1,
 			ByteCount = 2,
 			BytesBase64 = Convert.ToBase64String(new byte[] { 5, 6 }),
+		},
+		new ScreenshotCommandResponse
+		{
+			Format = "jpeg",
+			Width = 1,
+			Height = 1,
+			ByteCount = 2,
+			BytesBase64 = Convert.ToBase64String(new byte[] { 5, 6 }),
 		});
 		var backend = new FakeBackend(session);
 		var factory = new AppDriverFactory(backend, (_, _) => session);
@@ -66,41 +85,90 @@ public sealed class LibraryApiTests
 
 		Assert.That(backend.LastLaunchOptions!.Arguments, Is.EqualTo("--demo"));
 		Assert.That(bytes, Is.EqualTo(new byte[] { 5, 6 }));
-		Assert.That(session.SentCommands.OfType<ScreenshotCommandRequest>().Single().Format, Is.EqualTo("jpeg"));
+		Assert.That(session.SentCommands.OfType<ScreenshotCommandRequest>().Select(static command => command.Format), Is.EqualTo(new[] { "jpeg", "jpeg" }));
 	}
 
 	[Test]
-	public void RecordApiReportsDocumentedScreenshotStreamingReplacement()
+	public void RecordApiStartsFfmpegRecordingUntilDisposed()
 	{
-		using var driver = AppDriver.CreateForTests(
-			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
-			new FakeSession());
+		var fake = new FakeRecordingProcess();
+		var starts = new List<ProcessStartInfo>();
+		var previousFactory = AppDriver.RecordingProcessFactory;
+		var previousFfmpegPath = AppDriver.RecordingFfmpegPathOverride;
+		AppDriver.RecordingFfmpegPathOverride = Path.Combine(Path.GetTempPath(), "fake-ffmpeg.exe");
+		AppDriver.RecordingProcessFactory = startInfo =>
+		{
+			starts.Add(startInfo);
+			return fake;
+		};
 
-		var exception = Assert.Throws<NotSupportedException>(() => driver.Record("capture.mp4"));
+		try
+		{
+			using (AppDriver.Record(Path.Combine(Path.GetTempPath(), "deepflow-recording.mp4"), "Main Window"))
+			{
+				Assert.That(starts.Single().FileName, Is.EqualTo(AppDriver.RecordingFfmpegPathOverride));
+				Assert.That(starts.Single().Arguments, Does.Contain("title=\"Main Window\""));
+			}
 
-		Assert.That(exception!.Message, Does.Contain("FFmpeg"));
-		Assert.That(exception.Message, Does.Contain("screenshot streaming"));
+			Assert.That(fake.Waited, Is.True);
+			Assert.That(fake.Input, Does.Contain("q"));
+		}
+		finally
+		{
+			AppDriver.RecordingProcessFactory = previousFactory;
+			AppDriver.RecordingFfmpegPathOverride = previousFfmpegPath;
+		}
 	}
 
 	[Test]
 	public void CompatibilitySystemDialogHelpersFindSetAndInvokeDialogOperations()
 	{
+		var snapshot = VisualTreeSnapshot.Create(1, new[]
+		{
+			new VisualTreeNodeDto
+			{
+				TargetId = "dialog",
+				TypeName = "Dialog",
+				IsRoot = true,
+				Properties = { ["Name"] = "Open" },
+			},
+		});
 		var session = new FakeSession(
-			FindMatch("dialog", "Open", "Dialog"),
+			snapshot,
 			StandardIpcResponse.Ok(),
 			StandardIpcResponse.Ok());
 		using var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
 			session);
 
-		var dialog = driver.HandleFileDialog(@"C:\temp\file.txt");
+		var returned = driver.HandleFileDialog(@"C:\temp\file.txt");
 
-		Assert.That(dialog.TargetId, Is.EqualTo("dialog"));
+		Assert.That(returned, Is.SameAs(driver));
 		var set = session.SentCommands.OfType<SetPropertyCommandRequest>().Single();
 		var operation = session.SentCommands.OfType<KnownOperationCommandRequest>().Single();
+		Assert.That(set.TargetId, Is.EqualTo("dialog"));
 		Assert.That(set.PropertyName, Is.EqualTo("FileName"));
 		Assert.That(set.PropertyValue, Is.EqualTo(@"C:\temp\file.txt"));
 		Assert.That(operation.Operation, Is.EqualTo("AcceptDialog"));
+	}
+
+	[Test]
+	public void AppScreenshotWaitsForAdjacentStableCapture()
+	{
+		var first = Convert.ToBase64String(new byte[] { 1 });
+		var stable = Convert.ToBase64String(new byte[] { 2 });
+		var session = new FakeSession(
+			new ScreenshotCommandResponse { Format = "png", ByteCount = 1, BytesBase64 = first },
+			new ScreenshotCommandResponse { Format = "png", ByteCount = 1, BytesBase64 = stable },
+			new ScreenshotCommandResponse { Format = "png", ByteCount = 1, BytesBase64 = stable });
+		using var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			session);
+
+		var bytes = driver.Screenshot(ImageFormat.Png);
+
+		Assert.That(bytes, Is.EqualTo(new byte[] { 2 }));
+		Assert.That(session.SentCommands.OfType<ScreenshotCommandRequest>().Count(), Is.EqualTo(3));
 	}
 
 	[Test]
@@ -213,6 +281,27 @@ public sealed class LibraryApiTests
 		public RunButton(Element source)
 			: base(source)
 		{
+		}
+	}
+
+	private sealed class FakeRecordingProcess : IRecordingProcess
+	{
+		private readonly StringWriter input = new();
+
+		public string Input => input.ToString();
+
+		public bool Waited { get; private set; }
+
+		public TextWriter StandardInput => input;
+
+		public void WaitForExit()
+		{
+			Waited = true;
+		}
+
+		public void Dispose()
+		{
+			input.Dispose();
 		}
 	}
 }

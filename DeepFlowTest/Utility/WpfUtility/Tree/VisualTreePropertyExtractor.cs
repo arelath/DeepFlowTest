@@ -123,6 +123,36 @@ public sealed class VisualTreePropertyExtractor
 				}
 
 				return false;
+			case "Source":
+				if (target is ResourceDictionary sourceDictionary)
+				{
+					value = sourceDictionary.Source?.ToString();
+					return true;
+				}
+
+				return false;
+			case "MergedDictionaryCount":
+				if (target is ResourceDictionary mergedDictionary)
+				{
+					value = mergedDictionary.MergedDictionaries.Count;
+					return true;
+				}
+
+				return false;
+			case "ResourceOrigin":
+				if (target is ResourceDictionary originDictionary)
+				{
+					value = originDictionary.Source is null ? "local" : "merged";
+					return true;
+				}
+
+				if (target is SystemResourceRoot)
+				{
+					value = "system";
+					return true;
+				}
+
+				return false;
 			case "ImageMetadata":
 				if (TryReadImageMetadata(target, out value))
 					return true;

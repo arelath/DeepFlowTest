@@ -22,6 +22,7 @@ public sealed class PackagingArtifactTests
 		AssertNonEmptyFile(Path.Combine(output, "DeepFlowTestResources", "x64", "DeepFlowTest.GenericInjector.x64.dll"));
 		AssertNonEmptyFile(Path.Combine(output, "DeepFlowTestResources", "x64", "DeepFlowTest.InjectorLauncher.x64.exe"));
 		AssertNonEmptyFile(Path.Combine(output, "DeepFlowTestResources", "x64", "DeepFlowTest.InjectorLauncher.x64.exe.config"));
+		AssertNonEmptyFile(Path.Combine(output, "contentFiles", "any", "any", "DeepFlowTestResources", "ffmpeg.exe"));
 	}
 
 	[Test]
@@ -39,6 +40,7 @@ public sealed class PackagingArtifactTests
 		AssertNonEmptyFile(Path.Combine(contentRoot, "DeepFlowTestResources", "x86", "DeepFlowTest.InjectorLauncher.x86.exe.config"));
 		AssertNonEmptyFile(Path.Combine(contentRoot, "DeepFlowTestResources", "x64", "DeepFlowTest.GenericInjector.x64.dll"));
 		AssertNonEmptyFile(Path.Combine(contentRoot, "DeepFlowTestResources", "x64", "DeepFlowTest.InjectorLauncher.x64.exe.config"));
+		AssertNonEmptyFile(Path.Combine(contentRoot, "DeepFlowTestResources", "ffmpeg.exe"));
 		Assert.That(Directory.GetFiles(contentRoot, "*.lib", SearchOption.AllDirectories), Is.Empty);
 		Assert.That(Directory.GetFiles(contentRoot, "*.exp", SearchOption.AllDirectories), Is.Empty);
 	}

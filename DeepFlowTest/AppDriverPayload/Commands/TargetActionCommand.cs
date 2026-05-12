@@ -386,6 +386,9 @@ internal static partial class TargetActionCommand
 
 			if (target is ButtonBase buttonBase && mouseButton == MouseButton.Left)
 				buttonBase.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, buttonBase));
+
+			if (target is MenuItem menuItem && mouseButton == MouseButton.Left)
+				menuItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, menuItem));
 		}
 
 		if (count > 1 && mouseButton == MouseButton.Left && target is Control control)
@@ -956,7 +959,7 @@ internal static partial class TargetActionCommand
 			payload = MessagePacker.ConvertTo<ExpressionMatcherPayload>(rawPayload);
 			return !string.IsNullOrWhiteSpace(payload.ExpressionJson);
 		}
-		catch (Exception ex) when (ex is InvalidCastException or ArgumentException or Newtonsoft.Json.JsonException)
+		catch (Exception ex) when (ex is InvalidCastException or ArgumentException or ProtocolException or Newtonsoft.Json.JsonException)
 		{
 			return false;
 		}

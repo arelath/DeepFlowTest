@@ -115,6 +115,7 @@ public sealed class TreeService
 			if (Application.Current is { } application && application.Dispatcher.CheckAccess())
 			{
 				AddRoot(application);
+				AddRoot(new SystemResourceRoot());
 				foreach (Window? window in application.Windows)
 					AddRoot(window);
 			}
@@ -247,10 +248,16 @@ public sealed class TreeService
 
 		if (target is ResourceDictionary resourceDictionary)
 		{
+			foreach (var mergedDictionary in resourceDictionary.MergedDictionaries)
+				yield return mergedDictionary;
+
 			foreach (var item in resourceDictionary)
 				if (item is DictionaryEntry entry && entry.Value is not null)
 					yield return entry.Value;
 		}
+
+		if (target is SystemResourceRoot systemResourceRoot)
+			yield return systemResourceRoot.Resources;
 
 		if (target is FrameworkElement { Resources.Count: > 0 } frameworkElementWithResources)
 			yield return frameworkElementWithResources.Resources;
@@ -277,7 +284,7 @@ public sealed class TreeService
 					yield return child;
 		}
 
-		if (metadata.Hwnd.HasValue)
+		if (metadata.Hwnd.HasValue && ShouldEnumerateNativeChildren(target))
 		{
 			var metadataHwnd = new IntPtr(metadata.Hwnd.Value);
 			foreach (var childHwnd in EnumerateNativeChildWindows(metadataHwnd))
@@ -382,8 +389,16 @@ public sealed class TreeService
 		};
 	}
 
+	private static bool ShouldEnumerateNativeChildren(object target) =>
+		target is Window
+		|| target is HwndHost
+		|| target is Forms.Control;
+
 	private static bool ShouldExclude(object target)
 	{
+		if (target is SystemResourceRoot)
+			return false;
+
 		var type = target.GetType();
 		var fullName = type.FullName ?? string.Empty;
 		return fullName.StartsWith("DeepFlowTest.AppDriverPayload.", StringComparison.Ordinal)

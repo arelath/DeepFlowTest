@@ -49,6 +49,7 @@ public static class ProtocolConstants
 		public const string NoMatch = "no-match";
 		public const string Started = "started";
 		public const string Stopped = "stopped";
+		public const string PendingResult = "PendingResult";
 		public const string UnserializableResult = "UnserializableResult";
 		public const string UnknownSubscription = "unknown-subscription";
 	}

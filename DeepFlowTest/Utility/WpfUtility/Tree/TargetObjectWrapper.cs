@@ -38,6 +38,7 @@ public abstract class TargetObjectWrapper : IDisposable
 
 		return target switch
 		{
+			SystemResourceRoot systemResourceRoot => new SystemResourceTargetObjectWrapper(systemResourceRoot),
 			FormsControl control => new WinFormsTargetObjectWrapper(control),
 			AutomationElement automationElement => new NativeAutomationElementTargetObjectWrapper(automationElement),
 			IntPtr hwnd => new NativeWindowTargetObjectWrapper(hwnd),
@@ -45,6 +46,7 @@ public abstract class TargetObjectWrapper : IDisposable
 			ResourceDictionary resourceDictionary => new ResourceTargetObjectWrapper(resourceDictionary),
 			ImageSource imageSource => new ImageTargetObjectWrapper(imageSource),
 			DrawingImage drawingImage => new ImageTargetObjectWrapper(drawingImage),
+			_ when IsKnownBrowserControl(target.GetType()) => new BrowserTargetObjectWrapper(target),
 			DependencyObject dependencyObject => new WpfTargetObjectWrapper(dependencyObject),
 			_ => new UnknownTargetObjectWrapper(target),
 		};
@@ -75,6 +77,14 @@ public abstract class TargetObjectWrapper : IDisposable
 			Hwnd = hwnd,
 			CanReceiveActions = canReceiveActions,
 		};
+	}
+
+	private static bool IsKnownBrowserControl(Type type)
+	{
+		var fullName = type.FullName ?? string.Empty;
+		return fullName == "System.Windows.Controls.WebBrowser"
+			|| fullName == "Microsoft.Web.WebView2.Wpf.WebView2"
+			|| fullName == "CefSharp.Wpf.ChromiumWebBrowser";
 	}
 
 	private sealed class WpfTargetObjectWrapper : TargetObjectWrapper
@@ -130,6 +140,22 @@ public abstract class TargetObjectWrapper : IDisposable
 	{
 		public ResourceTargetObjectWrapper(ResourceDictionary target)
 			: base(target, CreateMetadata(target, TargetObjectKind.Resource, "wpf", canReceiveActions: false))
+		{
+		}
+	}
+
+	private sealed class SystemResourceTargetObjectWrapper : TargetObjectWrapper
+	{
+		public SystemResourceTargetObjectWrapper(SystemResourceRoot target)
+			: base(target, CreateMetadata(target, TargetObjectKind.SystemResource, "wpf", canReceiveActions: false, displayTypeName: "SystemResources", targetObjectType: typeof(SystemResourceRoot).FullName))
+		{
+		}
+	}
+
+	private sealed class BrowserTargetObjectWrapper : TargetObjectWrapper
+	{
+		public BrowserTargetObjectWrapper(object target)
+			: base(target, CreateMetadata(target, TargetObjectKind.WebBrowser, "browser", canReceiveActions: target is UIElement))
 		{
 		}
 	}
