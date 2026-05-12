@@ -29,17 +29,36 @@ public static class ProtocolConstants
 
 	public static class Properties
 	{
+		public const string AsSnapshot = "AsSnapshot";
+		public const string Base64Screenshot = "Base64Screenshot";
+		public const string ClearFirst = "ClearFirst";
+		public const string Code = "Code";
+		public const string DelayMs = "DelayMs";
 		public const string Error = "Error";
 		public const string ErrorCode = "ErrorCode";
+		public const string EventName = "EventName";
 		public const string Format = "Format";
+		public const string Framework = "Framework";
+		public const string GetRoutedEventArgs = "GetRoutedEventArgs";
+		public const string IntervalMs = "IntervalMs";
 		public const string Kind = "Kind";
+		public const string Keys = "Keys";
+		public const string MatcherCode = "MatcherCode";
 		public const string MatcherHash = "MatcherHash";
+		public const string MaxMatches = "MaxMatches";
+		public const string MouseButton = "MouseButton";
+		public const string Operation = "Operation";
+		public const string PropNames = "PropNames";
+		public const string PropertyName = "PropertyName";
+		public const string PropertyValue = "PropertyValue";
 		public const string StreamKind = "StreamKind";
 		public const string SubscriptionId = "SubscriptionId";
 		public const string Status = "Status";
 		public const string Success = "Success";
 		public const string TargetId = "TargetId";
+		public const string Text = "Text";
 		public const string TimeoutMs = "TimeoutMs";
+		public const string Value = "Value";
 	}
 
 	public static class Statuses
@@ -48,6 +67,7 @@ public static class ProtocolConstants
 		public const string Error = "error";
 		public const string NoMatch = "no-match";
 		public const string Started = "started";
+		public const string StaleElement = "StaleElement";
 		public const string Stopped = "stopped";
 		public const string PendingResult = "PendingResult";
 		public const string UnserializableResult = "UnserializableResult";

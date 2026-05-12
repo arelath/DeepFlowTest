@@ -68,6 +68,31 @@ public sealed class FindElementCommandTests
 	}
 
 	[Test]
+	public void MaxMatchesZeroReturnsAllMatches()
+	{
+		var panel = new StackPanel();
+		panel.Children.Add(new Button { Name = "first", Content = "Duplicate" });
+		panel.Children.Add(new Button { Name = "second", Content = "Duplicate" });
+		var window = CreateWindow("Find all", panel);
+
+		try
+		{
+			window.Show();
+
+			var allMatches = Find(new ElementSelectorDto { TypeName = "Button" }, maxMatches: 0);
+
+			Assert.That(allMatches.Status, Is.EqualTo(ProtocolConstants.Statuses.Ok));
+			Assert.That(allMatches.MatchCount, Is.EqualTo(2));
+			Assert.That(allMatches.MaxMatches, Is.EqualTo(0));
+			Assert.That(allMatches.Matches.Select(match => match.Properties["Name"]), Is.EqualTo(new[] { "first", "second" }));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
 	public void ExpressionMatcherFindsOnTargetSide()
 	{
 		var window = CreateWindow("Expression", new Button { Name = "expressionButton", Content = "Expression" });

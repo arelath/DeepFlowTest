@@ -483,6 +483,7 @@ public static class Program
 		CliCommonOptions commonOptions,
 		IReadOnlyList<string> properties)
 	{
+		var include = GetFindIncludeSections(args, defaults);
 		return new FindSnapshotOptions
 		{
 			TypeName = CliArgumentReader.GetOption(args, "--type") ?? defaults.Commands.Find.Type,
@@ -497,13 +498,30 @@ public static class Program
 			Enabled = CliArgumentReader.HasOption(args, "--enabled") || defaults.Commands.Find.Enabled ? true : null,
 			CaseSensitive = CliArgumentReader.HasOption(args, "--case-sensitive") || defaults.Commands.Find.CaseSensitive,
 			Limit = CliArgumentReader.GetInt(args, "--limit", defaults.FindLimit),
-			IncludePath = CliArgumentReader.HasOption(args, "--include-path") || defaults.Commands.Find.Include.Contains("path", StringComparer.OrdinalIgnoreCase),
-			IncludeProperties = CliArgumentReader.HasOption(args, "--include-properties") || defaults.Commands.Find.Include.Contains("properties", StringComparer.OrdinalIgnoreCase),
-			IncludeChildren = CliArgumentReader.HasOption(args, "--include-children"),
-			IncludeAncestors = CliArgumentReader.HasOption(args, "--include-ancestors"),
+			IncludePath = CliArgumentReader.HasOption(args, "--include-path") || include.Contains("path"),
+			IncludeProperties = CliArgumentReader.HasOption(args, "--include-properties") || include.Contains("properties"),
+			IncludeChildren = CliArgumentReader.HasOption(args, "--include-children") || include.Contains("children"),
+			IncludeAncestors = CliArgumentReader.HasOption(args, "--include-ancestors") || include.Contains("ancestors"),
 			UseShortIds = commonOptions.UseShortIds,
 			Properties = properties,
 		};
+	}
+
+	private static HashSet<string> GetFindIncludeSections(string[] args, CliDefaults defaults)
+	{
+		var sections = new HashSet<string>(defaults.Commands.Find.Include, StringComparer.OrdinalIgnoreCase);
+		var include = CliArgumentReader.GetOption(args, "--include");
+		if (include is not null)
+		{
+			foreach (var section in CliArgumentReader.SplitCsv(include))
+			{
+				if (section is not ("path" or "properties" or "children" or "ancestors"))
+					throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported find include section '{section}'.");
+				sections.Add(section);
+			}
+		}
+
+		return sections;
 	}
 
 	private static KeyValuePair<string, string>? ParseDefaultKeyValue(string? value)
@@ -523,9 +541,9 @@ public static class Program
 		return new NodeSnapshotOptions
 		{
 			TargetId = GetTargetIdArgument(args),
-			IncludeAncestors = CliArgumentReader.HasOption(args, "--include-ancestors"),
-			IncludeChildren = CliArgumentReader.HasOption(args, "--include-children"),
-			IncludeSubtree = CliArgumentReader.HasOption(args, "--include-subtree"),
+			IncludeAncestors = CliArgumentReader.HasOption(args, "--include-ancestors", "--ancestors"),
+			IncludeChildren = CliArgumentReader.HasOption(args, "--include-children", "--children"),
+			IncludeSubtree = CliArgumentReader.HasOption(args, "--include-subtree", "--subtree"),
 			SubtreeDepth = CliArgumentReader.GetInt(args, "--subtree-depth", -1),
 			IncludePath = CliArgumentReader.HasOption(args, "--include-path"),
 			UseShortIds = commonOptions.UseShortIds,

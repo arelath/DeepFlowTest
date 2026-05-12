@@ -2,6 +2,7 @@ namespace DeepFlowTest.Utility;
 
 using System;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -40,6 +41,15 @@ public sealed class TargetIdService
 
 		if (!targetsById.TryGetValue(targetId, out var weakReference))
 		{
+			if (TryParseNativeWindowTargetId(targetId, out var parsedHwnd))
+			{
+				if (!IsWindow(parsedHwnd))
+					return TargetIdResolution.Stale(targetId);
+
+				valueTargetsById[targetId] = parsedHwnd;
+				return TargetIdResolution.Found(targetId, parsedHwnd);
+			}
+
 			if (valueTargetsById.TryGetValue(targetId, out var valueTarget))
 			{
 				if (valueTarget is IntPtr hwnd && !IsWindow(hwnd))
@@ -58,6 +68,20 @@ public sealed class TargetIdService
 			return TargetIdResolution.Found(targetId, target);
 
 		return TargetIdResolution.Stale(targetId);
+	}
+
+	private static bool TryParseNativeWindowTargetId(string targetId, out IntPtr hwnd)
+	{
+		const string prefix = "dft-hwnd-";
+		hwnd = IntPtr.Zero;
+		if (!targetId.StartsWith(prefix, StringComparison.Ordinal))
+			return false;
+
+		if (!long.TryParse(targetId.Substring(prefix.Length), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var value))
+			return false;
+
+		hwnd = new IntPtr(value);
+		return true;
 	}
 
 	public bool TryGetTarget(string targetId, out object? target)

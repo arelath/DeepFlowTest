@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.AppDriverPayload;
@@ -21,6 +22,42 @@ public sealed class ProtocolCommandTests
 
 			Assert.That(((IpcCommand)roundTripped).Kind, Is.EqualTo(command.Kind));
 		}
+	}
+
+	[Test]
+	public void ContractDtosExposeWpfPilot2ConstructorsAliasesAndEquality()
+	{
+		var leftClick = new ClickCommandRequest("button", "Left", 123);
+		var sameLeftClick = new ClickCommandRequest("button", "Left", 123);
+		var screenshot = new ScreenshotCommandResponse("AQID");
+		var find = new FindElementCommandResponse(new[]
+		{
+			new System.Collections.Generic.Dictionary<string, object?>
+			{
+				["TargetId"] = "button",
+				["TypeName"] = "Button",
+				["Name"] = "Run",
+			},
+		});
+		var ping = new PingCommandResponse(2, 5);
+		var stale = StandardIpcResponse.StaleElement();
+		var stream = new StreamMessage("subscription", ProtocolConstants.StreamKinds.VisualTree, 7, new { ok = true });
+
+		Assert.That(leftClick, Is.EqualTo(sameLeftClick));
+		Assert.That(leftClick.TargetId, Is.EqualTo("button"));
+		Assert.That(leftClick.MouseButton, Is.EqualTo("Left"));
+		Assert.That(leftClick.TimeoutMs, Is.EqualTo(123));
+		Assert.That(screenshot.BytesBase64, Is.EqualTo("AQID"));
+		Assert.That(screenshot.Base64Screenshot, Is.EqualTo("AQID"));
+		Assert.That(find.Matches.Single().TargetId, Is.EqualTo("button"));
+		Assert.That(find.Nodes.Single()["Name"], Is.EqualTo("Run"));
+		Assert.That(ping.RootCount, Is.EqualTo(2));
+		Assert.That(ping.NodeCount, Is.EqualTo(5));
+		Assert.That(stale.Status, Is.EqualTo(ProtocolConstants.Statuses.StaleElement));
+		Assert.That(stream.Kind, Is.EqualTo(ProtocolConstants.StreamKinds.VisualTree));
+		Assert.That(stream.Sequence, Is.EqualTo(7));
+		Assert.That(ProtocolConstants.Properties.Base64Screenshot, Is.EqualTo("Base64Screenshot"));
+		Assert.That(ProtocolConstants.Properties.MaxMatches, Is.EqualTo("MaxMatches"));
 	}
 
 	[Test]

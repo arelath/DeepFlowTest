@@ -404,11 +404,21 @@ internal static partial class TargetActionCommand
 		var count = Math.Max(1, clickCount);
 		UIHighlight.Select(target);
 		TryEnsureAppHooks();
+		var clickEvent = mouseButton == MouseButton.Left ? ResolvePrimaryClickEvent(target) : null;
+		var observedClickCount = 0;
+		RoutedEventHandler? clickObserver = null;
 		try
 		{
+			if (clickEvent is not null)
+			{
+				clickObserver = (_, _) => observedClickCount++;
+				target.AddHandler(clickEvent, clickObserver, handledEventsToo: true);
+			}
+
 			var targets = GetAscendingVisualTree(target);
 			for (var i = 0; i < count; i++)
 			{
+				var observedBeforeClick = observedClickCount;
 				AppHooks.SetButton(mouseButton, isPressed: true);
 				RaiseMouseButtonEvent(target, UIElement.PreviewMouseDownEvent, mouseButton, targets);
 				RaiseMouseButtonEvent(target, UIElement.MouseDownEvent, mouseButton, targets);
@@ -417,11 +427,8 @@ internal static partial class TargetActionCommand
 				RaiseMouseButtonEvent(target, UIElement.PreviewMouseUpEvent, mouseButton, targets);
 				RaiseMouseButtonEvent(target, UIElement.MouseUpEvent, mouseButton, targets);
 
-				if (target is ButtonBase buttonBase && mouseButton == MouseButton.Left)
-					buttonBase.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, buttonBase));
-
-				if (target is MenuItem menuItem && mouseButton == MouseButton.Left)
-					menuItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, menuItem));
+				if (clickEvent is not null && observedClickCount == observedBeforeClick)
+					target.RaiseEvent(new RoutedEventArgs(clickEvent, target));
 			}
 
 			if (count > 1 && mouseButton == MouseButton.Left && target is Control control)
@@ -429,6 +436,8 @@ internal static partial class TargetActionCommand
 		}
 		finally
 		{
+			if (clickEvent is not null && clickObserver is not null)
+				target.RemoveHandler(clickEvent, clickObserver);
 			AppHooks.ResetMouseState();
 		}
 
@@ -437,6 +446,14 @@ internal static partial class TargetActionCommand
 
 		return ActionResult.Ok();
 	}
+
+	private static RoutedEvent? ResolvePrimaryClickEvent(UIElement target) =>
+		target switch
+		{
+			ButtonBase => ButtonBase.ClickEvent,
+			MenuItem => MenuItem.ClickEvent,
+			_ => null,
+		};
 
 	private static void TryEnsureAppHooks()
 	{

@@ -251,6 +251,7 @@ public static class CliRootCommand
 		command.Add(CreateOption<bool>("--include-properties", "Include selected properties."));
 		command.Add(CreateOption<bool>("--include-children", "Include child context."));
 		command.Add(CreateOption<bool>("--include-ancestors", "Include ancestor context."));
+		command.Add(CreateOption<string>("--include", "Comma-separated optional sections: path, properties, children, ancestors."));
 		command.Add(CreateOption<string>("--props", "Comma-separated property names."));
 	}
 
@@ -297,9 +298,9 @@ public static class CliRootCommand
 		AddTargetIdOption(command);
 		command.Add(CreateOption<string>("--props", "Comma-separated property names."));
 		command.Add(CreateOption<bool>("--include-path", "Include slash-style node paths."));
-		command.Add(CreateOption<bool>("--include-ancestors", "Include ancestor context."));
-		command.Add(CreateOption<bool>("--include-children", "Include child context."));
-		command.Add(CreateOption<bool>("--include-subtree", "Include subtree context."));
+		command.Add(CreateOption<bool>("--include-ancestors", "Include ancestor context.", "--ancestors"));
+		command.Add(CreateOption<bool>("--include-children", "Include child context.", "--children"));
+		command.Add(CreateOption<bool>("--include-subtree", "Include subtree context.", "--subtree"));
 		command.Add(CreateOption<int>("--subtree-depth", "Bounded subtree depth."));
 	}
 
@@ -408,6 +409,7 @@ public static class CliRootCommand
 			or "--target"
 			or "--max-depth"
 			or "--limit"
+			or "--include"
 			or "--shape"
 			or "--props"
 			or "--type-names"

@@ -31,7 +31,7 @@ internal static class FindElementCommand
 		});
 
 		var expressionMatcher = TryCreateExpressionMatcher(request, expressionCache);
-		var maxMatches = Math.Max(1, request.MaxMatches);
+		var maxMatches = request.MaxMatches <= 0 ? int.MaxValue : request.MaxMatches;
 		var matches = snapshot.Nodes
 			.Where(node => MatchesSelector(node, request.Selector))
 			.Where(node => expressionMatcher is null || expressionMatcher(node))
@@ -50,7 +50,7 @@ internal static class FindElementCommand
 			Status = matches.Count == 0 ? ProtocolConstants.Statuses.NoMatch : ProtocolConstants.Statuses.Ok,
 			Matches = matches,
 			MatchCount = matches.Count,
-			MaxMatches = maxMatches,
+			MaxMatches = request.MaxMatches,
 		};
 	}
 

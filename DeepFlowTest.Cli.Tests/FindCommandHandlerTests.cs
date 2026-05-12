@@ -19,6 +19,18 @@ public sealed class FindCommandHandlerTests
 	}
 
 	[Test]
+	public void FindAcceptsCompatIncludeCsvAlias()
+	{
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: new FakeAppSessionService());
+
+		var result = CliTestHost.Run(new[] { "find", "--pid", "1234", "--automation-id", "SubmitButton", "--include", "path,properties" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("\"path\""));
+		Assert.That(result.Stdout, Does.Contain("\"properties\""));
+	}
+
+	[Test]
 	public void FindAcceptsCompatPropertyAliases()
 	{
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: new FakeAppSessionService());

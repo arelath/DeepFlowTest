@@ -302,6 +302,35 @@ public sealed class WinFormsSupportTests
 	}
 
 	[Test]
+	public void ModalPendingCommandsUseNativeDialogTreeFallback()
+	{
+		using var form = CreateForm();
+
+		try
+		{
+			form.Show();
+			Forms.Application.DoEvents();
+			using var roots = NativeDialogService.OverrideRootWindowsForTests(new[] { form.Handle });
+			using var delay = AppDriverCommandDispatcher.DelayUiHandlersForTests(1000);
+
+			var response = CaptureResponse(new GetVisualTreeCommandRequest
+			{
+				AsSnapshot = true,
+				PropNames = ["Text", "ClassName"],
+				TimeoutMs = 750,
+			});
+
+			Assert.That(response, Is.TypeOf<VisualTreeSnapshot>());
+			var snapshot = (VisualTreeSnapshot)response!;
+			Assert.That(snapshot.Nodes.Any(node => node.Hwnd == form.Handle.ToInt64()), Is.True);
+		}
+		finally
+		{
+			form.Close();
+		}
+	}
+
+	[Test]
 	public void HybridWpfWinFormsHostAppearsInSnapshots()
 	{
 		_ = Application.Current ?? new Application();

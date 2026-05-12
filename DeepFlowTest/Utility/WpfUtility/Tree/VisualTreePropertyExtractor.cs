@@ -103,6 +103,9 @@ public sealed class VisualTreePropertyExtractor
 	private static bool TryReadSpecialProperty(object target, string propertyName, out object? value)
 	{
 		value = null;
+		if (target is IntPtr hwnd && TryReadNativeWindowProperty(hwnd, propertyName, out value))
+			return true;
+
 		switch (propertyName)
 		{
 			case "Xaml":
@@ -169,6 +172,22 @@ public sealed class VisualTreePropertyExtractor
 			default:
 				return false;
 		}
+	}
+
+	private static bool TryReadNativeWindowProperty(IntPtr hwnd, string propertyName, out object? value)
+	{
+		value = propertyName switch
+		{
+			"ClassName" => NativeDialogService.GetClassName(hwnd),
+			"Text" or "Name" or "Title" => NativeDialogService.GetWindowText(hwnd),
+			"IsVisible" => NativeDialogService.IsVisible(hwnd),
+			"IsEnabled" => NativeDialogService.IsEnabled(hwnd),
+			"ControlId" => NativeDialogService.GetControlId(hwnd),
+			"Hwnd" => hwnd.ToInt64(),
+			_ => null,
+		};
+
+		return propertyName is "ClassName" or "Text" or "Name" or "Title" or "IsVisible" or "IsEnabled" or "ControlId" or "Hwnd";
 	}
 
 	private static bool TryReadImageMetadata(object target, out object? value)

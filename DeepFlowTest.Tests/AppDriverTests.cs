@@ -3,6 +3,7 @@ namespace DeepFlowTest.Tests;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -94,6 +95,8 @@ public sealed class AppDriverTests
 	{
 		var session = new FakeSession(
 			new FindElementCommandResponse { Status = ProtocolConstants.Statuses.NoMatch },
+			new FindElementCommandResponse { Status = ProtocolConstants.Statuses.NoMatch },
+			new FindElementCommandResponse { Status = ProtocolConstants.Statuses.NoMatch },
 			new FindElementCommandResponse
 			{
 				Matches = { new FindElementMatchResponse { TargetId = "target", TypeName = "Button" } },
@@ -107,7 +110,32 @@ public sealed class AppDriverTests
 		var element = driver.GetElement(ElementSelector.ByName("late"));
 
 		Assert.That(element.TargetId, Is.EqualTo("target"));
-		Assert.That(session.SentCommands.Count, Is.EqualTo(2));
+		Assert.That(session.SentCommands.Count, Is.EqualTo(4));
+	}
+
+	[Test]
+	public void ExpressionGetElementsPollsUntilTimeoutNotJustBackoffSequence()
+	{
+		var empty = VisualTreeSnapshot.Create(1, Array.Empty<VisualTreeNodeDto>());
+		var match = VisualTreeSnapshot.Create(2, new[]
+		{
+			new VisualTreeNodeDto
+			{
+				TargetId = "late-target",
+				TypeName = "Button",
+				Properties = { ["Name"] = "late" },
+			},
+		});
+		var session = new FakeSession(empty, empty, match);
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session,
+			new AppDriverOptions { ElementPollBackoffMs = new[] { 1 }, Timeout = TimeSpan.FromSeconds(1) });
+
+		var elements = driver.GetElements(x => x["Name"] == "late", timeoutMs: 500);
+
+		Assert.That(elements.Single().TargetId, Is.EqualTo("late-target"));
+		Assert.That(session.SentCommands.Count, Is.EqualTo(3));
 	}
 
 	[Test]

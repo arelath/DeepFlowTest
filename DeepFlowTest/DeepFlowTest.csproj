@@ -43,4 +43,8 @@
   <ItemGroup Condition="'$(TargetFramework)' == 'net461'">
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net461" PrivateAssets="all" />
   </ItemGroup>
+
+  <Target Name="BlockIncompleteDirectSdkPack" BeforeTargets="Pack" Condition="'$(DeepFlowTestAllowDirectPack)' != 'true'">
+    <Error Text="Direct SDK packing of DeepFlowTest.csproj does not stage generated payload and injector resources. Use '.\build.ps1 Pack' for the supported package workflow, or set /p:DeepFlowTestAllowDirectPack=true only after staging equivalent contentFiles resources." />
+  </Target>
 </Project>

@@ -25,12 +25,17 @@ public sealed class TreeService
 {
 	private readonly TargetIdService targetIds;
 	private readonly VisualTreePropertyExtractor propertyExtractor;
+	private readonly Func<IReadOnlyList<object>>? rootProvider;
 	private long nextSequenceNumber;
 
-	public TreeService(TargetIdService? targetIds = null, VisualTreePropertyExtractor? propertyExtractor = null)
+	public TreeService(
+		TargetIdService? targetIds = null,
+		VisualTreePropertyExtractor? propertyExtractor = null,
+		Func<IReadOnlyList<object>>? rootProvider = null)
 	{
 		this.targetIds = targetIds ?? new TargetIdService();
 		this.propertyExtractor = propertyExtractor ?? new VisualTreePropertyExtractor();
+		this.rootProvider = rootProvider;
 	}
 
 	public VisualTreeSnapshot CaptureSnapshot(TreeSnapshotOptions? options = null)
@@ -99,6 +104,9 @@ public sealed class TreeService
 
 	private IReadOnlyList<object> DiscoverRoots()
 	{
+		if (rootProvider is not null)
+			return rootProvider();
+
 		var roots = new List<object>();
 		var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
 

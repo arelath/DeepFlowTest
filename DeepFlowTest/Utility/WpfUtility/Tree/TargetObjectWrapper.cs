@@ -190,9 +190,17 @@ public abstract class TargetObjectWrapper : IDisposable
 				"native",
 				canReceiveActions: target != IntPtr.Zero,
 				target == IntPtr.Zero ? null : target.ToInt64(),
-				displayTypeName: "HWND",
+				displayTypeName: GetDisplayTypeName(target),
 				targetObjectType: "HWND"))
 		{
+		}
+
+		private static string GetDisplayTypeName(IntPtr target)
+		{
+			var className = NativeDialogService.GetClassName(target);
+			return string.Equals(className, "#32770", StringComparison.Ordinal)
+				? "Dialog"
+				: "HWND";
 		}
 	}
 

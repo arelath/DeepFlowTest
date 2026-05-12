@@ -148,12 +148,12 @@ internal static class StartSendingCommand
 		if (previous is null)
 		{
 			previous = current;
-			return new { isFullSnapshot = true, snapshot = current };
+			return new VisualTreeDeltaSnapshotFrame(current);
 		}
 
 		var delta = VisualTreeSnapshotDelta.Create(previous, current);
 		previous = current;
-		return new { isFullSnapshot = false, delta };
+		return delta;
 	}
 
 	private static object CaptureEventLog(TreeService treeService)
@@ -172,6 +172,24 @@ internal static class StartSendingCommand
 			roots = snapshot.RootIds,
 			generatedUtc = DateTimeOffset.UtcNow,
 		};
+	}
+
+	private sealed class VisualTreeDeltaSnapshotFrame
+	{
+		public VisualTreeDeltaSnapshotFrame(VisualTreeSnapshot snapshot)
+		{
+			Snapshot = snapshot;
+		}
+
+		public bool IsDelta { get; set; }
+
+		public VisualTreeSnapshot Snapshot { get; }
+
+		public bool IsFullSnapshot
+		{
+			get => !IsDelta;
+			set => IsDelta = !value;
+		}
 	}
 
 }

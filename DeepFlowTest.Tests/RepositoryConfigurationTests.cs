@@ -180,6 +180,7 @@ public sealed class RepositoryConfigurationTests
 			"TestFast",
 			"CompileTestHarnesses",
 			"PublishCli",
+			"Pack",
 		};
 
 		foreach (var command in expectedCommands)
@@ -187,6 +188,7 @@ public sealed class RepositoryConfigurationTests
 
 		Assert.That(buildDoc, Does.Contain("fastbuild.ps1"));
 		Assert.That(buildDoc, Does.Contain("fasttest.ps1"));
+		Assert.That(buildDoc, Does.Contain("Packaging Workflow"));
 		Assert.That(payloadDoc, Does.Contain("output/payloads/"));
 		Assert.That(payloadDoc, Does.Contain("ILRepack"));
 		Assert.That(payloadDoc, Does.Contain("No dependency has an accepted exemption"));
@@ -228,12 +230,15 @@ public sealed class RepositoryConfigurationTests
 	public void BuildPackCreatesLibraryContentLayout()
 	{
 		var buildScript = File.ReadAllText(Path.Combine(FindRepositoryRoot(), ".build", "Build.cs"));
+		var libraryProject = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "DeepFlowTest", "DeepFlowTest.csproj"));
 
 		Assert.That(buildScript, Does.Contain("contentFiles"));
 		Assert.That(buildScript, Does.Contain("DeepFlowTestResources"));
 		Assert.That(buildScript, Does.Contain("IsPackageResourceFile"));
 		Assert.That(buildScript, Does.Not.Contain(".lib"));
 		Assert.That(buildScript, Does.Not.Contain(".exp"));
+		Assert.That(libraryProject, Does.Contain("BlockIncompleteDirectSdkPack"));
+		Assert.That(libraryProject, Does.Contain("DeepFlowTestAllowDirectPack"));
 	}
 
 	[Test]

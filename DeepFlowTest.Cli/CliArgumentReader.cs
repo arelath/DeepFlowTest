@@ -10,6 +10,9 @@ internal static class CliArgumentReader
 	public static bool HasOption(IReadOnlyList<string> args, string name) =>
 		args.Any(arg => string.Equals(arg, name, StringComparison.Ordinal) || arg.StartsWith(name + "=", StringComparison.Ordinal));
 
+	public static bool HasOption(IReadOnlyList<string> args, params string[] names) =>
+		names.Any(name => HasOption(args, name));
+
 	public static string? GetOption(IReadOnlyList<string> args, string name)
 	{
 		for (var i = 0; i < args.Count; i++)

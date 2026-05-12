@@ -35,7 +35,7 @@ internal static class AppDriverCommandDispatcher
 	private static readonly Dictionary<string, AsyncCommandHandler> UiHandlers = new()
 	{
 		[ProtocolConstants.Commands.Ping] = context =>
-			Task.FromResult(PingCommand.Process(context.Request<PingCommandRequest>())),
+			Task.FromResult(PingCommand.Process(context.Request<PingCommandRequest>(), context.TreeService)),
 		[ProtocolConstants.Commands.GetVisualTree] = context =>
 			Task.FromResult(GetVisualTreeCommand.Process(context.Request<GetVisualTreeCommandRequest>(), context.TreeService)),
 		[ProtocolConstants.Commands.FindElement] = context =>
@@ -78,6 +78,12 @@ internal static class AppDriverCommandDispatcher
 
 			if (UiHandlers.TryGetValue(kind, out var uiHandler))
 			{
+				if (TryProcessNativeCommand(kind, context, allowUntargetedCommands: false, out var nativeResponse))
+				{
+					RespondIfNeeded(command, nativeResponse);
+					return;
+				}
+
 				var timeoutMs = GetTimeoutMs(command.Value, kind);
 				var result = RunUiHandlerWithModalWatchAsync(kind, uiHandler, context, timeoutMs)
 					.ConfigureAwait(false)
@@ -148,6 +154,13 @@ internal static class AppDriverCommandDispatcher
 		var completed = await Task.WhenAny(commandTask, modalTask).ConfigureAwait(false);
 		if (completed == modalTask && await modalTask.ConfigureAwait(false) == UiThreadRunResult.Pending)
 		{
+			if (TryProcessNativeCommand(kind, context, allowUntargetedCommands: true, out var nativeResponse))
+			{
+				cancellation.Cancel();
+				AppHooks.ShowDialogCalled = false;
+				return nativeResponse;
+			}
+
 			cancellation.Cancel();
 			AppHooks.ShowDialogCalled = false;
 			return StandardIpcResponse.PendingResult(context.LogCorrelationId);
@@ -172,16 +185,81 @@ internal static class AppDriverCommandDispatcher
 	internal static async Task<UiThreadRunResult> WaitForShowDialogAsync(int timeoutMs, CancellationToken token)
 	{
 		var start = DateTime.UtcNow;
+		var nativeDialogGraceMs = Math.Min(timeoutMs, 250);
 		while (!AppHooks.ShowDialogCalled && (DateTime.UtcNow - start).TotalMilliseconds < timeoutMs)
 		{
 			if (token.IsCancellationRequested)
 				return UiThreadRunResult.Finished;
+
+			if ((DateTime.UtcNow - start).TotalMilliseconds >= nativeDialogGraceMs &&
+				NativeDialogService.HasRootWindowsForCurrentProcess())
+			{
+				return UiThreadRunResult.Pending;
+			}
 
 			await Task.Delay(50, token).ConfigureAwait(false);
 		}
 
 		return AppHooks.ShowDialogCalled ? UiThreadRunResult.Pending : UiThreadRunResult.Finished;
 	}
+
+	private static bool TryProcessNativeCommand(
+		string kind,
+		CommandContext context,
+		bool allowUntargetedCommands,
+		out object response)
+	{
+		response = null!;
+		if (!UiHandlers.TryGetValue(kind, out var handler) || !ShouldProcessNatively(kind, context.Command.Value, allowUntargetedCommands))
+			return false;
+
+		var treeService = NativeDialogService.TryCreateTreeService();
+		var targetId = TryGetStringProperty(context.Command.Value, ProtocolConstants.Properties.TargetId);
+		if (treeService is null)
+		{
+			if (!IsNativeWindowTargetId(targetId))
+				return false;
+
+			treeService = new TreeService();
+		}
+
+		var nativeContext = new CommandContext(context.Command, context.Options, context.ReusableSession, treeService, context.ExpressionCache);
+		try
+		{
+			response = handler(nativeContext).ConfigureAwait(false).GetAwaiter().GetResult();
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			response = StandardIpcResponse.FromError(ex.ToString(), ProtocolConstants.ErrorCodes.ProtocolError, context.LogCorrelationId);
+		}
+
+		return true;
+	}
+
+	private static bool ShouldProcessNatively(string kind, object command, bool allowUntargetedCommands)
+	{
+		var targetId = TryGetStringProperty(command, ProtocolConstants.Properties.TargetId);
+		if (IsNativeWindowTargetId(targetId))
+		{
+			return kind is ProtocolConstants.Commands.Click
+				or ProtocolConstants.Commands.Focus
+				or ProtocolConstants.Commands.TypeText
+				or ProtocolConstants.Commands.SetProperty
+				or ProtocolConstants.Commands.KnownOperation
+				or ProtocolConstants.Commands.Screenshot;
+		}
+
+		if (!allowUntargetedCommands)
+			return false;
+
+		return kind is ProtocolConstants.Commands.GetVisualTree
+			or ProtocolConstants.Commands.FindElement
+			or ProtocolConstants.Commands.Screenshot
+			or ProtocolConstants.Commands.KeyPress;
+	}
+
+	private static bool IsNativeWindowTargetId(string? targetId) =>
+		targetId?.StartsWith("dft-hwnd-", StringComparison.Ordinal) == true;
 
 	private static int GetTimeoutMs(object command, string kind)
 	{
@@ -205,6 +283,15 @@ internal static class AppDriverCommandDispatcher
 			return intValue;
 
 		return null;
+	}
+
+	private static string? TryGetStringProperty(object command, string propertyName)
+	{
+		if (command is JObject jObject && jObject.TryGetValue(propertyName, StringComparison.Ordinal, out var token))
+			return token.Value<string>();
+
+		var property = command.GetType().GetProperty(propertyName);
+		return property?.GetValue(command)?.ToString();
 	}
 
 	private static void RespondIfNeeded(NamedPipeServer.Command command, object response)

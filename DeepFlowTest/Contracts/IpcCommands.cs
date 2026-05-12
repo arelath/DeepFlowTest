@@ -2,7 +2,7 @@ namespace DeepFlowTest.Contracts;
 
 using System.Collections.Generic;
 
-public abstract class IpcCommand
+public abstract record class IpcCommand
 {
 	protected IpcCommand(string kind, int? timeoutMs = null)
 	{
@@ -15,37 +15,63 @@ public abstract class IpcCommand
 	public int? TimeoutMs { get; set; }
 }
 
-public sealed class HelloCommandRequest : IpcCommand
+public sealed record class HelloCommandRequest : IpcCommand
 {
 	public HelloCommandRequest()
 		: base(ProtocolConstants.Commands.Hello)
 	{
 	}
 
+	public HelloCommandRequest(int? timeoutMs = null)
+		: this()
+	{
+		TimeoutMs = timeoutMs;
+	}
+
 	public string ProtocolVersion { get; set; } = ProtocolConstants.ProtocolVersion;
 }
 
-public sealed class PingCommandRequest : IpcCommand
+public sealed record class PingCommandRequest : IpcCommand
 {
 	public PingCommandRequest()
 		: base(ProtocolConstants.Commands.Ping)
 	{
 	}
+
+	public PingCommandRequest(int? timeoutMs = null)
+		: this()
+	{
+		TimeoutMs = timeoutMs;
+	}
 }
 
-public sealed class PipeStatusCommandRequest : IpcCommand
+public sealed record class PipeStatusCommandRequest : IpcCommand
 {
 	public PipeStatusCommandRequest()
 		: base(ProtocolConstants.Commands.PipeStatus)
 	{
 	}
+
+	public PipeStatusCommandRequest(int? timeoutMs = null)
+		: this()
+	{
+		TimeoutMs = timeoutMs;
+	}
 }
 
-public sealed class GetVisualTreeCommandRequest : IpcCommand
+public sealed record class GetVisualTreeCommandRequest : IpcCommand
 {
 	public GetVisualTreeCommandRequest()
 		: base(ProtocolConstants.Commands.GetVisualTree)
 	{
+	}
+
+	public GetVisualTreeCommandRequest(IReadOnlyList<string>? propNames = null, bool asSnapshot = false, int? timeoutMs = null)
+		: this()
+	{
+		PropNames = propNames;
+		AsSnapshot = asSnapshot;
+		TimeoutMs = timeoutMs;
 	}
 
 	public IReadOnlyList<string>? PropNames { get; set; }
@@ -61,11 +87,20 @@ public sealed class GetVisualTreeCommandRequest : IpcCommand
 	public int? MaxNodeCount { get; set; }
 }
 
-public sealed class FindElementCommandRequest : IpcCommand
+public sealed record class FindElementCommandRequest : IpcCommand
 {
 	public FindElementCommandRequest()
 		: base(ProtocolConstants.Commands.FindElement)
 	{
+	}
+
+	public FindElementCommandRequest(IReadOnlyList<string>? propNames, object? matcherCode, int maxMatches = 1, int? timeoutMs = null)
+		: this()
+	{
+		PropNames = propNames;
+		MatcherCode = matcherCode;
+		MaxMatches = maxMatches;
+		TimeoutMs = timeoutMs;
 	}
 
 	public IReadOnlyList<string>? PropNames { get; set; }
@@ -79,7 +114,7 @@ public sealed class FindElementCommandRequest : IpcCommand
 	public int MaxMatches { get; set; } = 1;
 }
 
-public sealed class ElementSelectorDto
+public sealed record class ElementSelectorDto
 {
 	public string? TypeName { get; set; }
 
@@ -94,11 +129,19 @@ public sealed class ElementSelectorDto
 	public Dictionary<string, object?> Properties { get; set; } = new();
 }
 
-public sealed class ScreenshotCommandRequest : IpcCommand
+public sealed record class ScreenshotCommandRequest : IpcCommand
 {
 	public ScreenshotCommandRequest()
 		: base(ProtocolConstants.Commands.Screenshot)
 	{
+	}
+
+	public ScreenshotCommandRequest(string format, string? targetId = null, int? timeoutMs = null)
+		: this()
+	{
+		Format = format;
+		TargetId = targetId;
+		TimeoutMs = timeoutMs;
 	}
 
 	public string Format { get; set; } = "png";
@@ -106,21 +149,33 @@ public sealed class ScreenshotCommandRequest : IpcCommand
 	public string? TargetId { get; set; }
 }
 
-public abstract class TargetedIpcCommand : IpcCommand
+public abstract record class TargetedIpcCommand : IpcCommand
 {
 	protected TargetedIpcCommand(string kind)
 		: base(kind)
 	{
 	}
 
+	protected TargetedIpcCommand(string kind, string targetId, int? timeoutMs = null)
+		: base(kind, timeoutMs)
+	{
+		TargetId = targetId;
+	}
+
 	public string TargetId { get; set; } = string.Empty;
 }
 
-public sealed class ClickCommandRequest : TargetedIpcCommand
+public sealed record class ClickCommandRequest : TargetedIpcCommand
 {
 	public ClickCommandRequest()
 		: base(ProtocolConstants.Commands.Click)
 	{
+	}
+
+	public ClickCommandRequest(string targetId, string mouseButton, int? timeoutMs = null)
+		: base(ProtocolConstants.Commands.Click, targetId, timeoutMs)
+	{
+		MouseButton = mouseButton;
 	}
 
 	public string MouseButton { get; set; } = "left";
@@ -128,19 +183,33 @@ public sealed class ClickCommandRequest : TargetedIpcCommand
 	public int ClickCount { get; set; } = 1;
 }
 
-public sealed class FocusCommandRequest : TargetedIpcCommand
+public sealed record class FocusCommandRequest : TargetedIpcCommand
 {
 	public FocusCommandRequest()
 		: base(ProtocolConstants.Commands.Focus)
 	{
 	}
+
+	public FocusCommandRequest(string targetId, int? timeoutMs = null)
+		: base(ProtocolConstants.Commands.Focus, targetId, timeoutMs)
+	{
+	}
 }
 
-public sealed class TypeTextCommandRequest : IpcCommand
+public sealed record class TypeTextCommandRequest : IpcCommand
 {
 	public TypeTextCommandRequest()
 		: base(ProtocolConstants.Commands.TypeText)
 	{
+	}
+
+	public TypeTextCommandRequest(string text, string? targetId = null, bool clearFirst = false, int? timeoutMs = null)
+		: this()
+	{
+		Text = text;
+		TargetId = targetId;
+		ClearFirst = clearFirst;
+		TimeoutMs = timeoutMs;
 	}
 
 	public string Text { get; set; } = string.Empty;
@@ -150,11 +219,19 @@ public sealed class TypeTextCommandRequest : IpcCommand
 	public bool ClearFirst { get; set; }
 }
 
-public sealed class KeyPressCommandRequest : IpcCommand
+public sealed record class KeyPressCommandRequest : IpcCommand
 {
 	public KeyPressCommandRequest()
 		: base(ProtocolConstants.Commands.KeyPress)
 	{
+	}
+
+	public KeyPressCommandRequest(object? keys, int delayMs = 50, int? timeoutMs = null)
+		: this()
+	{
+		Keys = keys;
+		DelayMs = delayMs;
+		TimeoutMs = timeoutMs;
 	}
 
 	public object? Keys { get; set; }
@@ -166,11 +243,18 @@ public sealed class KeyPressCommandRequest : IpcCommand
 	public bool EnsureForeground { get; set; } = true;
 }
 
-public sealed class SetPropertyCommandRequest : TargetedIpcCommand
+public sealed record class SetPropertyCommandRequest : TargetedIpcCommand
 {
 	public SetPropertyCommandRequest()
 		: base(ProtocolConstants.Commands.SetProperty)
 	{
+	}
+
+	public SetPropertyCommandRequest(string targetId, string propertyName, object? propertyValue, int? timeoutMs = null)
+		: base(ProtocolConstants.Commands.SetProperty, targetId, timeoutMs)
+	{
+		PropertyName = propertyName;
+		PropertyValue = propertyValue;
 	}
 
 	public string PropertyName { get; set; } = string.Empty;
@@ -178,11 +262,17 @@ public sealed class SetPropertyCommandRequest : TargetedIpcCommand
 	public object? PropertyValue { get; set; }
 }
 
-public sealed class RaiseEventCommandRequest : TargetedIpcCommand
+public sealed record class RaiseEventCommandRequest : TargetedIpcCommand
 {
 	public RaiseEventCommandRequest()
 		: base(ProtocolConstants.Commands.RaiseEvent)
 	{
+	}
+
+	public RaiseEventCommandRequest(string targetId, object? getRoutedEventArgs, int? timeoutMs = null)
+		: base(ProtocolConstants.Commands.RaiseEvent, targetId, timeoutMs)
+	{
+		GetRoutedEventArgs = getRoutedEventArgs;
 	}
 
 	public object? GetRoutedEventArgs { get; set; }
@@ -190,31 +280,50 @@ public sealed class RaiseEventCommandRequest : TargetedIpcCommand
 	public string EventName { get; set; } = string.Empty;
 }
 
-public sealed class KnownRoutedEventCommandRequest : TargetedIpcCommand
+public sealed record class KnownRoutedEventCommandRequest : TargetedIpcCommand
 {
 	public KnownRoutedEventCommandRequest()
 		: base(ProtocolConstants.Commands.KnownRoutedEvent)
 	{
 	}
 
+	public KnownRoutedEventCommandRequest(string targetId, string eventName, int? timeoutMs = null)
+		: base(ProtocolConstants.Commands.KnownRoutedEvent, targetId, timeoutMs)
+	{
+		EventName = eventName;
+	}
+
 	public string EventName { get; set; } = string.Empty;
 }
 
-public sealed class KnownOperationCommandRequest : TargetedIpcCommand
+public sealed record class KnownOperationCommandRequest : TargetedIpcCommand
 {
 	public KnownOperationCommandRequest()
 		: base(ProtocolConstants.Commands.KnownOperation)
 	{
 	}
 
+	public KnownOperationCommandRequest(string targetId, string operation, int? timeoutMs = null)
+		: base(ProtocolConstants.Commands.KnownOperation, targetId, timeoutMs)
+	{
+		Operation = operation;
+	}
+
 	public string Operation { get; set; } = string.Empty;
 }
 
-public sealed class InvokeCommandRequest : TargetedIpcCommand
+public sealed record class InvokeCommandRequest : TargetedIpcCommand
 {
 	public InvokeCommandRequest()
 		: base(ProtocolConstants.Commands.Invoke)
 	{
+	}
+
+	public InvokeCommandRequest(string targetId, object? code, int? timeoutMs = null)
+		: base(ProtocolConstants.Commands.Invoke, targetId, timeoutMs)
+	{
+		Code = code;
+		AllowUnsafeCode = true;
 	}
 
 	public object? Code { get; set; }
@@ -222,11 +331,28 @@ public sealed class InvokeCommandRequest : TargetedIpcCommand
 	public bool AllowUnsafeCode { get; set; }
 }
 
-public sealed class StartSendingCommandRequest : IpcCommand
+public sealed record class StartSendingCommandRequest : IpcCommand
 {
 	public StartSendingCommandRequest()
 		: base(ProtocolConstants.Commands.StartSending)
 	{
+	}
+
+	public StartSendingCommandRequest(
+		string streamKind,
+		int intervalMs = 1000,
+		IReadOnlyList<string>? propNames = null,
+		string format = "png",
+		string? targetId = null,
+		int? timeoutMs = null)
+		: this()
+	{
+		StreamKind = streamKind;
+		IntervalMs = intervalMs;
+		PropNames = propNames;
+		Format = format;
+		TargetId = targetId;
+		TimeoutMs = timeoutMs;
 	}
 
 	public string StreamKind { get; set; } = ProtocolConstants.StreamKinds.VisualTree;
@@ -240,11 +366,18 @@ public sealed class StartSendingCommandRequest : IpcCommand
 	public string? TargetId { get; set; }
 }
 
-public sealed class StopSendingCommandRequest : IpcCommand
+public sealed record class StopSendingCommandRequest : IpcCommand
 {
 	public StopSendingCommandRequest()
 		: base(ProtocolConstants.Commands.StopSending)
 	{
+	}
+
+	public StopSendingCommandRequest(string subscriptionId, int? timeoutMs = null)
+		: this()
+	{
+		SubscriptionId = subscriptionId;
+		TimeoutMs = timeoutMs;
 	}
 
 	public string SubscriptionId { get; set; } = string.Empty;

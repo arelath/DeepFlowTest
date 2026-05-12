@@ -63,6 +63,7 @@ internal sealed class Build
 			new BuildTarget("TestFull", TestFull, "TestFast", "TestIntegration", "TestCompat"),
 			new BuildTarget("PublishCli", PublishCli, "Compile"),
 			new BuildTarget("Pack", Pack, "Compile"),
+			new BuildTarget("Publish", Publish, "PublishCli", "Pack"),
 			new BuildTarget("CI", CI, "Compile", "TestFast", "PublishCli", "Pack"),
 		};
 
@@ -283,11 +284,180 @@ internal sealed class Build
 			Path.Combine(contentRoot, "DeepFlowTestResources"),
 			IsPackageResourceFile);
 
+		foreach (var targetFramework in LibraryTargetFrameworks)
+			StageLibraryCompileAssemblies(packageDirectory, targetFramework);
+
+		WritePackageBuildTargets(packageDirectory);
+
 		File.WriteAllText(
 			Path.Combine(packageDirectory, "DeepFlowTest.package.md"),
 			"DeepFlowTest package layout includes framework-family payload folders and architecture-specific injector resources under contentFiles/any/any." + Environment.NewLine);
+
+		var packageVersion = ResolvePackageVersion();
+		var nuspecPath = WritePackageNuspec(packageDirectory, packageVersion);
+		var nupkgPath = BuildNupkg(packageDirectory, nuspecPath, artifactsRoot, packageVersion);
+
 		Console.WriteLine($"Package content layout prepared at {packageDirectory}.");
+		Console.WriteLine($"NuGet package produced at {nupkgPath} ({new FileInfo(nupkgPath).Length:N0} bytes).");
 	}
+
+	private string BuildNupkg(string packageDirectory, string nuspecPath, string artifactsRoot, string packageVersion)
+	{
+		var packagingProject = Path.Combine(rootDirectory, ".build", "Packaging.proj");
+		RunDotNet(
+			"pack",
+			packagingProject,
+			"--configuration",
+			configuration,
+			$"/p:NuspecFile={nuspecPath}",
+			$"/p:NuspecBasePath={packageDirectory}",
+			$"/p:PackageOutputPath={artifactsRoot}",
+			$"/p:PackageVersion={packageVersion}",
+			"/p:IncludeBuildOutput=false",
+			"--nologo");
+
+		var nupkgPath = Path.Combine(artifactsRoot, $"DeepFlowTest.{packageVersion}.nupkg");
+		if (!File.Exists(nupkgPath))
+			throw new FileNotFoundException("Expected nupkg was not produced.", nupkgPath);
+
+		return nupkgPath;
+	}
+
+	private void Publish()
+	{
+		Console.WriteLine("Publish lane produced CLI artifacts and NuGet package.");
+	}
+
+	private void StageLibraryCompileAssemblies(string packageDirectory, string targetFramework)
+	{
+		var source = Path.Combine(rootDirectory, "bin", configuration, targetFramework);
+		var primaryAssembly = Path.Combine(source, "DeepFlowTest.dll");
+		if (!File.Exists(primaryAssembly))
+			throw new FileNotFoundException($"Compile-time library assembly was not found for target framework '{targetFramework}'.", primaryAssembly);
+
+		var libDirectory = Path.Combine(packageDirectory, "lib", targetFramework);
+		Directory.CreateDirectory(libDirectory);
+		File.Copy(primaryAssembly, Path.Combine(libDirectory, "DeepFlowTest.dll"), overwrite: true);
+		CopyIfExists(Path.Combine(source, "DeepFlowTest.pdb"), Path.Combine(libDirectory, "DeepFlowTest.pdb"));
+		CopyIfExists(Path.Combine(source, "DeepFlowTest.xml"), Path.Combine(libDirectory, "DeepFlowTest.xml"));
+	}
+
+	private static void WritePackageBuildTargets(string packageDirectory)
+	{
+		var buildDirectory = Path.Combine(packageDirectory, "build");
+		Directory.CreateDirectory(buildDirectory);
+
+		const string targetsBody = """
+			<Project>
+			  <PropertyGroup>
+			    <_DeepFlowTestPackageContentRoot>$(MSBuildThisFileDirectory)..\contentFiles\any\any</_DeepFlowTestPackageContentRoot>
+			  </PropertyGroup>
+			  <ItemGroup Condition="Exists('$(_DeepFlowTestPackageContentRoot)')">
+			    <None Include="$(_DeepFlowTestPackageContentRoot)\payloads\**\*.*">
+			      <Link>payloads\%(RecursiveDir)%(Filename)%(Extension)</Link>
+			      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			      <Visible>false</Visible>
+			    </None>
+			    <None Include="$(_DeepFlowTestPackageContentRoot)\DeepFlowTestResources\**\*.*">
+			      <Link>DeepFlowTestResources\%(RecursiveDir)%(Filename)%(Extension)</Link>
+			      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			      <Visible>false</Visible>
+			    </None>
+			  </ItemGroup>
+			</Project>
+			""";
+
+		File.WriteAllText(Path.Combine(buildDirectory, "DeepFlowTest.targets"), targetsBody);
+	}
+
+	private string ResolvePackageVersion()
+	{
+		var fromEnvironment = Environment.GetEnvironmentVariable("DEEPFLOWTEST_PACKAGE_VERSION");
+		return string.IsNullOrWhiteSpace(fromEnvironment) ? "0.0.0-local" : fromEnvironment;
+	}
+
+	private string WritePackageNuspec(string packageDirectory, string packageVersion)
+	{
+		var nuspecPath = Path.Combine(packageDirectory, "DeepFlowTest.nuspec");
+		var dependencyGroups = string.Join(Environment.NewLine, LibraryTargetFrameworks.Select(BuildDependencyGroupXml));
+
+		var nuspec = $"""
+			<?xml version="1.0" encoding="utf-8"?>
+			<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+			  <metadata>
+			    <id>DeepFlowTest</id>
+			    <version>{Escape(packageVersion)}</version>
+			    <authors>DeepFlowTest</authors>
+			    <owners>DeepFlowTest</owners>
+			    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+			    <description>WPF application automation library.</description>
+			    <tags>WPF Automation Testing UI</tags>
+			    <projectUrl>https://deepflowtest.local</projectUrl>
+			    <repository type="git" url="https://deepflowtest.local/repository" />
+			    <dependencies>
+			{dependencyGroups}
+			    </dependencies>
+			    <contentFiles>
+			      <files include="any/any/payloads/**/*.*" buildAction="None" copyToOutput="true" flatten="false" />
+			      <files include="any/any/DeepFlowTestResources/**/*.*" buildAction="None" copyToOutput="true" flatten="false" />
+			    </contentFiles>
+			  </metadata>
+			  <files>
+			    <file src="lib\**\*.*" target="lib" />
+			    <file src="contentFiles\**\*.*" target="contentFiles" />
+			    <file src="build\**\*.*" target="build" />
+			  </files>
+			</package>
+			""";
+
+		File.WriteAllText(nuspecPath, nuspec);
+		return nuspecPath;
+	}
+
+	private string BuildDependencyGroupXml(string targetFramework)
+	{
+		var mappedFramework = MapToNuspecFramework(targetFramework);
+		var dependencies = LibraryRuntimeDependencies
+			.Select(package => $"        <dependency id=\"{Escape(package)}\" version=\"{Escape(ReadCentralPackageVersion(package))}\" />")
+			.ToArray();
+		var dependenciesXml = string.Join(Environment.NewLine, dependencies);
+		return $"      <group targetFramework=\"{Escape(mappedFramework)}\">{Environment.NewLine}{dependenciesXml}{Environment.NewLine}      </group>";
+	}
+
+	private static string MapToNuspecFramework(string targetFramework) => targetFramework switch
+	{
+		"net461" => ".NETFramework4.6.1",
+		"netcoreapp3.1" => ".NETCoreApp3.1",
+		"net5.0-windows" => "net5.0-windows7.0",
+		_ => targetFramework,
+	};
+
+	private static string Escape(string value)
+	{
+		return value
+			.Replace("&", "&amp;", StringComparison.Ordinal)
+			.Replace("<", "&lt;", StringComparison.Ordinal)
+			.Replace(">", "&gt;", StringComparison.Ordinal)
+			.Replace("\"", "&quot;", StringComparison.Ordinal);
+	}
+
+	private static IReadOnlyList<string> LibraryTargetFrameworks { get; } = new[]
+	{
+		"net461",
+		"netcoreapp3.1",
+		"net5.0-windows",
+	};
+
+	private static IReadOnlyList<string> LibraryRuntimeDependencies { get; } = new[]
+	{
+		"Lib.Harmony",
+		"Microsoft.CSharp",
+		"Newtonsoft.Json",
+		"Serialize.Linq",
+		"System.Buffers",
+		"System.Memory",
+		"System.ValueTuple",
+	};
 
 	private static bool IsPackageResourceFile(string path)
 	{

@@ -128,11 +128,10 @@ public sealed class AppDriver : IDisposable
 		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
 		var timeout = TimeoutFromMilliseconds(timeoutMs);
 		var stopwatch = Stopwatch.StartNew();
-		var delays = new[] { 0 }.Concat(Options.ElementPollBackoffMs ?? []);
-		foreach (var delay in delays)
+		var attempt = 0;
+		while (true)
 		{
-			if (delay > 0)
-				Thread.Sleep(delay);
+			SleepBeforePoll(attempt++, stopwatch, timeout);
 
 			var matches = FindElements(matcher, maxMatches: 0);
 			if (matches.Count != 0)
@@ -211,11 +210,10 @@ public sealed class AppDriver : IDisposable
 	private Element PollForElement(Func<IReadOnlyList<Element>> find, string selectorDescription, TimeSpan timeout)
 	{
 		var stopwatch = Stopwatch.StartNew();
-		var delays = new[] { 0 }.Concat(Options.ElementPollBackoffMs ?? []);
-		foreach (var delay in delays)
+		var attempt = 0;
+		while (true)
 		{
-			if (delay > 0)
-				Thread.Sleep(delay);
+			SleepBeforePoll(attempt++, stopwatch, timeout);
 
 			var matches = find();
 			if (matches.Count == 1)
@@ -227,6 +225,28 @@ public sealed class AppDriver : IDisposable
 		}
 
 		throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched selector '{selectorDescription}'.");
+	}
+
+	private void SleepBeforePoll(int attempt, Stopwatch stopwatch, TimeSpan timeout)
+	{
+		if (attempt == 0)
+			return;
+
+		var remainingMs = (int)Math.Ceiling((timeout - stopwatch.Elapsed).TotalMilliseconds);
+		if (remainingMs <= 0)
+			return;
+
+		Thread.Sleep(Math.Min(GetElementPollDelayMs(attempt), remainingMs));
+	}
+
+	private int GetElementPollDelayMs(int attempt)
+	{
+		var backoff = Options.ElementPollBackoffMs ?? [];
+		var index = attempt - 1;
+		if (index >= 0 && index < backoff.Length)
+			return Math.Max(0, backoff[index]);
+
+		return 1000;
 	}
 
 	public VisualTreeSnapshot GetVisualTree(string? rootTargetId = null)

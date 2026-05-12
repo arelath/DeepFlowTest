@@ -18,6 +18,19 @@ public sealed class NodePropsSelectorsCommandHandlerTests
 	}
 
 	[Test]
+	public void NodeAcceptsCompatContextAliases()
+	{
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: new FakeAppSessionService());
+
+		var result = CliTestHost.Run(new[] { "node", "--pid", "1234", "--target", "root-0001", "--ancestors", "--children", "--subtree", "--subtree-depth", "1" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("\"children\""));
+		Assert.That(result.Stdout, Does.Contain("\"subtree\""));
+		Assert.That(result.Stdout, Does.Contain("\"ancestors\""));
+	}
+
+	[Test]
 	public void PropsCommandReturnsSelectedProperties()
 	{
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: new FakeAppSessionService());
