@@ -95,14 +95,21 @@ public sealed class AppDriver : IDisposable
 		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
 
 	public Element GetElement(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
+		GetElement(matcher, timeoutMs, propNames: null);
+
+	public Element GetElement(Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames) =>
 		PollForElement(
-			() => FindElements(matcher, maxMatches: 2),
+			() => FindElements(matcher, maxMatches: 2, propNames: propNames),
 			matcher?.ToString() ?? string.Empty,
 			TimeoutFromMilliseconds(timeoutMs));
 
 	public TElement GetElement<TElement>(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000)
 		where TElement : Element =>
 		WrapElement<TElement>(GetElement(matcher, timeoutMs));
+
+	public TElement GetElement<TElement>(Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames)
+		where TElement : Element =>
+		WrapElement<TElement>(GetElement(matcher, timeoutMs, propNames));
 
 	public IReadOnlyList<Element> GetElements(ElementSelector selector, int maxMatches = 100)
 	{
@@ -123,7 +130,10 @@ public sealed class AppDriver : IDisposable
 		return FindElements(null, payload, maxMatches, repairInfo);
 	}
 
-	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000)
+	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
+		GetElements(matcher, timeoutMs, propNames: null);
+
+	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames)
 	{
 		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
 		var timeout = TimeoutFromMilliseconds(timeoutMs);
@@ -133,7 +143,7 @@ public sealed class AppDriver : IDisposable
 		{
 			SleepBeforePoll(attempt++, stopwatch, timeout);
 
-			var matches = FindElements(matcher, maxMatches: 0);
+			var matches = FindElements(matcher, maxMatches: 0, propNames: propNames);
 			if (matches.Count != 0)
 				return matches;
 			if (stopwatch.Elapsed >= timeout)
@@ -149,13 +159,21 @@ public sealed class AppDriver : IDisposable
 			.Select(WrapElement<TElement>)
 			.ToArray();
 
-	private IReadOnlyList<Element> FindElements(Expression<Func<Element, bool?>> matcher, int maxMatches)
+	public IReadOnlyList<TElement> GetElements<TElement>(Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames)
+		where TElement : Element =>
+		GetElements(matcher, timeoutMs, propNames)
+			.Select(WrapElement<TElement>)
+			.ToArray();
+
+	private IReadOnlyList<Element> FindElements(Expression<Func<Element, bool?>> matcher, int maxMatches, IReadOnlyList<string>? propNames = null)
 	{
 		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
 		var predicate = matcher.Compile();
 		ElementRepairInfo? repairInfo = null;
 		repairInfo = CreateElementMatcherRepairInfo(matcher, predicate, () => repairInfo);
-		var snapshot = GetVisualTree();
+		// 1000 nodes is too small for production WPF apps with rich menus / asset trees. We use
+		// a generous cap so matchers that walk descendants don't silently miss late nodes.
+		var snapshot = GetVisualTree(rootTargetId: null, propNames: propNames, maxNodeCount: 50_000);
 		var limit = maxMatches <= 0 ? int.MaxValue : maxMatches;
 		return snapshot.Nodes
 			.Select(node => Element.FromNode(this, node, snapshot, repairInfo))
@@ -249,12 +267,20 @@ public sealed class AppDriver : IDisposable
 		return 1000;
 	}
 
-	public VisualTreeSnapshot GetVisualTree(string? rootTargetId = null)
+	public VisualTreeSnapshot GetVisualTree(string? rootTargetId = null) =>
+		GetVisualTree(rootTargetId, propNames: null);
+
+	public VisualTreeSnapshot GetVisualTree(string? rootTargetId, IReadOnlyList<string>? propNames) =>
+		GetVisualTree(rootTargetId, propNames, maxNodeCount: null);
+
+	public VisualTreeSnapshot GetVisualTree(string? rootTargetId, IReadOnlyList<string>? propNames, int? maxNodeCount)
 	{
 		var snapshot = Send<VisualTreeSnapshot>(new GetVisualTreeCommandRequest
 		{
 			AsSnapshot = true,
 			RootTargetId = rootTargetId,
+			PropNames = propNames,
+			MaxNodeCount = maxNodeCount,
 		});
 		RefreshCachedElements(snapshot);
 		return snapshot;

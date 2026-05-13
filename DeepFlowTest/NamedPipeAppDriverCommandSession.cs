@@ -14,7 +14,12 @@ public sealed class NamedPipeAppDriverCommandSession(AppConnection connection, A
 		using var client = new NamedPipeClient(
 			connection.PipeName,
 			getTargetExitCode: () => connection.TargetProcess.HasExited ? 0 : null);
-		var response = client.Send(command, (int)Math.Max(1, options.Timeout.TotalMilliseconds));
+		var timeoutMs = (int)Math.Max(1, options.Timeout.TotalMilliseconds);
+		// Have the payload honour the same timeout the client is waiting for. Without this, the
+		// payload falls back to its DefaultCommandTimeoutMs (1s) which is too tight for slow UI
+		// actions like Click on a complex WPF menu.
+		command.TimeoutMs ??= timeoutMs;
+		var response = client.Send(command, timeoutMs);
 		return MessagePacker.ConvertTo<TResponse>(response);
 	}
 }
