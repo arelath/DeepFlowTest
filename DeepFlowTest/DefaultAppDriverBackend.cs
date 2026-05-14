@@ -30,15 +30,8 @@ public sealed class DefaultAppDriverBackend : IAppDriverBackend
 		if (string.IsNullOrWhiteSpace(executablePath))
 			throw new ArgumentException("Executable path is required.", nameof(executablePath));
 
-		var startInfo = new ProcessStartInfo(executablePath)
-		{
-			Arguments = options.Arguments ?? string.Empty,
-			UseShellExecute = false,
-		};
-		if (!string.IsNullOrWhiteSpace(options.WorkingDirectory))
-			startInfo.WorkingDirectory = options.WorkingDirectory;
-
-		var process = Process.Start(startInfo) ?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"Failed to start '{executablePath}'.");
+		var startInfo = AppDriverLaunch.ResolveStartInfo(executablePath, options);
+		var process = Process.Start(startInfo) ?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"Failed to start '{startInfo.FileName}'.");
 		var connection = new AppConnection(new AppConnectionOptions
 		{
 			TargetProcess = new TargetProcess(process),

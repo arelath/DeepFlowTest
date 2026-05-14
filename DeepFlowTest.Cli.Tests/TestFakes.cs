@@ -268,9 +268,17 @@ internal sealed class FakeTargetProcess : ITargetProcess
 
 	public bool HasExited { get; set; }
 
+	public int? ExitCode
+	{
+		get => HasExited ? exitCode ?? 0 : null;
+		set => exitCode = value;
+	}
+
 	public bool Killed { get; private set; }
 
 	public bool Disposed { get; private set; }
+
+	private int? exitCode;
 
 	public void Kill()
 	{

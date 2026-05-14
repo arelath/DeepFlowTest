@@ -14,7 +14,7 @@ $buildProject = Join-Path $root ".build\_build.csproj"
 
 Push-Location $root
 try {
-  & $dotnet build $buildProject /nodeReuse:false /p:UseSharedCompilation=false -nologo -clp:NoSummary --verbosity quiet
+  & $dotnet build $buildProject -nologo -clp:NoSummary --verbosity quiet
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   & $dotnet run --project $buildProject --no-build -- $BuildArguments

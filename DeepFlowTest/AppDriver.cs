@@ -3,6 +3,7 @@ namespace DeepFlowTest;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
@@ -12,11 +13,119 @@ using System.Text;
 using System.Threading;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Utility.WpfUtility.Tree;
 
 public sealed class AppDriver : IDisposable
 {
 	private static readonly object RecordingSync = new();
+	private const int ClientSideMatcherMaxNodeCount = 50_000;
+	private const int SelectorDescriptionMaxLength = 700;
+	private const int ElementSummaryValueMaxLength = 120;
+	private const int ElementPathMaxLength = 1_200;
+	private const int NoMatchDiagnosticMaxNodeCount = 200;
+	private const int NoMatchDiagnosticMaxElements = 25;
 	private static IDisposable? activeRecording;
+	private static readonly IReadOnlyList<string> AmbiguousElementSummaryPropertyNames =
+	[
+		"AutomationProperties.AutomationId",
+		"AutomationId",
+		"Name",
+		"AutomationProperties.Name",
+		"Header",
+		"Text",
+		"Content",
+		"IsVisible",
+		"IsEnabled",
+	];
+
+	private static readonly IReadOnlyList<string> ElementPathIdentityPropertyNames =
+	[
+		"AutomationProperties.AutomationId",
+		"AutomationId",
+		"Name",
+		"AutomationProperties.Name",
+		"Header",
+		"Text",
+		"Content",
+	];
+
+	private static readonly IReadOnlyList<string> ClientSideMatcherFallbackPropertyNames = new[]
+	{
+		"ActualHeight",
+		"ActualWidth",
+		"AllowDrop",
+		"AutomationProperties.Id",
+		"AutomationProperties.Name",
+		"AutomationProperties.AutomationId",
+		"AutomationId",
+		"Background",
+		"BorderBrush",
+		"BorderThickness",
+		"BoundarySize",
+		"Child",
+		"ClassName",
+		"Command",
+		"Content",
+		"CornerRadius",
+		"Cursor",
+		"DesiredSize",
+		"FlowDirection",
+		"Focusable",
+		"FontFamily",
+		"FontSize",
+		"FontWeight",
+		"Foreground",
+		"HasContent",
+		"Header",
+		"Height",
+		"HorizontalAlignment",
+		"InputGestureText",
+		"IsChecked",
+		"IsEnabled",
+		"IsExpanded",
+		"IsKeyboardFocused",
+		"IsMouseCaptured",
+		"IsMouseDirectlyOver",
+		"IsMouseOver",
+		"IsOpen",
+		"IsVisible",
+		"KeyboardNavigation.ControlTabNavigation",
+		"KeyboardNavigation.DirectionalNavigation",
+		"KeyboardNavigation.TabNavigation",
+		"Language",
+		"Left",
+		"Margin",
+		"MaxHeight",
+		"MaxWidth",
+		"MinHeight",
+		"MinWidth",
+		"Name",
+		"Opacity",
+		"Orientation",
+		"Padding",
+		"Panel.ZIndex",
+		"RenderSize",
+		"ScrollViewer.CanContentScroll",
+		"ScrollViewer.HorizontalScrollBarVisibility",
+		"ScrollViewer.PanningMode",
+		"ScrollViewer.VerticalScrollBarVisibility",
+		"TabIndex",
+		"Text",
+		"TextElement.Background",
+		"TextElement.FontFamily",
+		"TextElement.FontSize",
+		"TextElement.FontWeight",
+		"TextElement.Foreground",
+		"TextTrimming",
+		"Title",
+		"ToolTip",
+		"Top",
+		"Uid",
+		"VerticalAlignment",
+		"Visibility",
+		"Width",
+		"WindowState",
+	};
 	private readonly object elementCacheSync = new();
 	private readonly Dictionary<string, List<WeakReference<Element>>> elementCache = new(StringComparer.Ordinal);
 	private readonly Keyboard keyboard;
@@ -86,22 +195,28 @@ public sealed class AppDriver : IDisposable
 	{
 		_ = selector ?? throw new ArgumentNullException(nameof(selector));
 		return PollForElement(
-			() => FindElements(selector, matcherPayload: null, maxMatches: 2),
+			() => FindElements(selector, matcherCode: null, matcherHash: null, maxMatches: 2),
 			selector.ToString());
 	}
 
 	public Element GetElement(Expression<Func<VisualTreeNodeDto, bool>> matcher) =>
 		GetElements(matcher, maxMatches: 1).SingleOrDefault()
-		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
+		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{ExpressionPayloadSerializer.FormatDiagnosticText(matcher)}'.");
 
 	public Element GetElement(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
 		GetElement(matcher, timeoutMs, propNames: null);
 
-	public Element GetElement(Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames) =>
-		PollForElement(
-			() => FindElements(matcher, maxMatches: 2, propNames: propNames),
-			matcher?.ToString() ?? string.Empty,
+	public Element GetElement(Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames)
+	{
+		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
+		var predicate = matcher.Compile();
+		ElementRepairInfo? repairInfo = null;
+		repairInfo = CreateElementMatcherRepairInfo(matcher, predicate, () => repairInfo);
+		return PollForElement(
+			() => FindElements(matcher, predicate, repairInfo, maxMatches: 2, propNames: propNames),
+			ExpressionPayloadSerializer.FormatDiagnosticText(matcher),
 			TimeoutFromMilliseconds(timeoutMs));
+	}
 
 	public TElement GetElement<TElement>(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000)
 		where TElement : Element =>
@@ -111,23 +226,75 @@ public sealed class AppDriver : IDisposable
 		where TElement : Element =>
 		WrapElement<TElement>(GetElement(matcher, timeoutMs, propNames));
 
+	public Element GetElement(
+		Expression<Func<Element, bool?>> rootMatcher,
+		Expression<Func<Element, bool?>> matcher,
+		int timeoutMs = 30_000) =>
+		GetElement(rootMatcher, matcher, timeoutMs, propNames: null);
+
+	public Element GetElement(
+		Expression<Func<Element, bool?>> rootMatcher,
+		Expression<Func<Element, bool?>> matcher,
+		int timeoutMs,
+		IReadOnlyList<string>? propNames)
+	{
+		_ = rootMatcher ?? throw new ArgumentNullException(nameof(rootMatcher));
+		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
+		EnsureServerSideMatcher(rootMatcher, nameof(rootMatcher));
+		EnsureServerSideMatcher(matcher, nameof(matcher));
+		var rootPredicate = rootMatcher.Compile();
+		var predicate = matcher.Compile();
+		ElementRepairInfo? repairInfo = null;
+		repairInfo = CreateRootedElementMatcherRepairInfo(rootMatcher, rootPredicate, matcher, predicate, () => repairInfo, propNames);
+		return PollForElement(
+			() => FindElements(rootMatcher, matcher, repairInfo, maxMatches: 2, propNames: propNames),
+			$"{ExpressionPayloadSerializer.FormatDiagnosticText(matcher)} under root matcher '{ExpressionPayloadSerializer.FormatDiagnosticText(rootMatcher)}'",
+			TimeoutFromMilliseconds(timeoutMs));
+	}
+
+	public Element GetElement(Element root, Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
+		GetElement(root, matcher, timeoutMs, propNames: null);
+
+	public Element GetElement(Element root, Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames)
+	{
+		_ = root ?? throw new ArgumentNullException(nameof(root));
+		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
+		var predicate = matcher.Compile();
+		ElementRepairInfo? repairInfo = null;
+		repairInfo = CreateElementMatcherRepairInfo(matcher, predicate, () => repairInfo);
+		var diagnosticPropertyNames = GetPropNamesForMatcher(matcher, propNames);
+		return PollForElement(
+			() => FindElements(
+				matcher,
+				predicate,
+				repairInfo,
+				maxMatches: 2,
+				propNames: propNames,
+				rootTargetId: root.TargetId,
+				includeRoot: false,
+				maxNodeCount: ClientSideMatcherMaxNodeCount),
+			$"{ExpressionPayloadSerializer.FormatDiagnosticText(matcher)} under '{root.TargetId}'",
+			TimeoutFromMilliseconds(timeoutMs),
+			() => BuildRootNoMatchDiagnostic(root.TargetId, diagnosticPropertyNames));
+	}
+
 	public IReadOnlyList<Element> GetElements(ElementSelector selector, int maxMatches = 100)
 	{
 		_ = selector ?? throw new ArgumentNullException(nameof(selector));
-		return FindElements(selector, matcherPayload: null, maxMatches);
+		return FindElements(selector, matcherCode: null, matcherHash: null, maxMatches: maxMatches);
 	}
 
 	public IReadOnlyList<Element> GetElements(Expression<Func<VisualTreeNodeDto, bool>> matcher, int maxMatches = 100)
 	{
 		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
-		var payload = ExpressionPayloadSerializer.Serialize(matcher);
 		var predicate = matcher.Compile();
+		var payload = ExpressionPayloadSerializer.Serialize(matcher);
 		var repairInfo = new ElementRepairInfo(
-			matcher.ToString(),
+			ExpressionPayloadSerializer.FormatDiagnosticText(matcher),
 			payload.ExpressionHash,
 			[],
 			(node, _) => predicate(node));
-		return FindElements(null, payload, maxMatches, repairInfo);
+		return FindElements(null, payload, payload.ExpressionHash, maxMatches, repairInfo);
 	}
 
 	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
@@ -136,6 +303,9 @@ public sealed class AppDriver : IDisposable
 	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames)
 	{
 		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
+		var predicate = matcher.Compile();
+		ElementRepairInfo? repairInfo = null;
+		repairInfo = CreateElementMatcherRepairInfo(matcher, predicate, () => repairInfo);
 		var timeout = TimeoutFromMilliseconds(timeoutMs);
 		var stopwatch = Stopwatch.StartNew();
 		var attempt = 0;
@@ -143,7 +313,7 @@ public sealed class AppDriver : IDisposable
 		{
 			SleepBeforePoll(attempt++, stopwatch, timeout);
 
-			var matches = FindElements(matcher, maxMatches: 0, propNames: propNames);
+			var matches = FindElements(matcher, predicate, repairInfo, maxMatches: 0, propNames: propNames);
 			if (matches.Count != 0)
 				return matches;
 			if (stopwatch.Elapsed >= timeout)
@@ -165,27 +335,143 @@ public sealed class AppDriver : IDisposable
 			.Select(WrapElement<TElement>)
 			.ToArray();
 
-	private IReadOnlyList<Element> FindElements(Expression<Func<Element, bool?>> matcher, int maxMatches, IReadOnlyList<string>? propNames = null)
+	public IReadOnlyList<Element> GetElements(
+		Expression<Func<Element, bool?>> rootMatcher,
+		Expression<Func<Element, bool?>> matcher,
+		int timeoutMs = 30_000) =>
+		GetElements(rootMatcher, matcher, timeoutMs, propNames: null);
+
+	public IReadOnlyList<Element> GetElements(
+		Expression<Func<Element, bool?>> rootMatcher,
+		Expression<Func<Element, bool?>> matcher,
+		int timeoutMs,
+		IReadOnlyList<string>? propNames)
 	{
+		_ = rootMatcher ?? throw new ArgumentNullException(nameof(rootMatcher));
+		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
+		EnsureServerSideMatcher(rootMatcher, nameof(rootMatcher));
+		EnsureServerSideMatcher(matcher, nameof(matcher));
+		var rootPredicate = rootMatcher.Compile();
+		var predicate = matcher.Compile();
+		ElementRepairInfo? repairInfo = null;
+		repairInfo = CreateRootedElementMatcherRepairInfo(rootMatcher, rootPredicate, matcher, predicate, () => repairInfo, propNames);
+		var timeout = TimeoutFromMilliseconds(timeoutMs);
+		var stopwatch = Stopwatch.StartNew();
+		var attempt = 0;
+		while (true)
+		{
+			SleepBeforePoll(attempt++, stopwatch, timeout);
+
+			var matches = FindElements(rootMatcher, matcher, repairInfo, maxMatches: 0, propNames: propNames);
+			if (matches.Count != 0)
+				return matches;
+			if (stopwatch.Elapsed >= timeout)
+				break;
+		}
+
+		return [];
+	}
+
+	public IReadOnlyList<Element> GetElements(Element root, Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
+		GetElements(root, matcher, timeoutMs, propNames: null);
+
+	public IReadOnlyList<Element> GetElements(Element root, Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames)
+	{
+		_ = root ?? throw new ArgumentNullException(nameof(root));
 		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
 		var predicate = matcher.Compile();
 		ElementRepairInfo? repairInfo = null;
 		repairInfo = CreateElementMatcherRepairInfo(matcher, predicate, () => repairInfo);
-		// 1000 nodes is too small for production WPF apps with rich menus / asset trees. We use
-		// a generous cap so matchers that walk descendants don't silently miss late nodes.
-		var snapshot = GetVisualTree(rootTargetId: null, propNames: propNames, maxNodeCount: 50_000);
-		var limit = maxMatches <= 0 ? int.MaxValue : maxMatches;
-		return snapshot.Nodes
-			.Select(node => Element.FromNode(this, node, snapshot, repairInfo))
-			.Where(element => predicate(element) == true)
-			.Take(limit)
-			.ToArray();
+		var timeout = TimeoutFromMilliseconds(timeoutMs);
+		var stopwatch = Stopwatch.StartNew();
+		var attempt = 0;
+		while (true)
+		{
+			SleepBeforePoll(attempt++, stopwatch, timeout);
+
+			var matches = FindElements(
+				matcher,
+				predicate,
+				repairInfo,
+				maxMatches: 0,
+				propNames: propNames,
+				rootTargetId: root.TargetId,
+				includeRoot: false,
+				maxNodeCount: ClientSideMatcherMaxNodeCount);
+			if (matches.Count != 0)
+				return matches;
+			if (stopwatch.Elapsed >= timeout)
+				break;
+		}
+
+		return [];
+	}
+
+	private IReadOnlyList<Element> FindElements(
+		Expression<Func<Element, bool?>> rootMatcher,
+		Expression<Func<Element, bool?>> matcher,
+		ElementRepairInfo repairInfo,
+		int maxMatches,
+		IReadOnlyList<string>? propNames = null)
+	{
+		EnsureServerSideMatcher(rootMatcher, nameof(rootMatcher));
+		EnsureServerSideMatcher(matcher, nameof(matcher));
+		var rootPayload = ExpressionPayloadSerializer.Serialize(rootMatcher);
+		var payload = ExpressionPayloadSerializer.Serialize(matcher);
+		var requestedPropertyNames = GetPropNamesForRootedMatcher(rootMatcher, matcher, propNames);
+		return FindElements(
+			null,
+			new Eval(payload.ExpressionJson),
+			payload.ExpressionHash,
+			maxMatches,
+			repairInfo,
+			requestedPropertyNames,
+			rootTargetId: null,
+			includeRoot: false,
+			maxDepth: null,
+			maxNodeCount: ClientSideMatcherMaxNodeCount,
+			rootMatcherCode: new Eval(rootPayload.ExpressionJson),
+			rootMatcherHash: rootPayload.ExpressionHash);
+	}
+
+	private IReadOnlyList<Element> FindElements(
+		Expression<Func<Element, bool?>> matcher,
+		Func<Element, bool?> predicate,
+		ElementRepairInfo repairInfo,
+		int maxMatches,
+		IReadOnlyList<string>? propNames = null,
+		string? rootTargetId = null,
+		bool includeRoot = true,
+		int? maxDepth = null,
+		int? maxNodeCount = null,
+		object? rootMatcherCode = null,
+		string? rootMatcherHash = null)
+	{
+		_ = matcher ?? throw new ArgumentNullException(nameof(matcher));
+		if (RequiresClientSideElementPredicate(matcher))
+			return FindElementsOnClient(predicate, maxMatches, repairInfo, propNames, rootTargetId, includeRoot);
+
+		var payload = ExpressionPayloadSerializer.Serialize(matcher);
+		var requestedPropertyNames = GetPropNamesForMatcher(matcher, propNames);
+		return FindElements(
+			null,
+			new Eval(payload.ExpressionJson),
+			payload.ExpressionHash,
+			maxMatches,
+			repairInfo,
+			requestedPropertyNames,
+			rootTargetId,
+			includeRoot,
+			maxDepth,
+			maxNodeCount,
+			rootMatcherCode,
+			rootMatcherHash);
 	}
 
 	public TElement GetElement<TElement>(Expression<Func<TElement, bool?>> matcher)
 		where TElement : Element =>
 		GetElements<TElement>(matcher, maxMatches: 1).SingleOrDefault()
-		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{matcher}'.");
+		?? throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched expression '{ExpressionPayloadSerializer.FormatDiagnosticText(matcher)}'.");
 
 	public IReadOnlyList<TElement> GetElements<TElement>(Expression<Func<TElement, bool?>> matcher, int maxMatches = 100)
 		where TElement : Element
@@ -194,26 +480,82 @@ public sealed class AppDriver : IDisposable
 		var predicate = matcher.Compile();
 		ElementRepairInfo? repairInfo = null;
 		repairInfo = CreateTypedElementMatcherRepairInfo(matcher, predicate, () => repairInfo);
-		var snapshot = GetVisualTree();
+		if (RequiresClientSideElementPredicate(matcher))
+			return FindTypedElementsOnClient(predicate, maxMatches, repairInfo);
+
+		var payload = ExpressionPayloadSerializer.Serialize(matcher);
+		var requestedPropertyNames = GetPropNamesForMatcher(matcher, propNames: null);
+		return FindElements(null, new Eval(payload.ExpressionJson), payload.ExpressionHash, maxMatches, repairInfo, requestedPropertyNames)
+			.Select(WrapElement<TElement>)
+			.ToArray();
+	}
+
+	private IReadOnlyList<Element> FindElementsOnClient(
+		Func<Element, bool?> predicate,
+		int maxMatches,
+		ElementRepairInfo repairInfo,
+		IReadOnlyList<string>? propNames,
+		string? rootTargetId = null,
+		bool includeRoot = true)
+	{
+		var snapshot = GetVisualTree(
+			rootTargetId: rootTargetId,
+			propNames: GetClientSideMatcherPropNames(propNames),
+			maxNodeCount: ClientSideMatcherMaxNodeCount);
+		var limit = maxMatches <= 0 ? int.MaxValue : maxMatches;
+		return snapshot.Nodes
+			.Where(node => includeRoot || string.IsNullOrWhiteSpace(rootTargetId) || !string.Equals(node.TargetId, rootTargetId, StringComparison.Ordinal))
+			.Select(node => Element.FromNode(this, node, snapshot, repairInfo))
+			.Where(element => predicate(element) == true)
+			.Take(limit)
+			.ToArray();
+	}
+
+	private IReadOnlyList<TElement> FindTypedElementsOnClient<TElement>(
+		Func<TElement, bool?> predicate,
+		int maxMatches,
+		ElementRepairInfo repairInfo)
+		where TElement : Element
+	{
+		var snapshot = GetVisualTree(
+			rootTargetId: null,
+			propNames: GetClientSideMatcherPropNames(propNames: null),
+			maxNodeCount: ClientSideMatcherMaxNodeCount);
+		var limit = maxMatches <= 0 ? int.MaxValue : maxMatches;
 		return snapshot.Nodes
 			.Select(node => WrapElement<TElement>(Element.FromNode(this, node, snapshot, repairInfo)))
 			.Where(element => predicate(element) == true)
-			.Take(Math.Max(0, maxMatches))
+			.Take(limit)
 			.ToArray();
 	}
 
 	private IReadOnlyList<Element> FindElements(
 		ElementSelector? selector,
-		ExpressionMatcherPayload? matcherPayload,
+		object? matcherCode,
+		string? matcherHash,
 		int maxMatches,
-		ElementRepairInfo? repairInfo = null)
+		ElementRepairInfo? repairInfo = null,
+		IReadOnlyList<string>? propNames = null,
+		string? rootTargetId = null,
+		bool includeRoot = true,
+		int? maxDepth = null,
+		int? maxNodeCount = null,
+		object? rootMatcherCode = null,
+		string? rootMatcherHash = null)
 	{
+		var requestedPropertyNames = MergePropertyNames(selector?.RequestedPropertyNames, propNames);
 		var response = Send<FindElementCommandResponse>(new FindElementCommandRequest
 		{
 			Selector = selector?.ToDto(),
-			PropNames = selector?.RequestedPropertyNames,
-			MatcherCode = matcherPayload,
-			MatcherHash = matcherPayload?.ExpressionHash,
+			RootTargetId = rootTargetId,
+			IncludeRoot = includeRoot,
+			MaxDepth = maxDepth,
+			MaxNodeCount = maxNodeCount,
+			PropNames = requestedPropertyNames,
+			MatcherCode = matcherCode,
+			MatcherHash = matcherHash,
+			RootMatcherCode = rootMatcherCode,
+			RootMatcherHash = rootMatcherHash,
 			MaxMatches = maxMatches,
 		});
 
@@ -225,7 +567,11 @@ public sealed class AppDriver : IDisposable
 	private Element PollForElement(Func<IReadOnlyList<Element>> find, string selectorDescription)
 		=> PollForElement(find, selectorDescription, Options.Timeout);
 
-	private Element PollForElement(Func<IReadOnlyList<Element>> find, string selectorDescription, TimeSpan timeout)
+	private Element PollForElement(
+		Func<IReadOnlyList<Element>> find,
+		string selectorDescription,
+		TimeSpan timeout,
+		Func<string?>? noMatchDiagnostic = null)
 	{
 		var stopwatch = Stopwatch.StartNew();
 		var attempt = 0;
@@ -237,12 +583,265 @@ public sealed class AppDriver : IDisposable
 			if (matches.Count == 1)
 				return matches[0];
 			if (matches.Count > 1)
-				throw new AppDriverException(AppDriverErrorCodes.AmbiguousTarget, $"More than one element matched selector '{selectorDescription}'.");
+				throw new AppDriverException(AppDriverErrorCodes.AmbiguousTarget, BuildAmbiguousElementMessage(selectorDescription, matches));
 			if (stopwatch.Elapsed >= timeout)
 				break;
 		}
 
-		throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, $"No element matched selector '{selectorDescription}'.");
+		throw new AppDriverException(AppDriverErrorCodes.TargetNotFound, BuildNoMatchElementMessage(selectorDescription, noMatchDiagnostic));
+	}
+
+	private static string BuildNoMatchElementMessage(string selectorDescription, Func<string?>? diagnosticProvider)
+	{
+		var builder = new StringBuilder();
+		builder.Append("No element matched selector.");
+		builder.AppendLine();
+		builder.Append("Selector: ");
+		builder.AppendLine(Truncate(NormalizeWhitespace(selectorDescription), SelectorDescriptionMaxLength));
+		var diagnostic = TryGetNoMatchDiagnostic(diagnosticProvider);
+		if (!string.IsNullOrWhiteSpace(diagnostic))
+		{
+			builder.AppendLine(diagnostic);
+		}
+
+		return builder.ToString().TrimEnd();
+	}
+
+	private string BuildRootNoMatchDiagnostic(string rootTargetId, IReadOnlyList<string> propNames)
+	{
+		var snapshot = GetVisualTree(rootTargetId, propNames, maxNodeCount: NoMatchDiagnosticMaxNodeCount);
+		var elements = snapshot.Nodes
+			.Take(NoMatchDiagnosticMaxElements)
+			.Select(node => Element.FromNode(this, node, snapshot, register: false))
+			.ToArray();
+
+		var builder = new StringBuilder();
+		builder.AppendLine($"Elements currently under '{rootTargetId}' ({snapshot.NodeCount} captured):");
+		if (elements.Length == 0)
+		{
+			builder.Append("  <none>");
+			return builder.ToString();
+		}
+
+		for (var i = 0; i < elements.Length; i++)
+		{
+			builder.Append("  ");
+			builder.Append(i + 1);
+			builder.Append(". ");
+			builder.AppendLine(FormatElementSummary(elements[i]));
+		}
+
+		if (snapshot.NodeCount > elements.Length)
+		{
+			builder.Append("  ... ");
+			builder.Append(snapshot.NodeCount - elements.Length);
+			builder.AppendLine(" more element(s) omitted.");
+		}
+
+		if (snapshot.IsTruncated && !string.IsNullOrWhiteSpace(snapshot.TruncationReason))
+		{
+			builder.Append("  Snapshot truncated: ");
+			builder.AppendLine(snapshot.TruncationReason);
+		}
+
+		return builder.ToString().TrimEnd();
+	}
+
+	private static string? TryGetNoMatchDiagnostic(Func<string?>? diagnosticProvider)
+	{
+		if (diagnosticProvider is null)
+			return null;
+
+		try
+		{
+			return diagnosticProvider();
+		}
+		catch (Exception ex)
+		{
+			return $"Diagnostic lookup failed: {ex.GetType().Name}: {ex.Message}";
+		}
+	}
+
+	private static string BuildAmbiguousElementMessage(string selectorDescription, IReadOnlyList<Element> matches)
+	{
+		var builder = new StringBuilder();
+		builder.Append("More than one element matched selector.");
+		builder.AppendLine();
+		builder.Append("Selector: ");
+		builder.AppendLine(Truncate(NormalizeWhitespace(selectorDescription), SelectorDescriptionMaxLength));
+		builder.AppendLine("Matched elements:");
+		for (var i = 0; i < matches.Count; i++)
+		{
+			builder.Append("  ");
+			builder.Append(i + 1);
+			builder.Append(". ");
+			builder.AppendLine(FormatElementSummary(matches[i]));
+		}
+
+		builder.Append("Make the selector more specific, or call GetElements when multiple matches are expected.");
+		return builder.ToString();
+	}
+
+	private static string FormatElementSummary(Element element)
+	{
+		var parts = new List<string>
+		{
+			$"TargetId={FormatDiagnosticValue(element.TargetId)}",
+			$"TypeName={FormatDiagnosticValue(element.TypeName)}",
+		};
+
+		if (!string.IsNullOrWhiteSpace(element.FrameworkTypeName)
+			&& !string.Equals(element.FrameworkTypeName, element.TypeName, StringComparison.Ordinal))
+		{
+			parts.Add($"FrameworkTypeName={FormatDiagnosticValue(element.FrameworkTypeName)}");
+		}
+
+		foreach (var propertyName in AmbiguousElementSummaryPropertyNames)
+		{
+			if (!element.Properties.TryGetValue(propertyName, out var value) || value is null or PropertyExtractionError)
+				continue;
+
+			var valueText = NormalizeWhitespace(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
+			if (valueText.Length == 0)
+				continue;
+
+			parts.Add($"{propertyName}={FormatDiagnosticValue(value)}");
+		}
+
+		var path = FormatElementPath(element);
+		if (path.Length != 0)
+			parts.Add($"Path={path}");
+
+		return string.Join(", ", parts);
+	}
+
+	private static string FormatElementPath(Element element)
+	{
+		var path = GetElementPath(element);
+		if (path.Count <= 1)
+			return string.Empty;
+
+		return Truncate(string.Join(" > ", path.Select(FormatPathSegment)), ElementPathMaxLength);
+	}
+
+	private static IReadOnlyList<ElementPathSegmentResponse> GetElementPath(Element element)
+	{
+		if (element.DiagnosticPath.Count != 0)
+			return element.DiagnosticPath;
+
+		var snapshot = element.CurrentSnapshot;
+		if (snapshot is null)
+			return [];
+
+		var byId = new Dictionary<string, VisualTreeNodeDto>(StringComparer.Ordinal);
+		foreach (var candidate in snapshot.Nodes)
+		{
+			if (!byId.TryGetValue(candidate.TargetId, out var existing) || existing.ParentId is null)
+				byId[candidate.TargetId] = candidate;
+		}
+
+		var path = new List<ElementPathSegmentResponse>();
+		var seenTargetIds = new HashSet<string>(StringComparer.Ordinal);
+		var current = element.SnapshotNode;
+		while (true)
+		{
+			if (!seenTargetIds.Add(current.TargetId))
+				break;
+
+			path.Add(ToPathSegment(current));
+			if (string.IsNullOrWhiteSpace(current.ParentId))
+				break;
+			if (!byId.TryGetValue(current.ParentId!, out current))
+				break;
+		}
+
+		path.Reverse();
+		return path;
+	}
+
+	private static ElementPathSegmentResponse ToPathSegment(VisualTreeNodeDto node) =>
+		new()
+		{
+			TargetId = node.TargetId,
+			TypeName = node.TypeName,
+			FrameworkTypeName = node.FrameworkTypeName,
+			Properties = node.Properties,
+		};
+
+	private static string FormatPathSegment(ElementPathSegmentResponse segment)
+	{
+		var identityParts = ElementPathIdentityPropertyNames
+			.Select(propertyName => TryFormatPathProperty(segment, propertyName))
+			.Where(static value => value is not null)
+			.Cast<string>()
+			.Take(3)
+			.ToArray();
+		return identityParts.Length == 0
+			? segment.TypeName
+			: $"{segment.TypeName}[{string.Join(", ", identityParts)}]";
+	}
+
+	private static string? TryFormatPathProperty(ElementPathSegmentResponse segment, string propertyName)
+	{
+		if (!segment.Properties.TryGetValue(propertyName, out var value) || value is null or PropertyExtractionError)
+			return null;
+
+		var valueText = NormalizeWhitespace(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
+		if (valueText.Length == 0)
+			return null;
+
+		return $"{ShortenPropertyName(propertyName)}={FormatDiagnosticValue(value)}";
+	}
+
+	private static string ShortenPropertyName(string propertyName) =>
+		propertyName.StartsWith("AutomationProperties.", StringComparison.Ordinal)
+			? propertyName.Substring("AutomationProperties.".Length)
+			: propertyName;
+
+	private static string FormatDiagnosticValue(object? value)
+	{
+		if (value is null)
+			return "<null>";
+
+		var text = Truncate(NormalizeWhitespace(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty), ElementSummaryValueMaxLength);
+		return value is string
+			? $"\"{text.Replace("\"", "\\\"")}\""
+			: text;
+	}
+
+	private static string NormalizeWhitespace(string value)
+	{
+		if (string.IsNullOrEmpty(value))
+			return string.Empty;
+
+		var builder = new StringBuilder(value.Length);
+		var previousWasWhitespace = false;
+		foreach (var character in value)
+		{
+			if (char.IsWhiteSpace(character))
+			{
+				if (!previousWasWhitespace)
+					builder.Append(' ');
+				previousWasWhitespace = true;
+				continue;
+			}
+
+			builder.Append(character);
+			previousWasWhitespace = false;
+		}
+
+		return builder.ToString().Trim();
+	}
+
+	private static string Truncate(string value, int maxLength)
+	{
+		if (value.Length <= maxLength)
+			return value;
+
+		const string Suffix = "...";
+		return maxLength <= Suffix.Length
+			? value.Substring(0, maxLength)
+			: value.Substring(0, maxLength - Suffix.Length) + Suffix;
 	}
 
 	private void SleepBeforePoll(int attempt, Stopwatch stopwatch, TimeSpan timeout)
@@ -346,6 +945,15 @@ public sealed class AppDriver : IDisposable
 				RedirectStandardOutput = true,
 				RedirectStandardInput = true,
 			});
+			try
+			{
+				recorder.RegisterForParentClose();
+			}
+			catch
+			{
+				recorder.Dispose();
+				throw;
+			}
 
 			activeRecording = new RecordingScope(recorder, () =>
 			{
@@ -396,7 +1004,7 @@ public sealed class AppDriver : IDisposable
 
 		if (element.Selector is not null)
 		{
-			var matches = FindElements(element.Selector, matcherPayload: null, maxMatches: 100);
+			var matches = FindElements(element.Selector, matcherCode: null, matcherHash: null, maxMatches: 100);
 			if (matches.Count == 1)
 				return matches[0];
 
@@ -523,13 +1131,55 @@ public sealed class AppDriver : IDisposable
 	private static TimeSpan TimeoutFromMilliseconds(int timeoutMs) =>
 		TimeSpan.FromMilliseconds(Math.Max(1, timeoutMs));
 
+	private static IReadOnlyList<string> GetPropNamesForMatcher(LambdaExpression matcherExpression, IReadOnlyList<string>? propNames)
+	{
+		var collectedPropertyNames = ElementPropertyAccessCollector.Collect(matcherExpression);
+		return MergePropertyNames(VisualTreePropertyExtractor.DefaultPropertyNames, propNames, collectedPropertyNames)
+			?? VisualTreePropertyExtractor.DefaultPropertyNames.ToArray();
+	}
+
+	private static IReadOnlyList<string> GetPropNamesForRootedMatcher(
+		LambdaExpression rootMatcherExpression,
+		LambdaExpression matcherExpression,
+		IReadOnlyList<string>? propNames)
+	{
+		var collectedRootPropertyNames = ElementPropertyAccessCollector.Collect(rootMatcherExpression);
+		var collectedPropertyNames = ElementPropertyAccessCollector.Collect(matcherExpression);
+		return MergePropertyNames(VisualTreePropertyExtractor.DefaultPropertyNames, propNames, collectedRootPropertyNames, collectedPropertyNames)
+			?? VisualTreePropertyExtractor.DefaultPropertyNames.ToArray();
+	}
+
+	private static IReadOnlyList<string> GetClientSideMatcherPropNames(IReadOnlyList<string>? propNames) =>
+		MergePropertyNames(VisualTreePropertyExtractor.DefaultPropertyNames, ClientSideMatcherFallbackPropertyNames, propNames)
+		?? ClientSideMatcherFallbackPropertyNames.ToArray();
+
+	private static IReadOnlyList<string>? MergePropertyNames(params IEnumerable<string>?[] sources)
+	{
+		HashSet<string>? merged = null;
+		foreach (var source in sources)
+		{
+			if (source is null)
+				continue;
+
+			foreach (var name in source.Where(static item => !string.IsNullOrWhiteSpace(item)))
+			{
+				merged ??= new HashSet<string>(StringComparer.Ordinal);
+				merged.Add(name);
+			}
+		}
+
+		return merged?.ToArray();
+	}
+
 	private ElementRepairInfo CreateElementMatcherRepairInfo(
 		Expression<Func<Element, bool?>> matcher,
 		Func<Element, bool?> predicate,
 		Func<ElementRepairInfo?> repairInfoAccessor)
 	{
-		var description = matcher.ToString();
-		var propertyNames = ElementPropertyAccessCollector.Collect(matcher).ToArray();
+		var description = ExpressionPayloadSerializer.FormatDiagnosticText(matcher);
+		var propertyNames = RequiresClientSideElementPredicate(matcher)
+			? GetClientSideMatcherPropNames(propNames: null)
+			: ElementPropertyAccessCollector.Collect(matcher).ToArray();
 		return new ElementRepairInfo(
 			description,
 			StableHash(description),
@@ -543,13 +1193,68 @@ public sealed class AppDriver : IDisposable
 		Func<ElementRepairInfo?> repairInfoAccessor)
 		where TElement : Element
 	{
-		var description = matcher.ToString();
-		var propertyNames = ElementPropertyAccessCollector.Collect(matcher).ToArray();
+		var description = ExpressionPayloadSerializer.FormatDiagnosticText(matcher);
+		var propertyNames = RequiresClientSideElementPredicate(matcher)
+			? GetClientSideMatcherPropNames(propNames: null)
+			: ElementPropertyAccessCollector.Collect(matcher).ToArray();
 		return new ElementRepairInfo(
 			description,
 			StableHash(description),
 			propertyNames,
 			(node, snapshot) => predicate(WrapElement<TElement>(Element.FromNode(this, node, snapshot, repairInfoAccessor(), register: false))) == true);
+	}
+
+	private ElementRepairInfo CreateRootedElementMatcherRepairInfo(
+		Expression<Func<Element, bool?>> rootMatcher,
+		Func<Element, bool?> rootPredicate,
+		Expression<Func<Element, bool?>> matcher,
+		Func<Element, bool?> predicate,
+		Func<ElementRepairInfo?> repairInfoAccessor,
+		IReadOnlyList<string>? propNames)
+	{
+		var description = $"{ExpressionPayloadSerializer.FormatDiagnosticText(matcher)} under root matcher '{ExpressionPayloadSerializer.FormatDiagnosticText(rootMatcher)}'";
+		var propertyNames = GetPropNamesForRootedMatcher(rootMatcher, matcher, propNames);
+		return new ElementRepairInfo(
+			description,
+			StableHash(description),
+			propertyNames,
+			(node, snapshot) =>
+			{
+				var element = Element.FromNode(this, node, snapshot, repairInfoAccessor(), register: false);
+				if (predicate(element) != true)
+					return false;
+
+				return HasMatchingAncestor(node, snapshot, rootPredicate, repairInfoAccessor);
+			});
+	}
+
+	private bool HasMatchingAncestor(
+		VisualTreeNodeDto node,
+		VisualTreeSnapshot snapshot,
+		Func<Element, bool?> rootPredicate,
+		Func<ElementRepairInfo?> repairInfoAccessor)
+	{
+		var byId = new Dictionary<string, VisualTreeNodeDto>(StringComparer.Ordinal);
+		foreach (var candidate in snapshot.Nodes)
+		{
+			if (!byId.TryGetValue(candidate.TargetId, out var existing) || existing.ParentId is null)
+				byId[candidate.TargetId] = candidate;
+		}
+
+		var parentId = node.ParentId;
+		while (!string.IsNullOrWhiteSpace(parentId))
+		{
+			if (!byId.TryGetValue(parentId!, out var parent))
+				return false;
+
+			var parentElement = Element.FromNode(this, parent, snapshot, repairInfoAccessor(), register: false);
+			if (rootPredicate(parentElement) == true)
+				return true;
+
+			parentId = parent.ParentId;
+		}
+
+		return false;
 	}
 
 	private VisualTreeSnapshot GetVisualTreeForRepair(ElementRepairInfo repairInfo)
@@ -691,6 +1396,67 @@ public sealed class AppDriver : IDisposable
 		using var sha = SHA256.Create();
 		var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(text));
 		return BitConverter.ToString(bytes).Replace("-", string.Empty).ToLowerInvariant();
+	}
+
+	private static bool RequiresClientSideElementPredicate(LambdaExpression matcher)
+	{
+		var detector = new OpaqueDelegateInvocationDetector();
+		detector.Visit(matcher);
+		return detector.RequiresClientSideEvaluation;
+	}
+
+	private static void EnsureServerSideMatcher(LambdaExpression matcher, string argumentName)
+	{
+		if (RequiresClientSideElementPredicate(matcher))
+			throw new InvalidOperationException($"Expression '{argumentName}' uses client-only helpers or delegates and cannot be used in a server-side root-scoped find.");
+	}
+
+	private sealed class OpaqueDelegateInvocationDetector : ExpressionVisitor
+	{
+		public bool RequiresClientSideEvaluation { get; private set; }
+
+		protected override Expression VisitInvocation(InvocationExpression node)
+		{
+			if (IsOpaqueDelegate(node.Expression))
+				RequiresClientSideEvaluation = true;
+
+			return base.VisitInvocation(node);
+		}
+
+		protected override Expression VisitMethodCall(MethodCallExpression node)
+		{
+			if (node.Method.Name == nameof(Action.Invoke) && IsOpaqueDelegate(node.Object))
+				RequiresClientSideEvaluation = true;
+			else if (UsesElementValue(node) && IsClientOnlyMethod(node.Method))
+				RequiresClientSideEvaluation = true;
+
+			return base.VisitMethodCall(node);
+		}
+
+		private static bool IsOpaqueDelegate(Expression? expression) =>
+			expression is not null
+			&& expression is not LambdaExpression
+			&& typeof(Delegate).IsAssignableFrom(expression.Type);
+
+		private static bool UsesElementValue(MethodCallExpression expression) =>
+			IsElementType(expression.Object?.Type)
+			|| expression.Arguments.Any(static argument => IsElementType(argument.Type));
+
+		private static bool IsElementType(Type? type) =>
+			type is not null && typeof(Element).IsAssignableFrom(type);
+
+		private static bool IsClientOnlyMethod(MethodInfo method)
+		{
+			var declaringType = method.DeclaringType;
+			if (declaringType is null)
+				return false;
+
+			if (declaringType.Assembly == typeof(AppDriver).Assembly)
+				return false;
+
+			var namespaceName = declaringType.Namespace;
+			return namespaceName is null || !namespaceName.StartsWith("System", StringComparison.Ordinal);
+		}
 	}
 
 	private sealed class ElementPropertyAccessCollector : ExpressionVisitor

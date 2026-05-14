@@ -107,9 +107,21 @@ public sealed record class FindElementCommandRequest : IpcCommand
 
 	public ElementSelectorDto? Selector { get; set; }
 
+	public string? RootTargetId { get; set; }
+
+	public bool IncludeRoot { get; set; } = true;
+
+	public int? MaxDepth { get; set; }
+
+	public int? MaxNodeCount { get; set; }
+
 	public object? MatcherCode { get; set; }
 
 	public string? MatcherHash { get; set; }
+
+	public object? RootMatcherCode { get; set; }
+
+	public string? RootMatcherHash { get; set; }
 
 	public int MaxMatches { get; set; } = 1;
 }

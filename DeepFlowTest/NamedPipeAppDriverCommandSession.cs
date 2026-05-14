@@ -1,6 +1,7 @@
 namespace DeepFlowTest;
 
 using System;
+using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
@@ -13,7 +14,8 @@ public sealed class NamedPipeAppDriverCommandSession(AppConnection connection, A
 	{
 		using var client = new NamedPipeClient(
 			connection.PipeName,
-			getTargetExitCode: () => connection.TargetProcess.HasExited ? 0 : null);
+			getTargetExitCode: () => connection.TargetProcess.ExitCode,
+			readTargetCrashLog: () => PayloadCrashLog.TryRead(connection.PipeName, out var crashLog) ? crashLog : null);
 		var timeoutMs = (int)Math.Max(1, options.Timeout.TotalMilliseconds);
 		// Have the payload honour the same timeout the client is waiting for. Without this, the
 		// payload falls back to its DefaultCommandTimeoutMs (1s) which is too tight for slow UI

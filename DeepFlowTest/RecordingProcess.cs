@@ -3,10 +3,13 @@ namespace DeepFlowTest;
 using System;
 using System.Diagnostics;
 using System.IO;
+using DeepFlowTest.Utility;
 
 internal interface IRecordingProcess : IDisposable
 {
 	TextWriter StandardInput { get; }
+
+	void RegisterForParentClose();
 
 	void WaitForExit();
 }
@@ -21,6 +24,27 @@ internal sealed class ProcessRecordingProcess : IRecordingProcess
 	}
 
 	public TextWriter StandardInput => process.StandardInput;
+
+	public void RegisterForParentClose()
+	{
+		try
+		{
+			ProcessCloseOnParentClose.Add(process);
+		}
+		catch
+		{
+			try
+			{
+				if (!process.HasExited)
+					process.Kill();
+			}
+			catch (InvalidOperationException)
+			{
+			}
+
+			throw;
+		}
+	}
 
 	public static IRecordingProcess Start(ProcessStartInfo startInfo)
 	{

@@ -13,20 +13,20 @@ using System.Threading.Tasks;
 using DeepFlowTest;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Serialize.Linq.Extensions;
 using Serialize.Linq.Factories;
+using Serialize.Linq.Interfaces;
+using Serialize.Linq.Serializers;
+using SerializeJsonSerializer = Serialize.Linq.Serializers.JsonSerializer;
 
 public static class ExpressionPayloadSerializer
 {
 	public static ExpressionMatcherPayload Serialize<TDelegate>(Expression<TDelegate> expression)
 	{
 		_ = expression ?? throw new ArgumentNullException(nameof(expression));
-		if (!ExpressionPayloadOptions.AllowUnsafeSyncOverAsync)
-			SyncOverAsyncGuard.ThrowIfUnsafe(expression);
 
 		var closureValues = ClosureValueCollector.Collect(expression);
 		var expressionText = expression.ToString();
-		var expressionJson = expression.ToJson(new FactorySettings { AllowPrivateFieldAccess = true });
+		var expressionJson = SerializeText(expression);
 		var canonicalPayload = CreateCanonicalPayload(expression, expressionText, expressionJson, closureValues);
 
 		return new ExpressionMatcherPayload
@@ -36,6 +36,44 @@ public static class ExpressionPayloadSerializer
 			ExpressionHash = ComputeSha256(canonicalPayload),
 			ClosureValues = closureValues,
 		};
+	}
+
+	public static string SerializeText(LambdaExpression expression)
+	{
+		_ = expression ?? throw new ArgumentNullException(nameof(expression));
+		if (!ExpressionPayloadOptions.AllowUnsafeSyncOverAsync)
+			SyncOverAsyncGuard.ThrowIfUnsafe(expression);
+
+		// Closures (compiler-generated DisplayClass instances) only exist in the test process
+		// — they don't survive deserialization on the payload side. Inline any MemberExpression
+		// chain rooted in a ConstantExpression (the closure object) into a ConstantExpression
+		// so the serialized matcher carries the captured value rather than a reference into a
+		// type the payload can't load.
+		var closureInlined = (LambdaExpression)new ClosureMemberInliner().Visit(expression)!;
+		var serializableExpression = (LambdaExpression)new EnumConstantRewriter().Visit(closureInlined)!;
+		return Serializer.SerializeText(serializableExpression);
+	}
+
+	public static string FormatDiagnosticText(LambdaExpression expression)
+	{
+		_ = expression ?? throw new ArgumentNullException(nameof(expression));
+		try
+		{
+			var closureInlined = (LambdaExpression)new ClosureMemberInliner().Visit(expression)!;
+			return closureInlined.ToString();
+		}
+		catch
+		{
+			return expression.ToString();
+		}
+	}
+
+	public static LambdaExpression Deserialize(string expressionJson)
+	{
+		if (string.IsNullOrWhiteSpace(expressionJson))
+			throw new InvalidOperationException("Expression payload is empty.");
+
+		return (LambdaExpression)Serializer.DeserializeText(expressionJson);
 	}
 
 	private static string CreateCanonicalPayload(LambdaExpression expression, string expressionText, string expressionJson, Dictionary<string, object?> closureValues)
@@ -66,6 +104,13 @@ public static class ExpressionPayloadSerializer
 		var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(text));
 		return BitConverter.ToString(hashBytes).Replace("-", string.Empty).ToLowerInvariant();
 	}
+
+	private static readonly FactorySettings Settings = new()
+	{
+		AllowPrivateFieldAccess = true,
+	};
+
+	private static readonly ExpressionSerializer Serializer = new DeepFlowTestSerializeLinqSerializer();
 
 	private static object? NormalizeValue(object? value)
 	{
@@ -168,6 +213,12 @@ public static class ExpressionPayloadSerializer
 
 			while (members.Count != 0)
 			{
+				if (container is null)
+				{
+					value = null;
+					return true;
+				}
+
 				var member = members.Pop();
 				switch (member)
 				{
@@ -185,6 +236,126 @@ public static class ExpressionPayloadSerializer
 			value = container;
 			return true;
 		}
+	}
+
+	private sealed class ClosureMemberInliner : ExpressionVisitor
+	{
+		protected override Expression VisitMember(MemberExpression node)
+		{
+			if (TryEvaluateClosureChain(node, out var value))
+				return Expression.Constant(value, node.Type);
+
+			return base.VisitMember(node);
+		}
+
+		private static bool TryEvaluateClosureChain(MemberExpression node, out object? value)
+		{
+			var members = new Stack<MemberInfo>();
+			Expression? current = node;
+			while (current is MemberExpression memberExpression)
+			{
+				members.Push(memberExpression.Member);
+				current = memberExpression.Expression;
+			}
+
+			value = null;
+			if (current is not ConstantExpression constantExpression)
+				return false;
+
+			object? container = constantExpression.Value;
+			if (container is null)
+				return true;
+
+			while (members.Count != 0)
+			{
+				if (container is null)
+				{
+					value = null;
+					return true;
+				}
+
+				var member = members.Pop();
+				switch (member)
+				{
+					case FieldInfo field:
+						container = field.GetValue(container);
+						break;
+					case PropertyInfo property when property.GetIndexParameters().Length == 0:
+						container = property.GetValue(container, null);
+						break;
+					default:
+						return false;
+				}
+			}
+
+			value = container;
+			return true;
+		}
+	}
+
+	private sealed class EnumConstantRewriter : ExpressionVisitor
+	{
+		protected override Expression VisitConstant(ConstantExpression node)
+		{
+			if (node.Value is null || !node.Type.IsEnum)
+				return base.VisitConstant(node);
+
+			var underlyingType = Enum.GetUnderlyingType(node.Type);
+			var underlyingValue = Convert.ChangeType(node.Value, underlyingType, CultureInfo.InvariantCulture);
+			return Expression.Convert(Expression.Constant(underlyingValue, underlyingType), node.Type);
+		}
+	}
+
+	private sealed class DeepFlowTestSerializeLinqSerializer : ExpressionSerializer
+	{
+		public DeepFlowTestSerializeLinqSerializer()
+			: base(new SerializeJsonSerializer(), Settings)
+		{
+		}
+
+		protected override INodeFactory CreateFactory(Expression expression, FactorySettings factorySettings)
+		{
+			var expectedTypes = ExpressionExpectedTypeCollector.Collect(expression);
+			if (expression is LambdaExpression lambda)
+				expectedTypes.AddRange(lambda.Parameters.Select(static parameter => parameter.Type));
+
+			return new DefaultNodeFactory(expectedTypes, factorySettings);
+		}
+	}
+
+	private sealed class ExpressionExpectedTypeCollector : ExpressionVisitor
+	{
+		private readonly HashSet<Type> expectedTypes = new();
+
+		public static List<Type> Collect(Expression expression)
+		{
+			var collector = new ExpressionExpectedTypeCollector();
+			collector.Visit(expression);
+			return collector.expectedTypes.ToList();
+		}
+
+		protected override Expression VisitMember(MemberExpression node)
+		{
+			AddExpectedType(node.Member.DeclaringType);
+			return base.VisitMember(node);
+		}
+
+		protected override Expression VisitConstant(ConstantExpression node)
+		{
+			AddExpectedType(node.Value?.GetType());
+			return base.VisitConstant(node);
+		}
+
+		private void AddExpectedType(Type? type)
+		{
+			if (type is null || IsCompilerGeneratedClosure(type))
+				return;
+
+			expectedTypes.Add(type);
+		}
+
+		private static bool IsCompilerGeneratedClosure(Type type) =>
+			type.Name.IndexOf("<>c__", StringComparison.Ordinal) >= 0;
 	}
 
 	private sealed class SyncOverAsyncGuard : ExpressionVisitor

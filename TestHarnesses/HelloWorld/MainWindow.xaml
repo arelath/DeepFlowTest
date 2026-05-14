@@ -306,11 +306,13 @@
         <MenuItem x:Name="MenuItemOne"
                   Header="MenuItemOne"
                   IsCheckable="True"
+                  Click="MenuItemOne_Click"
                   AutomationProperties.AutomationId="MenuItemOne"
                   AutomationProperties.Name="MenuItemOne" />
         <Separator />
         <MenuItem x:Name="MenuItemTwo"
                   Header="MenuItemTwo"
+                  Click="MenuItemTwo_Click"
                   AutomationProperties.AutomationId="MenuItemTwo"
                   AutomationProperties.Name="MenuItemTwo" />
       </MenuItem>

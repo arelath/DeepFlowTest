@@ -57,4 +57,26 @@ public sealed class PayloadLoggingTests
 			File.Delete(logPath);
 		}
 	}
+
+	[Test]
+	public void PayloadCrashLogWritesUnhandledExceptionDetails()
+	{
+		var pipeName = $"deepflowtest-crash-{Guid.NewGuid():N}";
+		var logPath = PayloadCrashLog.GetLogPath(pipeName);
+		File.Delete(logPath);
+		try
+		{
+			PayloadCrashLog.Write(pipeName, new InvalidOperationException("crash boom"));
+
+			var found = PayloadCrashLog.TryRead(pipeName, out var crashLog, waitMs: 0);
+
+			Assert.That(found, Is.True);
+			Assert.That(crashLog, Does.Contain(nameof(InvalidOperationException)));
+			Assert.That(crashLog, Does.Contain("crash boom"));
+		}
+		finally
+		{
+			File.Delete(logPath);
+		}
+	}
 }

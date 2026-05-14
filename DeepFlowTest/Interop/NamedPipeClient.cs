@@ -11,6 +11,7 @@ public sealed class NamedPipeClient : IDisposable
 {
 	private readonly NamedPipeClientStream pipe;
 	private readonly Func<int?> getTargetExitCode;
+	private readonly Func<string?> readTargetCrashLog;
 	private readonly Action? requestReinjection;
 	private readonly int connectTimeoutMs;
 	private readonly int connectRetryCount;
@@ -18,12 +19,14 @@ public sealed class NamedPipeClient : IDisposable
 	public NamedPipeClient(
 		string pipeName,
 		Func<int?>? getTargetExitCode = null,
+		Func<string?>? readTargetCrashLog = null,
 		Action? requestReinjection = null,
 		int connectTimeoutMs = 5_000,
 		int connectRetryCount = 2)
 	{
 		PipeName = pipeName ?? throw new ArgumentNullException(nameof(pipeName));
 		this.getTargetExitCode = getTargetExitCode ?? (() => null);
+		this.readTargetCrashLog = readTargetCrashLog ?? (() => null);
 		this.requestReinjection = requestReinjection;
 		this.connectTimeoutMs = connectTimeoutMs;
 		this.connectRetryCount = Math.Max(1, connectRetryCount);
@@ -96,17 +99,43 @@ public sealed class NamedPipeClient : IDisposable
 			{
 				lastTimeout = ex;
 				requestReinjection?.Invoke();
+				ThrowIfTargetExited();
 			}
 		}
 
+		ThrowIfTargetExited();
 		throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.ProtocolError, $"Could not connect to pipe '{PipeName}'.", lastTimeout!);
 	}
 
 	private void ThrowIfTargetExited()
 	{
 		var exitCode = getTargetExitCode();
-		if (exitCode.HasValue)
-			throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.TargetExited, $"Target process exited with code {exitCode.Value}.");
+		if (!exitCode.HasValue)
+			return;
+
+		var crashLog = TryReadTargetCrashLog();
+		var message = $"Target process exited with code {exitCode.Value}.";
+		if (!string.IsNullOrWhiteSpace(crashLog))
+			message += $"{Environment.NewLine}Last unhandled exception:{Environment.NewLine}{crashLog}";
+
+		throw new NamedPipeSessionException(
+			ProtocolConstants.ErrorCodes.TargetExited,
+			message,
+			targetExitCode: exitCode.Value,
+			crashLog: crashLog);
+	}
+
+	private string? TryReadTargetCrashLog()
+	{
+		try
+		{
+			var crashLog = readTargetCrashLog();
+			return string.IsNullOrWhiteSpace(crashLog) ? null : crashLog;
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			return null;
+		}
 	}
 
 	private static async Task TimeoutAfter(Task task, TimeSpan timeout, CancellationToken cancellationToken)

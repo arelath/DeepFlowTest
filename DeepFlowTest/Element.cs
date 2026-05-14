@@ -19,7 +19,7 @@ using LinqExpression = System.Linq.Expressions.Expression;
 
 public class Element
 {
-	private readonly AppDriver driver;
+	private readonly AppDriver? driver;
 	private VisualTreeNodeDto node;
 
 	internal Element(
@@ -28,6 +28,7 @@ public class Element
 		ElementSelector? selector = null,
 		VisualTreeSnapshot? snapshot = null,
 		ElementRepairInfo? repairInfo = null,
+		IReadOnlyList<ElementPathSegmentResponse>? diagnosticPath = null,
 		bool register = true)
 	{
 		this.driver = driver ?? throw new ArgumentNullException(nameof(driver));
@@ -35,8 +36,16 @@ public class Element
 		Selector = selector;
 		Snapshot = snapshot;
 		RepairInfo = repairInfo;
+		DiagnosticPath = diagnosticPath ?? [];
 		if (register)
-			this.driver.RegisterElement(this);
+			driver.RegisterElement(this);
+	}
+
+	internal Element(VisualTreeNodeDto node, VisualTreeSnapshot snapshot)
+	{
+		this.node = node ?? throw new ArgumentNullException(nameof(node));
+		Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+		DiagnosticPath = [];
 	}
 
 	protected Element(Element source)
@@ -47,7 +56,8 @@ public class Element
 		Selector = source.Selector;
 		Snapshot = source.Snapshot;
 		RepairInfo = source.RepairInfo;
-		driver.RegisterElement(this);
+		DiagnosticPath = source.DiagnosticPath;
+		driver?.RegisterElement(this);
 	}
 
 	public string TargetId => node.TargetId;
@@ -66,7 +76,12 @@ public class Element
 
 	internal VisualTreeSnapshot? CurrentSnapshot => Snapshot;
 
+	internal IReadOnlyList<ElementPathSegmentResponse> DiagnosticPath { get; }
+
 	protected VisualTreeSnapshot? Snapshot { get; private set; }
+
+	private AppDriver Driver =>
+		driver ?? throw new InvalidOperationException("This element is only available while evaluating a target-side expression and cannot perform driver actions.");
 
 	public Element? Parent
 	{
@@ -76,7 +91,12 @@ public class Element
 				return null;
 
 			var parent = Snapshot.Nodes.SingleOrDefault(candidate => candidate.TargetId == node.ParentId);
-			return parent is null ? null : new Element(driver, parent, snapshot: Snapshot);
+			if (parent is null)
+				return null;
+
+			return driver is null
+				? new Element(parent, Snapshot)
+				: new Element(driver, parent, snapshot: Snapshot);
 		}
 	}
 
@@ -84,7 +104,7 @@ public class Element
 	{
 		get
 		{
-			var snapshot = Snapshot ?? driver.GetVisualTree();
+			var snapshot = Snapshot ?? Driver.GetVisualTree();
 			Snapshot = snapshot;
 			var byId = snapshot.Nodes.ToDictionary(static candidate => candidate.TargetId, StringComparer.Ordinal);
 			if (byId.TryGetValue(node.TargetId, out var refreshedNode))
@@ -92,7 +112,9 @@ public class Element
 
 			return node.ChildIds
 				.Where(byId.ContainsKey)
-				.Select(childId => new Element(driver, byId[childId], snapshot: snapshot))
+				.Select(childId => driver is null
+					? new Element(byId[childId], snapshot)
+					: new Element(driver, byId[childId], snapshot: snapshot))
 				.ToArray();
 		}
 	}
@@ -191,17 +213,17 @@ public class Element
 		SendTargetedWithRepair(() => new RaiseEventCommandRequest { TargetId = TargetId, EventName = eventName });
 
 	public virtual Element RaiseEvent<TInput>(Expression<Func<TInput, RoutedEventArgs>> code) =>
-		SendTargetedWithRepair(() => new RaiseEventCommandRequest { TargetId = TargetId, GetRoutedEventArgs = ExpressionPayloadSerializer.Serialize(code) });
+		SendTargetedWithRepair(() => new RaiseEventCommandRequest { TargetId = TargetId, GetRoutedEventArgs = Eval.SerializeCode(code) });
 
 	public virtual Element Invoke(string methodName, bool allowUnsafeCode = false) =>
 		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = methodName, AllowUnsafeCode = allowUnsafeCode });
 
 	public virtual Element Invoke<TInput>(Expression<Action<TInput>> code, int timeoutMs = 10_000) =>
-		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
 
 	public virtual TOutput? Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, int timeoutMs = 10_000)
 	{
-		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
 		ThrowIfUnserializableResult(response, nameof(Invoke));
 		return ConvertResponseValue<TOutput>(response.Value);
 	}
@@ -214,13 +236,13 @@ public class Element
 
 	public virtual Element InvokeAsync<TInput>(Expression<Func<TInput, Task>> code, int timeoutMs = 10_000)
 	{
-		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
 		return this;
 	}
 
 	public virtual TOutput? InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, int timeoutMs = 10_000)
 	{
-		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = ExpressionPayloadSerializer.Serialize(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
 		ThrowIfUnserializableResult(response, nameof(InvokeAsync));
 		return ConvertResponseValue<TOutput>(response.Value);
 	}
@@ -239,7 +261,7 @@ public class Element
 		{
 			TargetId = TargetId,
 			PropertyName = propertyName,
-			PropertyValue = ExpressionPayloadSerializer.Serialize(getValue),
+			PropertyValue = Eval.SerializeCode(getValue),
 		});
 
 	public virtual Element Assert(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs = 10_000)
@@ -267,7 +289,8 @@ public class Element
 				Properties = match.Properties,
 			},
 			selector,
-			repairInfo: repairInfo);
+			repairInfo: repairInfo,
+			diagnosticPath: match.Path);
 	}
 
 	internal static Element FromNode(
@@ -278,12 +301,15 @@ public class Element
 		bool register = true) =>
 		new(driver, node, snapshot: snapshot, repairInfo: repairInfo, register: register);
 
+	internal static Element FromSnapshot(VisualTreeNodeDto node, VisualTreeSnapshot snapshot) =>
+		new(node, snapshot);
+
 	protected void ReplaceNode(VisualTreeNodeDto replacement, VisualTreeSnapshot? snapshot = null)
 	{
 		var previousTargetId = node.TargetId;
 		node = replacement;
 		Snapshot = snapshot;
-		driver.MoveElementRegistration(this, previousTargetId, replacement.TargetId);
+		Driver.MoveElementRegistration(this, previousTargetId, replacement.TargetId);
 	}
 
 	internal void RefreshFromCache(VisualTreeNodeDto replacement, VisualTreeSnapshot snapshot)
@@ -311,12 +337,12 @@ public class Element
 
 	private TResponse SendWithRepair<TResponse>(Func<IpcCommand> commandFactory)
 	{
-		var response = driver.Send<TResponse>(commandFactory());
+		var response = Driver.Send<TResponse>(commandFactory());
 		if (IsFailure(response, ProtocolConstants.ErrorCodes.StaleTarget))
 		{
-			var repaired = driver.Repair(this);
+			var repaired = Driver.Repair(this);
 			ReplaceNode(repaired.node);
-			response = driver.Send<TResponse>(commandFactory());
+			response = Driver.Send<TResponse>(commandFactory());
 		}
 
 		if (response is StandardIpcResponse { Success: false } error)
@@ -363,7 +389,7 @@ public class Element
 
 	private void RefreshFromCurrentSnapshot()
 	{
-		var snapshot = driver.GetVisualTree(TargetId);
+		var snapshot = Driver.GetVisualTree(TargetId);
 		var refreshed = snapshot.Nodes.SingleOrDefault(candidate => string.Equals(candidate.TargetId, TargetId, StringComparison.Ordinal));
 		if (refreshed is not null)
 		{
@@ -374,7 +400,7 @@ public class Element
 		if (Selector is null)
 			return;
 
-		var repaired = driver.Repair(this);
+		var repaired = Driver.Repair(this);
 		ReplaceNode(repaired.node, repaired.Snapshot);
 	}
 

@@ -1,6 +1,7 @@
 namespace DeepFlowTest;
 
 using System;
+using System.Diagnostics;
 
 public class AppDriverOptions
 {
@@ -35,6 +36,8 @@ public sealed class AppDriverLaunchOptions : AppDriverOptions
 	public string? Arguments { get; set; }
 
 	public string? WorkingDirectory { get; set; }
+
+	public ProcessStartInfo? ProcessStartInfo { get; set; }
 
 	public bool OwnsProcess { get; set; } = true;
 }

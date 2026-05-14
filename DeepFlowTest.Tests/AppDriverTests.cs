@@ -2,8 +2,10 @@ namespace DeepFlowTest.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -22,11 +24,122 @@ public sealed class AppDriverTests
 
 		using var driver = factory.Launch("target.exe", new AppDriverLaunchOptions { Arguments = "--demo" });
 
-		Assert.That(backend.LaunchedExecutablePath, Is.EqualTo("target.exe"));
+		Assert.That(backend.LaunchedExecutablePath, Is.EqualTo(Path.GetFullPath("target.exe")));
 		Assert.That(backend.LaunchedOptions!.Arguments, Is.EqualTo("--demo"));
 		Assert.That(driver.Connection.OwnsProcess, Is.True);
 		driver.Dispose();
 		Assert.That(((FakeTargetProcess)driver.Connection.TargetProcess).KillCount, Is.EqualTo(1));
+	}
+
+	[Test]
+	public void PathLaunchExpandsEnvironmentVariablesAndNormalizesExecutablePath()
+	{
+		var root = Path.Combine(Path.GetTempPath(), $"DeepFlowTestLaunch-{Guid.NewGuid():N}");
+		var previous = Environment.GetEnvironmentVariable("DFT_LAUNCH_ROOT");
+		Environment.SetEnvironmentVariable("DFT_LAUNCH_ROOT", root);
+		try
+		{
+			var backend = new FakeBackend();
+			var factory = new AppDriverFactory(backend);
+
+			using var driver = factory.Launch(@"%DFT_LAUNCH_ROOT%\target.exe");
+
+			Assert.That(backend.LaunchedExecutablePath, Is.EqualTo(Path.GetFullPath(Path.Combine(root, "target.exe"))));
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("DFT_LAUNCH_ROOT", previous);
+		}
+	}
+
+	[Test]
+	public void ProcessStartInfoLaunchPreservesCallerStartInfo()
+	{
+		var backend = new FakeBackend();
+		var factory = new AppDriverFactory(backend);
+		var startInfo = new ProcessStartInfo("relative-target.exe", "--demo")
+		{
+			WorkingDirectory = @"C:\TestEnvironment",
+			UseShellExecute = true,
+			WindowStyle = ProcessWindowStyle.Hidden,
+			Verb = "runas",
+		};
+
+		using var driver = factory.Launch(startInfo);
+
+		Assert.That(backend.LaunchedExecutablePath, Is.EqualTo("relative-target.exe"));
+		Assert.That(backend.LaunchedOptions!.ProcessStartInfo, Is.SameAs(startInfo));
+		Assert.That(backend.LaunchedOptions.Arguments, Is.EqualTo("--demo"));
+		Assert.That(backend.LaunchedOptions.WorkingDirectory, Is.EqualTo(@"C:\TestEnvironment"));
+		Assert.That(backend.LaunchedOptions.ProcessStartInfo!.UseShellExecute, Is.True);
+		Assert.That(backend.LaunchedOptions.ProcessStartInfo.WindowStyle, Is.EqualTo(ProcessWindowStyle.Hidden));
+		Assert.That(backend.LaunchedOptions.ProcessStartInfo.Verb, Is.EqualTo("runas"));
+	}
+
+	[Test]
+	public void DefaultBackendLaunchProcessStartInfoPreservesCustomEnvironment()
+	{
+		var tempDirectory = Path.Combine(Path.GetTempPath(), $"DeepFlowTestLaunch-{Guid.NewGuid():N}");
+		var outputPath = Path.Combine(tempDirectory, "env.txt");
+		var environmentName = $"DFT_TEST_MODE_{Guid.NewGuid():N}";
+		const string ExpectedValue = "preserved";
+		Directory.CreateDirectory(tempDirectory);
+		Environment.SetEnvironmentVariable(environmentName, null);
+		try
+		{
+			var startInfo = new ProcessStartInfo(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
+			{
+				Arguments = $"/c echo %{environmentName}%> env.txt",
+				WorkingDirectory = tempDirectory,
+				UseShellExecute = false,
+				CreateNoWindow = true,
+			};
+			startInfo.Environment[environmentName] = ExpectedValue;
+			var options = new AppDriverLaunchOptions
+			{
+				AllowInjection = false,
+				PipeName = $"deepflowtest-launch-{Guid.NewGuid():N}",
+				ProcessStartInfo = startInfo,
+			};
+			var backend = new DefaultAppDriverBackend();
+
+			using var connection = backend.Launch(startInfo.FileName, options);
+			var text = WaitForFileText(outputPath);
+
+			Assert.That(text, Is.EqualTo(ExpectedValue));
+			Assert.That(connection.InjectorState, Is.EqualTo(AppConnectionInjectorState.InjectionSkipped));
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable(environmentName, null);
+			Directory.Delete(tempDirectory, recursive: true);
+		}
+	}
+
+	[Test]
+	public void DefaultBackendPathLaunchCreatesExpandedNormalizedStartInfo()
+	{
+		var root = Path.Combine(Path.GetTempPath(), $"DeepFlowTestLaunch-{Guid.NewGuid():N}");
+		var previous = Environment.GetEnvironmentVariable("DFT_LAUNCH_ROOT");
+		Environment.SetEnvironmentVariable("DFT_LAUNCH_ROOT", root);
+		try
+		{
+			var options = new AppDriverLaunchOptions
+			{
+				Arguments = "--demo",
+				WorkingDirectory = root,
+			};
+
+			var startInfo = AppDriverLaunch.ResolveStartInfo(@"%DFT_LAUNCH_ROOT%\target.exe", options);
+
+			Assert.That(startInfo.FileName, Is.EqualTo(Path.GetFullPath(Path.Combine(root, "target.exe"))));
+			Assert.That(startInfo.Arguments, Is.EqualTo("--demo"));
+			Assert.That(startInfo.WorkingDirectory, Is.EqualTo(root));
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("DFT_LAUNCH_ROOT", previous);
+		}
 	}
 
 	[Test]
@@ -116,16 +229,21 @@ public sealed class AppDriverTests
 	[Test]
 	public void ExpressionGetElementsPollsUntilTimeoutNotJustBackoffSequence()
 	{
-		var empty = VisualTreeSnapshot.Create(1, Array.Empty<VisualTreeNodeDto>());
-		var match = VisualTreeSnapshot.Create(2, new[]
+		var empty = new FindElementCommandResponse { Status = ProtocolConstants.Statuses.NoMatch };
+		var match = new FindElementCommandResponse
 		{
-			new VisualTreeNodeDto
+			Status = ProtocolConstants.Statuses.Ok,
+			Matches =
 			{
-				TargetId = "late-target",
-				TypeName = "Button",
-				Properties = { ["Name"] = "late" },
+				new FindElementMatchResponse
+				{
+					TargetId = "late-target",
+					TypeName = "Button",
+					Properties = { ["Name"] = "late" },
+				},
 			},
-		});
+			MatchCount = 1,
+		};
 		var session = new FakeSession(empty, empty, match);
 		var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
@@ -136,6 +254,497 @@ public sealed class AppDriverTests
 
 		Assert.That(elements.Single().TargetId, Is.EqualTo("late-target"));
 		Assert.That(session.SentCommands.Count, Is.EqualTo(3));
+	}
+
+	[Test]
+	public void AmbiguousExpressionElementErrorIncludesMatchedElementSummaries()
+	{
+		var response = new FindElementCommandResponse
+		{
+			Status = ProtocolConstants.Statuses.Ok,
+			Matches =
+			{
+				new FindElementMatchResponse
+				{
+					TargetId = "build",
+					TypeName = "MenuItem",
+					Path =
+					{
+						new ElementPathSegmentResponse
+						{
+							TargetId = "window",
+							TypeName = "Window",
+							Properties =
+							{
+								["AutomationProperties.AutomationId"] = "MainWindow",
+								["Name"] = "Sage",
+							},
+						},
+						new ElementPathSegmentResponse
+						{
+							TargetId = "menu",
+							TypeName = "Menu",
+							Properties =
+							{
+								["AutomationProperties.AutomationId"] = "MainMenu",
+							},
+						},
+						new ElementPathSegmentResponse
+						{
+							TargetId = "build",
+							TypeName = "MenuItem",
+							Properties =
+							{
+								["AutomationProperties.AutomationId"] = "BuildMenuItem",
+								["Header"] = "_Build",
+							},
+						},
+					},
+					Properties =
+					{
+						["AutomationProperties.AutomationId"] = "BuildMenuItem",
+						["Header"] = "_Build",
+						["IsVisible"] = true,
+					},
+				},
+				new FindElementMatchResponse
+				{
+					TargetId = "buildToolbar",
+					TypeName = "MenuItem",
+					Path =
+					{
+						new ElementPathSegmentResponse
+						{
+							TargetId = "window",
+							TypeName = "Window",
+							Properties =
+							{
+								["AutomationProperties.AutomationId"] = "MainWindow",
+								["Name"] = "Sage",
+							},
+						},
+						new ElementPathSegmentResponse
+						{
+							TargetId = "toolbar",
+							TypeName = "ToolBar",
+							Properties =
+							{
+								["AutomationProperties.AutomationId"] = "BuildToolbar",
+							},
+						},
+						new ElementPathSegmentResponse
+						{
+							TargetId = "buildToolbar",
+							TypeName = "MenuItem",
+							Properties =
+							{
+								["AutomationProperties.AutomationId"] = "BuildToolbarMenuItem",
+								["Header"] = "Build",
+							},
+						},
+					},
+					Properties =
+					{
+						["AutomationProperties.AutomationId"] = "BuildToolbarMenuItem",
+						["Header"] = "Build",
+						["IsVisible"] = true,
+					},
+				},
+			},
+			MatchCount = 2,
+			MaxMatches = 2,
+		};
+		var session = new FakeSession(response);
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session,
+			new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(1) });
+		var normalizedHeader = "Build";
+
+		var exception = Assert.Throws<AppDriverException>(() =>
+			driver.GetElement(
+				element => element.TypeName == "MenuItem" && element["Header"].ToString().Replace("_", string.Empty).Trim() == normalizedHeader,
+				timeoutMs: 1,
+				propNames: MatcherPropertyNames));
+
+		Assert.That(exception!.ErrorCode, Is.EqualTo(AppDriverErrorCodes.AmbiguousTarget));
+		Assert.That(exception.Message, Does.Contain("More than one element matched selector."));
+		Assert.That(exception.Message, Does.Contain("\"Build\""));
+		Assert.That(exception.Message, Does.Not.Contain("DisplayClass"));
+		Assert.That(exception.Message, Does.Not.Contain("value("));
+		Assert.That(exception.Message, Does.Contain("Matched elements:"));
+		Assert.That(exception.Message, Does.Contain("TargetId=\"build\""));
+		Assert.That(exception.Message, Does.Contain("AutomationProperties.AutomationId=\"BuildMenuItem\""));
+		Assert.That(exception.Message, Does.Contain("Header=\"_Build\""));
+		Assert.That(exception.Message, Does.Contain("Path=Window[AutomationId=\"MainWindow\", Name=\"Sage\"] > Menu[AutomationId=\"MainMenu\"] > MenuItem[AutomationId=\"BuildMenuItem\", Header=\"_Build\"]"));
+		Assert.That(exception.Message, Does.Contain("TargetId=\"buildToolbar\""));
+		Assert.That(exception.Message, Does.Contain("Path=Window[AutomationId=\"MainWindow\", Name=\"Sage\"] > ToolBar[AutomationId=\"BuildToolbar\"] > MenuItem[AutomationId=\"BuildToolbarMenuItem\", Header=\"Build\"]"));
+		Assert.That(exception.Message, Does.Contain("Make the selector more specific"));
+	}
+
+	[Test]
+	public void CapturedElementPredicateFallsBackToClientSnapshotMatching()
+	{
+		var snapshot = VisualTreeSnapshot.Create(
+			1,
+			new[]
+			{
+				new VisualTreeNodeDto
+				{
+					TargetId = "build",
+					TypeName = "MenuItem",
+					Properties =
+					{
+						["Header"] = "Build",
+						["IsEnabled"] = true,
+					},
+				},
+				new VisualTreeNodeDto
+				{
+					TargetId = "check",
+					TypeName = "MenuItem",
+					Properties =
+					{
+						["Header"] = "Check",
+						["IsEnabled"] = false,
+					},
+				},
+			});
+		var session = new FakeSession(snapshot);
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session,
+			new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(1) });
+		Func<Element, bool> predicate = element =>
+			element.TypeName == "MenuItem"
+			&& element["Header"] == "Build"
+			&& element["IsEnabled"];
+
+		var element = driver.GetElement(candidate => predicate(candidate), timeoutMs: 1);
+
+		Assert.That(element.TargetId, Is.EqualTo("build"));
+		Assert.That(session.SentCommands.OfType<FindElementCommandRequest>(), Is.Empty);
+		var command = session.SentCommands.OfType<GetVisualTreeCommandRequest>().Single();
+		Assert.That(command.PropNames, Does.Contain("Header"));
+		Assert.That(command.PropNames, Does.Contain("IsEnabled"));
+		Assert.That(command.MaxNodeCount, Is.EqualTo(50_000));
+	}
+
+	[Test]
+	public void CapturedElementPredicatePollsClientSnapshotsUntilMatch()
+	{
+		var emptySnapshot = VisualTreeSnapshot.Create(1, Array.Empty<VisualTreeNodeDto>());
+		var matchSnapshot = VisualTreeSnapshot.Create(
+			2,
+			new[]
+			{
+				new VisualTreeNodeDto
+				{
+					TargetId = "late",
+					TypeName = "Button",
+					Properties =
+					{
+						["Content"] = "Late",
+						["IsEnabled"] = true,
+					},
+				},
+			});
+		var session = new FakeSession(emptySnapshot, matchSnapshot);
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session,
+			new AppDriverOptions { ElementPollBackoffMs = new[] { 1 }, Timeout = TimeSpan.FromMilliseconds(250) });
+		var expectedContent = "Late";
+		Func<Element, bool> predicate = element =>
+			element.TypeName == "Button"
+			&& element["Content"] == expectedContent
+			&& element["IsEnabled"];
+
+		var element = driver.GetElement(candidate => predicate(candidate), timeoutMs: 250);
+
+		Assert.That(element.TargetId, Is.EqualTo("late"));
+		Assert.That(session.SentCommands.OfType<GetVisualTreeCommandRequest>().Count(), Is.EqualTo(2));
+		Assert.That(session.SentCommands.OfType<FindElementCommandRequest>(), Is.Empty);
+	}
+
+	[Test]
+	public void CapturedElementPredicateGetElementsReturnsAllClientSnapshotMatches()
+	{
+		var snapshot = VisualTreeSnapshot.Create(
+			1,
+			new[]
+			{
+				new VisualTreeNodeDto
+				{
+					TargetId = "build",
+					TypeName = "MenuItem",
+					Properties =
+					{
+						["Header"] = "Build",
+						["IsEnabled"] = true,
+					},
+				},
+				new VisualTreeNodeDto
+				{
+					TargetId = "rebuild",
+					TypeName = "MenuItem",
+					Properties =
+					{
+						["Header"] = "Rebuild",
+						["IsEnabled"] = true,
+					},
+				},
+				new VisualTreeNodeDto
+				{
+					TargetId = "disabled",
+					TypeName = "MenuItem",
+					Properties =
+					{
+						["Header"] = "Build disabled",
+						["IsEnabled"] = false,
+					},
+				},
+			});
+		var session = new FakeSession(snapshot);
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session,
+			new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(1) });
+		Func<Element, bool> predicate = element =>
+			element.TypeName == "MenuItem"
+			&& element["Header"].ToString().IndexOf("build", StringComparison.OrdinalIgnoreCase) >= 0
+			&& element["IsEnabled"];
+
+		var elements = driver.GetElements(candidate => predicate(candidate), timeoutMs: 1);
+
+		Assert.That(elements.Select(static element => element.TargetId), Is.EqualTo(new[] { "build", "rebuild" }));
+		Assert.That(session.SentCommands.OfType<GetVisualTreeCommandRequest>().Single().PropNames, Does.Contain("Header"));
+		Assert.That(session.SentCommands.OfType<FindElementCommandRequest>(), Is.Empty);
+	}
+
+	[Test]
+	public void CapturedTypedElementPredicateReturnsTypedClientSnapshotMatches()
+	{
+		var snapshot = VisualTreeSnapshot.Create(
+			1,
+			new[]
+			{
+				new VisualTreeNodeDto
+				{
+					TargetId = "run",
+					TypeName = "Button",
+					Properties =
+					{
+						["Content"] = "Run",
+						["IsEnabled"] = true,
+					},
+				},
+				new VisualTreeNodeDto
+				{
+					TargetId = "stop",
+					TypeName = "Button",
+					Properties =
+					{
+						["Content"] = "Stop",
+						["IsEnabled"] = true,
+					},
+				},
+			});
+		var session = new FakeSession(snapshot);
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session);
+		Func<TestButton, bool> predicate = button =>
+			button.TypeName == "Button"
+			&& button["Content"] == "Run"
+			&& button["IsEnabled"];
+
+		var buttons = driver.GetElements<TestButton>(button => predicate(button), maxMatches: 10);
+
+		Assert.That(buttons.Single().TargetId, Is.EqualTo("run"));
+		Assert.That(buttons.Single(), Is.TypeOf<TestButton>());
+		Assert.That(session.SentCommands.OfType<GetVisualTreeCommandRequest>().Single().PropNames, Does.Contain("Content"));
+		Assert.That(session.SentCommands.OfType<FindElementCommandRequest>(), Is.Empty);
+	}
+
+	[Test]
+	public void ElementHelperMethodPredicateFallsBackToClientSnapshotMatching()
+	{
+		var snapshot = VisualTreeSnapshot.Create(
+			1,
+			new[]
+			{
+				new VisualTreeNodeDto
+				{
+					TargetId = "menu",
+					TypeName = "MenuItem",
+					ChildIds = { "menu-text" },
+					Properties =
+					{
+						["Header"] = "File",
+						["IsEnabled"] = true,
+					},
+				},
+				new VisualTreeNodeDto
+				{
+					TargetId = "menu-text",
+					ParentId = "menu",
+					TypeName = "TextBlock",
+					Properties =
+					{
+						["Text"] = "Open Document",
+						["IsEnabled"] = true,
+					},
+				},
+			});
+		var session = new FakeSession(snapshot);
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session);
+		var normalizedHeader = NormalizeMenuHeader("Open Document");
+
+		var element = driver.GetElement(
+			candidate => string.Equals(candidate.TypeName, "MenuItem", StringComparison.Ordinal)
+				&& ElementOrDescendantTextMatches(candidate, normalizedHeader, 4),
+			timeoutMs: 1,
+			propNames: MatcherPropertyNames);
+
+		Assert.That(element.TargetId, Is.EqualTo("menu"));
+		Assert.That(session.SentCommands.OfType<FindElementCommandRequest>(), Is.Empty);
+		var command = session.SentCommands.OfType<GetVisualTreeCommandRequest>().Single();
+		Assert.That(command.PropNames, Does.Contain("Header"));
+		Assert.That(command.PropNames, Does.Contain("Text"));
+		Assert.That(command.MaxNodeCount, Is.EqualTo(50_000));
+	}
+
+	[Test]
+	public void RootScopedElementExpressionFindsDescendantsOnServer()
+	{
+		var session = new FakeSession(
+			new FindElementCommandResponse
+			{
+				Status = ProtocolConstants.Statuses.Ok,
+				Matches =
+				{
+					new FindElementMatchResponse
+					{
+						TargetId = "root",
+						TypeName = "StackPanel",
+						Properties = { ["Name"] = "rootPanel" },
+					},
+				},
+				MatchCount = 1,
+			},
+			new FindElementCommandResponse
+			{
+				Status = ProtocolConstants.Statuses.Ok,
+				Matches =
+				{
+					new FindElementMatchResponse
+					{
+						TargetId = "child",
+						TypeName = "Button",
+						Properties =
+						{
+							["Content"] = "Open",
+							["IsEnabled"] = true,
+						},
+					},
+				},
+				MatchCount = 1,
+			});
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session);
+		var root = driver.GetElement(ElementSelector.ByName("rootPanel"));
+
+		var child = driver.GetElement(
+			root,
+			element => element.TypeName == "Button" && element["Content"] == "Open" && element["IsEnabled"],
+			timeoutMs: 1,
+			propNames: ["Content", "IsEnabled"]);
+
+		Assert.That(child.TargetId, Is.EqualTo("child"));
+		var scopedCommand = session.SentCommands.OfType<FindElementCommandRequest>().Last();
+		Assert.That(scopedCommand.RootTargetId, Is.EqualTo("root"));
+		Assert.That(scopedCommand.IncludeRoot, Is.False);
+		Assert.That(scopedCommand.MatcherCode, Is.TypeOf<Eval>());
+		Assert.That(scopedCommand.PropNames, Does.Contain("Content"));
+		Assert.That(scopedCommand.PropNames, Does.Contain("IsEnabled"));
+		Assert.That(scopedCommand.MaxNodeCount, Is.EqualTo(50_000));
+	}
+
+	[Test]
+	public void RootScopedNoMatchErrorIncludesElementsUnderRoot()
+	{
+		var session = new RootNoMatchDiagnosticSession();
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session,
+			new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(1) });
+		var root = driver.GetElement(ElementSelector.ByName("rootPanel"));
+
+		var exception = Assert.Throws<AppDriverException>(() =>
+			driver.GetElement(
+				root,
+				element => element.TypeName == "MenuItem" && element["Header"] == "Build",
+				timeoutMs: 1,
+				propNames: MatcherPropertyNames));
+
+		Assert.That(exception!.ErrorCode, Is.EqualTo(AppDriverErrorCodes.TargetNotFound));
+		Assert.That(exception.Message, Does.Contain("No element matched selector."));
+		Assert.That(exception.Message, Does.Contain("under 'root'"));
+		Assert.That(exception.Message, Does.Contain("Elements currently under 'root'"));
+		Assert.That(exception.Message, Does.Contain("TargetId=\"file\""));
+		Assert.That(exception.Message, Does.Contain("TypeName=\"MenuItem\""));
+		Assert.That(exception.Message, Does.Contain("Header=\"File\""));
+		Assert.That(exception.Message, Does.Contain("Path=StackPanel[Name=\"rootPanel\"] > MenuItem[Header=\"File\"]"));
+		Assert.That(session.SentCommands.OfType<GetVisualTreeCommandRequest>().Single().RootTargetId, Is.EqualTo("root"));
+	}
+
+	[Test]
+	public void RootPredicateElementExpressionFindsDescendantsInOneServerCommand()
+	{
+		var session = new FakeSession(new FindElementCommandResponse
+		{
+			Status = ProtocolConstants.Statuses.Ok,
+			Matches =
+			{
+				new FindElementMatchResponse
+				{
+					TargetId = "child",
+					TypeName = "Button",
+					Properties =
+					{
+						["Content"] = "Open",
+						["IsEnabled"] = true,
+					},
+				},
+			},
+			MatchCount = 1,
+		});
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
+			session);
+
+		var child = driver.GetElement(
+			root => root.TypeName == "GroupBox" && root["Header"] == "Actions",
+			element => element.TypeName == "Button" && element["Content"] == "Open" && element["IsEnabled"],
+			timeoutMs: 1,
+			propNames: ["Header", "Content", "IsEnabled"]);
+
+		Assert.That(child.TargetId, Is.EqualTo("child"));
+		var command = session.SentCommands.OfType<FindElementCommandRequest>().Single();
+		Assert.That(command.RootTargetId, Is.Null);
+		Assert.That(command.IncludeRoot, Is.False);
+		Assert.That(command.RootMatcherCode, Is.TypeOf<Eval>());
+		Assert.That(command.RootMatcherHash, Is.Not.Empty);
+		Assert.That(command.MatcherCode, Is.TypeOf<Eval>());
+		Assert.That(command.MatcherHash, Is.Not.Empty);
+		Assert.That(command.PropNames, Does.Contain("Header"));
+		Assert.That(command.PropNames, Does.Contain("Content"));
+		Assert.That(command.PropNames, Does.Contain("IsEnabled"));
+		Assert.That(command.MaxNodeCount, Is.EqualTo(50_000));
 	}
 
 	[Test]
@@ -191,6 +800,62 @@ public sealed class AppDriverTests
 		}
 	}
 
+	private sealed class RootNoMatchDiagnosticSession : IAppDriverCommandSession
+	{
+		public List<IpcCommand> SentCommands { get; } = [];
+
+		public TResponse Send<TResponse>(IpcCommand command)
+		{
+			SentCommands.Add(command);
+			return command switch
+			{
+				FindElementCommandRequest { RootTargetId: null, Selector: { Name: "rootPanel" } } => (TResponse)(object)new FindElementCommandResponse
+				{
+					Status = ProtocolConstants.Statuses.Ok,
+					Matches =
+					{
+						new FindElementMatchResponse
+						{
+							TargetId = "root",
+							TypeName = "StackPanel",
+							Properties = { ["Name"] = "rootPanel" },
+						},
+					},
+					MatchCount = 1,
+				},
+				FindElementCommandRequest { RootTargetId: "root" } => (TResponse)(object)new FindElementCommandResponse
+				{
+					Status = ProtocolConstants.Statuses.NoMatch,
+				},
+				GetVisualTreeCommandRequest { RootTargetId: "root" } => (TResponse)(object)VisualTreeSnapshot.Create(
+					2,
+					new[]
+					{
+						new VisualTreeNodeDto
+						{
+							TargetId = "root",
+							TypeName = "StackPanel",
+							IsRoot = true,
+							ChildIds = { "file" },
+							Properties = { ["Name"] = "rootPanel" },
+						},
+						new VisualTreeNodeDto
+						{
+							TargetId = "file",
+							ParentId = "root",
+							TypeName = "MenuItem",
+							Properties =
+							{
+								["Header"] = "File",
+								["IsVisible"] = true,
+							},
+						},
+					}),
+				_ => throw new InvalidOperationException($"Unexpected command: {command.GetType().Name}"),
+			};
+		}
+	}
+
 	private sealed class FakeProcessCatalog : IProcessCatalog
 	{
 		private readonly IReadOnlyList<ITargetProcess> processes;
@@ -210,6 +875,71 @@ public sealed class AppDriverTests
 		}
 
 		public IReadOnlyList<ITargetProcess> GetProcesses() => processes;
+	}
+
+	private sealed class TestButton : Element<TestButton>
+	{
+		public TestButton(Element source)
+			: base(source)
+		{
+		}
+	}
+
+	private static readonly IReadOnlyList<string> MatcherPropertyNames =
+	[
+		"Name",
+		"AutomationProperties.Name",
+		"AutomationProperties.AutomationId",
+		"Text",
+		"Content",
+		"Header",
+		"IsEnabled",
+		"IsVisible",
+	];
+
+	private static string NormalizeMenuHeader(string header) =>
+		header.Replace("_", string.Empty, StringComparison.Ordinal).Trim().ToLowerInvariant();
+
+	private static bool ElementOrDescendantTextMatches(Element element, string normalizedExpected, int remainingDepth)
+	{
+		if (ElementTextMatches(element, normalizedExpected))
+			return true;
+
+		if (remainingDepth <= 0)
+			return false;
+
+		IReadOnlyList<Element> children;
+		try
+		{
+			children = element.Child;
+		}
+		catch
+		{
+			return false;
+		}
+
+		return children.Any(child => ElementOrDescendantTextMatches(child, normalizedExpected, remainingDepth - 1));
+	}
+
+	private static bool ElementTextMatches(Element element, string normalizedExpected)
+	{
+		foreach (var propertyName in new[] { "Header", "Text", "Content", "AutomationProperties.Name", "Name" })
+		{
+			if (element.Properties.TryGetValue(propertyName, out var value)
+				&& NormalizeMenuHeader(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty) == normalizedExpected)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static string WaitForFileText(string path)
+	{
+		var found = SpinWait.SpinUntil(() => File.Exists(path), TimeSpan.FromSeconds(5));
+		Assert.That(found, Is.True, $"Expected file '{path}' to be written.");
+		return File.ReadAllText(path).Trim();
 	}
 
 }

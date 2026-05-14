@@ -117,6 +117,16 @@ public partial class MainWindow : Window
 		EventDisplay.Text = "ExpanderControl_Collapsed event triggered.";
 	}
 
+	private void MenuItemOne_Click(object sender, RoutedEventArgs e)
+	{
+		EventDisplay.Text = "MenuItemOne_Click event triggered.";
+	}
+
+	private void MenuItemTwo_Click(object sender, RoutedEventArgs e)
+	{
+		EventDisplay.Text = "MenuItemTwo_Click event triggered.";
+	}
+
 	private void CtrlA_Shortcut(object sender, ExecutedRoutedEventArgs e)
 	{
 		EventDisplay.Text = "Ctrl+A shortcut triggered.";

@@ -18,6 +18,8 @@ public static class AppDriverPayload
 			options = AppDriverPayloadStartupOptions.Decode(startupArgument);
 			PayloadLog.Initialize(options.PipeName);
 			PayloadLog.Write($"Startup options parsed. Mode={options.Mode}; PayloadRoot={options.PayloadRoot}; ProtocolVersion={options.ProtocolVersion}.");
+			PayloadCrashLog.Register(options.PipeName);
+			PayloadLog.Write("Payload crash logging registered.");
 		}
 		catch (Exception ex)
 		{
@@ -70,6 +72,7 @@ public static class AppDriverPayload
 	{
 		runtime = new DefaultAppDriverPayloadRuntime();
 		PayloadLog.ResetForTests();
+		PayloadCrashLog.ResetForTests();
 		ReusablePipeSessionRegistry.ClearForTests();
 		AppHooks.ResetForTests();
 	}

@@ -247,6 +247,19 @@ public sealed record class FindElementMatchResponse
 	public string? FrameworkTypeName { get; set; }
 
 	public Dictionary<string, object?> Properties { get; set; } = [];
+
+	public List<ElementPathSegmentResponse> Path { get; set; } = [];
+}
+
+public sealed record class ElementPathSegmentResponse
+{
+	public string TargetId { get; set; } = string.Empty;
+
+	public string TypeName { get; set; } = string.Empty;
+
+	public string? FrameworkTypeName { get; set; }
+
+	public Dictionary<string, object?> Properties { get; set; } = [];
 }
 
 public sealed record class ScreenshotCommandResponse

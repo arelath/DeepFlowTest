@@ -175,6 +175,8 @@ public interface ITargetProcess : IDisposable
 
 	bool HasExited { get; }
 
+	int? ExitCode { get; }
+
 	void Kill();
 }
 
@@ -194,6 +196,22 @@ public sealed class TargetProcess : ITargetProcess
 	public string ProcessName => process.ProcessName;
 
 	public bool HasExited => process.HasExited;
+
+	public int? ExitCode
+	{
+		get
+		{
+			try
+			{
+				process.Refresh();
+				return process.HasExited ? process.ExitCode : null;
+			}
+			catch (InvalidOperationException)
+			{
+				return null;
+			}
+		}
+	}
 
 	public void Kill() => process.Kill();
 

@@ -112,6 +112,7 @@ public sealed class LibraryApiTests
 
 			Assert.That(fake.Waited, Is.True);
 			Assert.That(fake.Input, Does.Contain("q"));
+			Assert.That(fake.RegisteredForParentClose, Is.True);
 		}
 		finally
 		{
@@ -123,18 +124,22 @@ public sealed class LibraryApiTests
 	[Test]
 	public void CompatibilitySystemDialogHelpersFindSetAndInvokeDialogOperations()
 	{
-		var snapshot = VisualTreeSnapshot.Create(1, new[]
+		var response = new FindElementCommandResponse
 		{
-			new VisualTreeNodeDto
+			Status = ProtocolConstants.Statuses.Ok,
+			Matches =
 			{
-				TargetId = "dialog",
-				TypeName = "Dialog",
-				IsRoot = true,
-				Properties = { ["Name"] = "Open" },
+				new FindElementMatchResponse
+				{
+					TargetId = "dialog",
+					TypeName = "Dialog",
+					Properties = { ["Name"] = "Open" },
+				},
 			},
-		});
+			MatchCount = 1,
+		};
 		var session = new FakeSession(
-			snapshot,
+			response,
 			StandardIpcResponse.Ok(),
 			StandardIpcResponse.Ok());
 		using var driver = AppDriver.CreateForTests(
@@ -214,14 +219,23 @@ public sealed class LibraryApiTests
 	[Test]
 	public void CompatibilityElementExpressionLookupSupportsPropertyIndexer()
 	{
-		var snapshot = VisualTreeSnapshot.Create(1, new[]
+		var response = new FindElementCommandResponse
 		{
-			new VisualTreeNodeDto { TargetId = "root", TypeName = "Window", IsRoot = true, Properties = { ["Name"] = "Main" } },
-			new VisualTreeNodeDto { TargetId = "button", TypeName = "Button", Properties = { ["Name"] = "Run", ["Width"] = 120 } },
-		});
+			Status = ProtocolConstants.Statuses.Ok,
+			Matches =
+			{
+				new FindElementMatchResponse
+				{
+					TargetId = "button",
+					TypeName = "Button",
+					Properties = { ["Name"] = "Run", ["Width"] = 120 },
+				},
+			},
+			MatchCount = 1,
+		};
 		var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
-			new FakeSession(snapshot));
+			new FakeSession(response));
 
 		var element = driver.GetElement(x => x["Name"] == "Run" && x["Width"] > 100);
 
@@ -231,11 +245,21 @@ public sealed class LibraryApiTests
 	[Test]
 	public void CompatibilityCustomElementLookupReturnsTypedFluentWrapper()
 	{
-		var snapshot = VisualTreeSnapshot.Create(1, new[]
+		var response = new FindElementCommandResponse
 		{
-			new VisualTreeNodeDto { TargetId = "button", TypeName = "Button", IsRoot = true, Properties = { ["Name"] = "Run" } },
-		});
-		var session = new FakeSession(snapshot, StandardIpcResponse.Ok());
+			Status = ProtocolConstants.Statuses.Ok,
+			Matches =
+			{
+				new FindElementMatchResponse
+				{
+					TargetId = "button",
+					TypeName = "Button",
+					Properties = { ["Name"] = "Run" },
+				},
+			},
+			MatchCount = 1,
+		};
+		var session = new FakeSession(response, StandardIpcResponse.Ok());
 		var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
 			session);
@@ -335,7 +359,14 @@ public sealed class LibraryApiTests
 
 		public bool Waited { get; private set; }
 
+		public bool RegisteredForParentClose { get; private set; }
+
 		public TextWriter StandardInput => input;
+
+		public void RegisterForParentClose()
+		{
+			RegisteredForParentClose = true;
+		}
 
 		public void WaitForExit()
 		{

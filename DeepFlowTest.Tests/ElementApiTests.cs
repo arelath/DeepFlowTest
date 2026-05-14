@@ -122,20 +122,6 @@ public sealed class ElementApiTests
 	[Test]
 	public void StaleExpressionElementRepairsUsingMatcherAndIdentityProperties()
 	{
-		var first = VisualTreeSnapshot.Create(1, new[]
-		{
-			Node(
-				"old-target",
-				null,
-				"Button",
-				"Submit",
-				new Dictionary<string, object?>
-				{
-					["AutomationProperties.AutomationId"] = "SubmitButton",
-					["ActualWidth"] = 120,
-					["ActualHeight"] = 30,
-				}),
-		});
 		var second = VisualTreeSnapshot.Create(2, new[]
 		{
 			Node(
@@ -162,7 +148,24 @@ public sealed class ElementApiTests
 				}),
 		});
 		var session = new FakeSession(
-			first,
+			new FindElementCommandResponse
+			{
+				Status = ProtocolConstants.Statuses.Ok,
+				Matches =
+				{
+					new FindElementMatchResponse
+					{
+						TargetId = "old-target",
+						TypeName = "Button",
+						Properties =
+						{
+							["Name"] = "Submit",
+							["AutomationProperties.AutomationId"] = "SubmitButton",
+						},
+					},
+				},
+				MatchCount = 1,
+			},
 			StandardIpcResponse.FromError("stale", ProtocolConstants.ErrorCodes.StaleTarget),
 			second,
 			StandardIpcResponse.Ok());

@@ -5,6 +5,7 @@ using System.IO.Pipes;
 using System.Threading.Tasks;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Tests.Fakes;
 using NUnit.Framework;
 
 [TestFixture]
@@ -64,9 +65,62 @@ public sealed class NamedPipeSessionTests
 	{
 		using var client = new NamedPipeClient(UniquePipeName(), getTargetExitCode: () => 42, connectTimeoutMs: 25);
 
-		Assert.That(
-			() => client.Send(new HelloCommandRequest(), responseTimeoutMs: 25),
-			Throws.TypeOf<NamedPipeSessionException>().With.Property(nameof(NamedPipeSessionException.ErrorCode)).EqualTo(ProtocolConstants.ErrorCodes.TargetExited));
+		var exception = Assert.Throws<NamedPipeSessionException>(() => client.Send(new HelloCommandRequest(), responseTimeoutMs: 25));
+
+		Assert.That(exception!.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.TargetExited));
+		Assert.That(exception.TargetExitCode, Is.EqualTo(42));
+		Assert.That(exception.Message, Does.Contain("42"));
+	}
+
+	[Test]
+	public void ClientIncludesCrashLogWhenTargetExits()
+	{
+		using var client = new NamedPipeClient(
+			UniquePipeName(),
+			getTargetExitCode: () => -532462766,
+			readTargetCrashLog: () => "System.InvalidOperationException: boom",
+			connectTimeoutMs: 25);
+
+		var exception = Assert.Throws<NamedPipeSessionException>(() => client.Send(new HelloCommandRequest(), responseTimeoutMs: 25));
+
+		Assert.That(exception!.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.TargetExited));
+		Assert.That(exception.TargetExitCode, Is.EqualTo(-532462766));
+		Assert.That(exception.CrashLog, Does.Contain("boom"));
+		Assert.That(exception.Message, Does.Contain("Last unhandled exception"));
+		Assert.That(exception.Message, Does.Contain("boom"));
+	}
+
+	[Test]
+	public void ClientRechecksTargetExitDuringConnectRetries()
+	{
+		var reinjectionRequests = 0;
+		using var client = new NamedPipeClient(
+			UniquePipeName(),
+			getTargetExitCode: () => reinjectionRequests > 0 ? 99 : null,
+			requestReinjection: () => reinjectionRequests++,
+			connectTimeoutMs: 25,
+			connectRetryCount: 2);
+
+		var exception = Assert.Throws<NamedPipeSessionException>(() => client.Send(new HelloCommandRequest(), responseTimeoutMs: 25));
+
+		Assert.That(exception!.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.TargetExited));
+		Assert.That(exception.TargetExitCode, Is.EqualTo(99));
+		Assert.That(reinjectionRequests, Is.EqualTo(1));
+	}
+
+	[Test]
+	public void CommandSessionReportsRealTargetExitCode()
+	{
+		var process = new FakeTargetProcess { HasExited = true, ExitCode = 137 };
+		using var connection = AppConnection.ForAttach(process, UniquePipeName(), "dotnet");
+		var session = new NamedPipeAppDriverCommandSession(connection, new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(25) });
+
+		var exception = Assert.Throws<NamedPipeSessionException>(() => session.Send<HelloCommandResponse>(new HelloCommandRequest()));
+
+		Assert.That(exception!.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.TargetExited));
+		Assert.That(exception.TargetExitCode, Is.EqualTo(137));
+		Assert.That(exception.Message, Does.Contain("137"));
+		Assert.That(exception.Message, Does.Not.Contain("code 0"));
 	}
 
 	[Test]

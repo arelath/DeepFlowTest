@@ -15,6 +15,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
@@ -22,16 +23,12 @@ using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
 using DeepFlowTest.Utility.WpfUtility.SelectionHighlight;
 using DeepFlowTest.Utility.WpfUtility.Tree;
-using Serialize.Linq;
-using Serialize.Linq.Factories;
-using Serialize.Linq.Serializers;
 using Forms = System.Windows.Forms;
-using SerializeJsonSerializer = Serialize.Linq.Serializers.JsonSerializer;
 
 internal static partial class TargetActionCommand
 {
 	private const BindingFlags InvokeCommandBindings = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;
-	private static readonly FactorySettings ExpressionFactorySettings = new() { AllowPrivateFieldAccess = true };
+	private const BindingFlags RoutedEventBindings = BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy;
 
 	public static object Click(ClickCommandRequest request, TreeService treeService) =>
 		WithTarget(ProtocolConstants.Commands.Click, request.TargetId, treeService, target =>
@@ -291,10 +288,13 @@ internal static partial class TargetActionCommand
 			return ActionResult.Unsupported("Key input cannot be empty.");
 
 		if (ensureForeground)
-			FocusTarget(target);
+			EnsureForegroundTarget(target);
 
 		if (delayMs > 0)
 			Thread.Sleep(delayMs);
+
+		if (TryHandleFocusNavigation(target, keyText))
+			return ActionResult.Ok();
 
 		if (target is TextBox textBox)
 			return SendKeysToTextBox(textBox, keyText);
@@ -397,6 +397,37 @@ internal static partial class TargetActionCommand
 	private static bool IsSelectAllShortcut(string keyText) =>
 		string.Equals(keyText, "Control+A", StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(keyText, "Ctrl+A", StringComparison.OrdinalIgnoreCase);
+
+	private static bool TryHandleFocusNavigation(object target, string keyText)
+	{
+		var direction = GetFocusNavigationDirection(keyText);
+		if (direction is null)
+			return false;
+
+		FocusTarget(target);
+		var request = new TraversalRequest(direction.Value);
+		return target switch
+		{
+			UIElement uiElement => uiElement.MoveFocus(request),
+			ContentElement contentElement => contentElement.MoveFocus(request),
+			_ => false,
+		};
+	}
+
+	private static FocusNavigationDirection? GetFocusNavigationDirection(string keyText)
+	{
+		var normalized = keyText.Replace(" ", string.Empty);
+		if (string.Equals(normalized, "Tab", StringComparison.OrdinalIgnoreCase))
+			return FocusNavigationDirection.Next;
+		if (string.Equals(normalized, "Shift+Tab", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(normalized, "LeftShift+Tab", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(normalized, "RightShift+Tab", StringComparison.OrdinalIgnoreCase))
+		{
+			return FocusNavigationDirection.Previous;
+		}
+
+		return null;
+	}
 
 	private static ActionResult ClickWpfElement(UIElement target, string button, int clickCount)
 	{
@@ -596,11 +627,11 @@ internal static partial class TargetActionCommand
 		if (target is not UIElement uiElement && target is not ContentElement)
 			return ActionResult.Unsupported($"Target type '{target.GetType().FullName}' does not support routed events.");
 
-		var routedEvent = ResolveRoutedEvent(eventName);
+		var routedEvent = ResolveRoutedEvent(target.GetType(), eventName);
 		if (routedEvent is null)
 			return ActionResult.Unsupported($"Routed event '{eventName}' is not allow-listed.");
 
-		var args = new RoutedEventArgs(routedEvent, target);
+		var args = CreateKnownRoutedEventArgs(eventName, routedEvent, target);
 		if (target is UIElement targetElement)
 			targetElement.RaiseEvent(args);
 		else
@@ -629,9 +660,34 @@ internal static partial class TargetActionCommand
 		return ActionResult.Ok();
 	}
 
-	private static RoutedEvent? ResolveRoutedEvent(string eventName)
+	private static RoutedEventArgs CreateKnownRoutedEventArgs(string eventName, RoutedEvent routedEvent, object source)
 	{
-		return eventName?.Trim() switch
+		if (string.Equals(eventName?.Trim(), "MouseDoubleClick", StringComparison.Ordinal))
+		{
+			return new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+			{
+				RoutedEvent = routedEvent,
+				Source = source,
+			};
+		}
+
+		return new RoutedEventArgs(routedEvent, source);
+	}
+
+	private static RoutedEvent? ResolveRoutedEvent(Type targetType, string eventName)
+	{
+		var normalized = eventName?.Trim();
+		if (!IsKnownRoutedEventAllowed(normalized))
+			return null;
+
+		for (var type = targetType; type is not null; type = type.BaseType)
+		{
+			var field = type.GetField($"{normalized}Event", RoutedEventBindings);
+			if (field?.GetValue(null) is RoutedEvent routedEvent)
+				return routedEvent;
+		}
+
+		return normalized switch
 		{
 			"Click" => ButtonBase.ClickEvent,
 			"MouseDoubleClick" => Control.MouseDoubleClickEvent,
@@ -642,6 +698,9 @@ internal static partial class TargetActionCommand
 			_ => null,
 		};
 	}
+
+	private static bool IsKnownRoutedEventAllowed(string? eventName) =>
+		eventName is "Click" or "MouseDoubleClick" or "Checked" or "Unchecked" or "Expanded" or "Collapsed";
 
 	private static ActionResult RunKnownOperation(object target, string operation)
 	{
@@ -850,6 +909,40 @@ internal static partial class TargetActionCommand
 			default:
 				return false;
 		}
+	}
+
+	private static bool EnsureForegroundTarget(object target)
+	{
+		var foregroundSet = TrySetForegroundWindowForTarget(target);
+		var focusSet = FocusTarget(target);
+		return foregroundSet || focusSet;
+	}
+
+	private static bool TrySetForegroundWindowForTarget(object target)
+	{
+		switch (target)
+		{
+			case Window window:
+				return TrySetForegroundWindow(window);
+			case DependencyObject dependencyObject:
+				return TrySetForegroundWindow(Window.GetWindow(dependencyObject));
+			case Forms.Control control:
+				var handle = control.FindForm()?.Handle ?? control.Handle;
+				return handle != IntPtr.Zero && NativeMethods.SetForegroundWindow(handle);
+			case IntPtr hwnd when hwnd != IntPtr.Zero:
+				return NativeMethods.SetForegroundWindow(hwnd);
+			default:
+				return false;
+		}
+	}
+
+	private static bool TrySetForegroundWindow(Window? window)
+	{
+		if (window is null)
+			return false;
+
+		var handle = new WindowInteropHelper(window).Handle;
+		return handle != IntPtr.Zero && NativeMethods.SetForegroundWindow(handle);
 	}
 
 	private static bool TryInvokeAutomation(AutomationElement automationElement, int clickCount = 1)
@@ -1065,12 +1158,31 @@ internal static partial class TargetActionCommand
 
 	private static object? EvaluateExpressionPayload(object target, object? rawPayload, int? timeoutMs, bool awaitTasks)
 	{
-		if (!TryGetExpressionPayload(rawPayload, out var payload))
+		if (!TryGetExpressionDelegate(rawPayload, out var expression))
 			return UnwrapJsonValue(rawPayload);
 
-		var expression = DeserializeExpression(payload);
-		var result = expression.Compile().DynamicInvoke(target);
+		var result = expression.DynamicInvoke(target);
 		return awaitTasks ? AwaitTaskResult(result, timeoutMs) : result;
+	}
+
+	private static bool TryGetExpressionDelegate(object? rawPayload, out Delegate expression)
+	{
+		expression = null!;
+		if (rawPayload is null)
+			return false;
+
+		var mapped = ArgsMapper.MapSingle(rawPayload);
+		if (mapped is Delegate mappedDelegate)
+		{
+			expression = mappedDelegate;
+			return true;
+		}
+
+		if (!TryGetExpressionPayload(rawPayload, out var payload))
+			return false;
+
+		expression = DeserializeExpression(payload).Compile();
+		return true;
 	}
 
 	private static bool TryGetExpressionPayload(object? rawPayload, out ExpressionMatcherPayload payload)
@@ -1095,10 +1207,7 @@ internal static partial class TargetActionCommand
 		if (string.IsNullOrWhiteSpace(payload.ExpressionJson))
 			throw new InvalidOperationException("Expression payload is empty.");
 
-		var serializer = new ExpressionSerializer(new SerializeJsonSerializer(), ExpressionFactorySettings);
-		var expression = serializer.DeserializeText(payload.ExpressionJson, new ExpressionContext { AllowPrivateFieldAccess = true });
-		return expression as LambdaExpression
-			?? throw new InvalidOperationException("Expression payload did not deserialize to a lambda expression.");
+		return ExpressionPayloadSerializer.Deserialize(payload.ExpressionJson);
 	}
 
 	private static object? AwaitTaskResult(object? result, int? timeoutMs)

@@ -58,6 +58,31 @@ public sealed class TargetActionCommandTests
 	}
 
 	[Test]
+	public void KnownRoutedEventUsesTargetSpecificClickEventForMenuItem()
+	{
+		var clickCount = 0;
+		var menu = new Menu();
+		var menuItem = new MenuItem { Name = "menuItem", Header = "MenuItem" };
+		menuItem.Click += (_, _) => clickCount++;
+		menu.Items.Add(menuItem);
+		var window = CreateWindow("Menu item routed event", menu);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("menuItem");
+
+			AssertOk(CaptureResponse(new KnownRoutedEventCommandRequest { TargetId = targetId, EventName = "Click" }));
+
+			Assert.That(clickCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
 	public void ClickRaisesWpfMouseEventsDoubleClickAndContextMenu()
 	{
 		var previewDownCount = 0;
@@ -127,6 +152,37 @@ public sealed class TargetActionCommandTests
 
 			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = targetId, Keys = "Control+A", DelayMs = 1, EnsureForeground = true }));
 			Assert.That(textBox.SelectionLength, Is.EqualTo(textBox.Text.Length));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void KeyPressTabMovesFocusToNextWpfElement()
+	{
+		var checkBox = new CheckBox { Name = "tabStart", Content = "Start", IsTabStop = true };
+		var textBox = new TextBox { Name = "tabTarget", Width = 120, IsTabStop = true };
+		var panel = new StackPanel();
+		panel.Children.Add(checkBox);
+		panel.Children.Add(textBox);
+		var window = CreateWindow("Tab navigation", panel);
+
+		try
+		{
+			window.Show();
+			var startId = FindTargetId("tabStart");
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest
+			{
+				TargetId = startId,
+				Keys = "Tab",
+				DelayMs = 1,
+				EnsureForeground = false,
+			}));
+
+			Assert.That(textBox.IsKeyboardFocusWithin, Is.True);
 		}
 		finally
 		{
@@ -335,7 +391,7 @@ public sealed class TargetActionCommandTests
 			var invoke = (StandardIpcResponse)CaptureResponse(new InvokeCommandRequest
 			{
 				TargetId = textBoxId,
-				Code = ExpressionPayloadSerializer.Serialize(readText),
+				Code = Eval.SerializeCode(readText),
 				AllowUnsafeCode = true,
 			})!;
 			Assert.That(invoke.Success, Is.True, invoke.Error);
@@ -345,14 +401,14 @@ public sealed class TargetActionCommandTests
 			{
 				TargetId = textBoxId,
 				PropertyName = "Text",
-				PropertyValue = ExpressionPayloadSerializer.Serialize(appendText),
+				PropertyValue = Eval.SerializeCode(appendText),
 			}));
 			Assert.That(textBox.Text, Is.EqualTo("before-after"));
 
 			AssertOk(CaptureResponse(new RaiseEventCommandRequest
 			{
 				TargetId = buttonId,
-				GetRoutedEventArgs = ExpressionPayloadSerializer.Serialize(clickArgs),
+				GetRoutedEventArgs = Eval.SerializeCode(clickArgs),
 			}));
 			Assert.That(clickCount, Is.EqualTo(1));
 		}

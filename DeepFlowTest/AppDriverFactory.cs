@@ -25,19 +25,19 @@ public sealed class AppDriverFactory
 	public AppDriver Launch(ProcessStartInfo processStartInfo)
 	{
 		_ = processStartInfo ?? throw new ArgumentNullException(nameof(processStartInfo));
-		return Launch(
-			processStartInfo.FileName,
-			new AppDriverLaunchOptions
-			{
-				Arguments = processStartInfo.Arguments,
-				WorkingDirectory = string.IsNullOrWhiteSpace(processStartInfo.WorkingDirectory) ? null : processStartInfo.WorkingDirectory,
-			});
+		var options = new AppDriverLaunchOptions
+		{
+			Arguments = processStartInfo.Arguments,
+			WorkingDirectory = string.IsNullOrWhiteSpace(processStartInfo.WorkingDirectory) ? null : processStartInfo.WorkingDirectory,
+			ProcessStartInfo = processStartInfo,
+		};
+		return AppDriver.FromConnection(backend.Launch(processStartInfo.FileName, options), options, sessionFactory);
 	}
 
 	public AppDriver Launch(string executablePath, AppDriverLaunchOptions options)
 	{
 		_ = options ?? throw new ArgumentNullException(nameof(options));
-		return AppDriver.FromConnection(backend.Launch(executablePath, options), options, sessionFactory);
+		return AppDriver.FromConnection(backend.Launch(AppDriverLaunch.NormalizeExecutablePath(executablePath), options), options, sessionFactory);
 	}
 
 	public AppDriver AttachTo(int processId, AppDriverAttachOptions? options = null)
