@@ -157,6 +157,78 @@ public sealed class WinFormsSupportTests
 	}
 
 	[Test]
+	public void WinFormsKeyPressSupportsSelectionEditingAndTabNavigation()
+	{
+		using var form = CreateForm();
+		var first = new Forms.TextBox { Name = "formsFirstTextBox", Text = "abcdef", Width = 120, TabIndex = 0 };
+		var second = new Forms.TextBox { Name = "formsSecondTextBox", Top = 36, Width = 120, TabIndex = 1 };
+		form.Controls.Add(first);
+		form.Controls.Add(second);
+
+		try
+		{
+			form.Show();
+			Forms.Application.DoEvents();
+			first.Focus();
+
+			var firstId = FindTargetId("formsFirstTextBox");
+			var secondId = FindTargetId("formsSecondTextBox");
+
+			second.Focus();
+			AssertOk(CaptureResponse(new FocusCommandRequest { TargetId = firstId }));
+			Assert.That(form.ActiveControl, Is.SameAs(first));
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = firstId, Keys = "Control+A", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(first.SelectionLength, Is.EqualTo(6));
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = firstId, Keys = "Backspace", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(first.Text, Is.Empty);
+			Assert.That(first.SelectionStart, Is.EqualTo(0));
+
+			first.Text = "abc";
+			first.SelectionStart = 1;
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = firstId, Keys = "Delete", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(first.Text, Is.EqualTo("ac"));
+			Assert.That(first.SelectionStart, Is.EqualTo(1));
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = firstId, Keys = "Tab", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(form.ActiveControl, Is.SameAs(second));
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = secondId, Keys = "Shift+Tab", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(form.ActiveControl, Is.SameAs(first));
+		}
+		finally
+		{
+			form.Close();
+		}
+	}
+
+	[Test]
+	public void DisabledWinFormsButtonClickDoesNotRaiseClick()
+	{
+		using var form = CreateForm();
+		var clickCount = 0;
+		var button = new Forms.Button { Name = "disabledFormsButton", Text = "Disabled", Enabled = false, Width = 90, Height = 28 };
+		button.Click += (_, _) => clickCount++;
+		form.Controls.Add(button);
+
+		try
+		{
+			form.Show();
+			Forms.Application.DoEvents();
+			var buttonId = FindTargetId("disabledFormsButton");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = buttonId }));
+
+			Assert.That(clickCount, Is.EqualTo(0));
+		}
+		finally
+		{
+			form.Close();
+		}
+	}
+
+	[Test]
 	public void NativeWindowScreenshotAndClickSmoke()
 	{
 		using var form = CreateForm();
@@ -334,7 +406,7 @@ public sealed class WinFormsSupportTests
 	[Test]
 	public void HybridWpfWinFormsHostAppearsInSnapshots()
 	{
-		_ = Application.Current ?? new Application();
+		EnsureWpfApplication();
 		var root = new StackPanel { Name = "hybridRoot" };
 		var host = new WindowsFormsHost
 		{
@@ -378,6 +450,20 @@ public sealed class WinFormsSupportTests
 		Assert.That(wpfNode.ParentId, Is.EqualTo(hostNode.TargetId));
 		Assert.That(wpfNode.Properties["Content"], Is.EqualTo("Hosted WPF"));
 		Assert.That(snapshot.TargetFrameworkFamily, Is.EqualTo("mixed"));
+	}
+
+	private static void EnsureWpfApplication()
+	{
+		if (Application.Current is not null)
+			return;
+
+		try
+		{
+			_ = new Application();
+		}
+		catch (InvalidOperationException)
+		{
+		}
 	}
 
 	private static Forms.Form CreateForm()

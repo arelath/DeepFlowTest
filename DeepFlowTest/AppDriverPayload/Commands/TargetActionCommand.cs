@@ -18,6 +18,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using DeepFlowTest.AppDriverPayload;
+using DeepFlowTest.AppDriverPayload.Native;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
@@ -297,7 +298,24 @@ internal static partial class TargetActionCommand
 			return ActionResult.Ok();
 
 		if (target is TextBox textBox)
-			return SendKeysToTextBox(textBox, keyText);
+		{
+			if (ShouldHandleTextBoxKeyInternally(keyText))
+				return SendKeysToTextBox(textBox, keyText);
+
+			if (TryInvokeKeyGestureBindings(textBox, keyText))
+				return ActionResult.Ok();
+
+			return SendKeysToForeground(keys, delayMs);
+		}
+
+		if (target is UIElement or ContentElement)
+		{
+			FocusTarget(target);
+			if (TryInvokeKeyGestureBindings(target, keyText))
+				return ActionResult.Ok();
+
+			return SendKeysToForeground(keys, delayMs);
+		}
 
 		if (target is Forms.TextBoxBase formsTextBox)
 		{
@@ -307,33 +325,44 @@ internal static partial class TargetActionCommand
 			}
 			else if (string.Equals(keyText, "Backspace", StringComparison.OrdinalIgnoreCase))
 			{
-				if (formsTextBox.Text.Length != 0)
-					formsTextBox.Text = formsTextBox.Text.Substring(0, formsTextBox.Text.Length - 1);
+				DeleteWinFormsTextBeforeCaret(formsTextBox);
 			}
 			else if (string.Equals(keyText, "Delete", StringComparison.OrdinalIgnoreCase) || string.Equals(keyText, "Del", StringComparison.OrdinalIgnoreCase))
 			{
-				if (formsTextBox.SelectionLength > 0)
-					formsTextBox.SelectedText = string.Empty;
+				DeleteWinFormsTextAtCaret(formsTextBox);
 			}
 			else if (string.Equals(keyText, "Space", StringComparison.OrdinalIgnoreCase))
 			{
 				formsTextBox.SelectedText = " ";
 			}
-			else if (!IsNonTextKey(keyText))
+			else if (IsPlainTextInputKey(keyText))
 			{
-				formsTextBox.Text += keyText;
+				formsTextBox.SelectedText = keyText;
+			}
+			else
+			{
+				return SendKeysToForeground(keys, delayMs);
 			}
 
 			return ActionResult.Ok();
 		}
 
-		if (target is UIElement or ContentElement or Forms.Control or AutomationElement or IntPtr)
-		{
+		if (target is Forms.Control or AutomationElement or IntPtr)
 			return SendKeysToForeground(keys, delayMs);
-		}
 
 		return ActionResult.Unsupported($"Target type '{target.GetType().FullName}' does not support key input.");
 	}
+
+	private static bool ShouldHandleTextBoxKeyInternally(string keyText) =>
+		IsSelectAllShortcut(keyText)
+		|| string.Equals(keyText, "Backspace", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "Delete", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "Del", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(keyText, "Space", StringComparison.OrdinalIgnoreCase)
+		|| IsPlainTextInputKey(keyText);
+
+	private static bool IsPlainTextInputKey(string keyText) =>
+		keyText.Length == 1 && !char.IsControl(keyText[0]);
 
 	private static ActionResult SendKeysToForeground(object? keys, int delayMs)
 	{
@@ -357,20 +386,17 @@ internal static partial class TargetActionCommand
 
 		if (string.Equals(keyText, "Backspace", StringComparison.OrdinalIgnoreCase))
 		{
-			if (textBox.Text.Length != 0)
-				textBox.Text = textBox.Text.Substring(0, textBox.Text.Length - 1);
-			textBox.CaretIndex = textBox.Text.Length;
+			DeleteWpfTextBeforeCaret(textBox);
 			return ActionResult.Ok();
 		}
 
 		if (string.Equals(keyText, "Delete", StringComparison.OrdinalIgnoreCase) || string.Equals(keyText, "Del", StringComparison.OrdinalIgnoreCase))
 		{
-			if (textBox.SelectionLength > 0)
-				textBox.SelectedText = string.Empty;
+			DeleteWpfTextAtCaret(textBox);
 			return ActionResult.Ok();
 		}
 
-		if (!IsNonTextKey(keyText))
+		if (string.Equals(keyText, "Space", StringComparison.OrdinalIgnoreCase) || IsPlainTextInputKey(keyText))
 		{
 			textBox.SelectedText = string.Equals(keyText, "Space", StringComparison.OrdinalIgnoreCase) ? " " : keyText;
 			textBox.CaretIndex = textBox.Text.Length;
@@ -379,20 +405,77 @@ internal static partial class TargetActionCommand
 		return ActionResult.Ok();
 	}
 
-	private static bool IsNonTextKey(string keyText) =>
-		string.Equals(keyText, "Enter", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Tab", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Escape", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Esc", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Home", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "End", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "PageUp", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "PageDown", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Up", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Down", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Left", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Right", StringComparison.OrdinalIgnoreCase)
-		|| (keyText.Length > 1 && keyText.StartsWith("F", StringComparison.OrdinalIgnoreCase) && int.TryParse(keyText.Substring(1), out _));
+	private static void DeleteWpfTextBeforeCaret(TextBox textBox)
+	{
+		if (textBox.SelectionLength > 0)
+		{
+			var selectionStart = textBox.SelectionStart;
+			textBox.SelectedText = string.Empty;
+			textBox.CaretIndex = selectionStart;
+			return;
+		}
+
+		if (textBox.CaretIndex <= 0 || textBox.Text.Length == 0)
+			return;
+
+		var removeIndex = textBox.CaretIndex - 1;
+		textBox.Text = textBox.Text.Remove(removeIndex, 1);
+		textBox.CaretIndex = removeIndex;
+	}
+
+	private static void DeleteWpfTextAtCaret(TextBox textBox)
+	{
+		if (textBox.SelectionLength > 0)
+		{
+			var selectionStart = textBox.SelectionStart;
+			textBox.SelectedText = string.Empty;
+			textBox.CaretIndex = selectionStart;
+			return;
+		}
+
+		if (textBox.CaretIndex >= textBox.Text.Length)
+			return;
+
+		var removeIndex = textBox.CaretIndex;
+		textBox.Text = textBox.Text.Remove(removeIndex, 1);
+		textBox.CaretIndex = removeIndex;
+	}
+
+	private static void DeleteWinFormsTextBeforeCaret(Forms.TextBoxBase textBox)
+	{
+		if (textBox.SelectionLength > 0)
+		{
+			var selectionStart = textBox.SelectionStart;
+			textBox.SelectedText = string.Empty;
+			textBox.SelectionStart = selectionStart;
+			return;
+		}
+
+		if (textBox.SelectionStart <= 0 || textBox.Text.Length == 0)
+			return;
+
+		var removeIndex = textBox.SelectionStart - 1;
+		textBox.Text = textBox.Text.Remove(removeIndex, 1);
+		textBox.SelectionStart = removeIndex;
+	}
+
+	private static void DeleteWinFormsTextAtCaret(Forms.TextBoxBase textBox)
+	{
+		if (textBox.SelectionLength > 0)
+		{
+			var selectionStart = textBox.SelectionStart;
+			textBox.SelectedText = string.Empty;
+			textBox.SelectionStart = selectionStart;
+			return;
+		}
+
+		if (textBox.SelectionStart >= textBox.Text.Length)
+			return;
+
+		var removeIndex = textBox.SelectionStart;
+		textBox.Text = textBox.Text.Remove(removeIndex, 1);
+		textBox.SelectionStart = removeIndex;
+	}
 
 	private static bool IsSelectAllShortcut(string keyText) =>
 		string.Equals(keyText, "Control+A", StringComparison.OrdinalIgnoreCase)
@@ -410,8 +493,20 @@ internal static partial class TargetActionCommand
 		{
 			UIElement uiElement => uiElement.MoveFocus(request),
 			ContentElement contentElement => contentElement.MoveFocus(request),
+			Forms.Control formsControl => MoveWinFormsFocus(formsControl, direction.Value),
 			_ => false,
 		};
+	}
+
+	private static bool MoveWinFormsFocus(Forms.Control control, FocusNavigationDirection direction)
+	{
+		var form = control.FindForm();
+		if (form is null)
+			return false;
+
+		control.Focus();
+		var forward = direction != FocusNavigationDirection.Previous;
+		return form.SelectNextControl(control, forward, tabStopOnly: true, nested: true, wrap: true);
 	}
 
 	private static FocusNavigationDirection? GetFocusNavigationDirection(string keyText)
@@ -433,11 +528,16 @@ internal static partial class TargetActionCommand
 	{
 		var mouseButton = button == "right" ? MouseButton.Right : MouseButton.Left;
 		var count = Math.Max(1, clickCount);
+		if (!target.IsEnabled)
+			return ActionResult.Ok();
+
 		UIHighlight.Select(target);
 		TryEnsureAppHooks();
 		var clickEvent = mouseButton == MouseButton.Left ? ResolvePrimaryClickEvent(target) : null;
 		var observedClickCount = 0;
+		var observedDoubleClickCount = 0;
 		RoutedEventHandler? clickObserver = null;
+		MouseButtonEventHandler? doubleClickObserver = null;
 		try
 		{
 			if (clickEvent is not null)
@@ -446,10 +546,18 @@ internal static partial class TargetActionCommand
 				target.AddHandler(clickEvent, clickObserver, handledEventsToo: true);
 			}
 
+			if (count > 1 && mouseButton == MouseButton.Left && target is Control)
+			{
+				doubleClickObserver = (_, _) => observedDoubleClickCount++;
+				target.AddHandler(Control.MouseDoubleClickEvent, doubleClickObserver, handledEventsToo: false);
+			}
+
 			var targets = GetAscendingVisualTree(target);
 			for (var i = 0; i < count; i++)
 			{
+				var clickNumber = i + 1;
 				var observedBeforeClick = observedClickCount;
+				var observedBeforeDoubleClick = observedDoubleClickCount;
 				AppHooks.SetButton(mouseButton, isPressed: true);
 				RaiseMouseButtonEvent(target, UIElement.PreviewMouseDownEvent, mouseButton, targets);
 				RaiseMouseButtonEvent(target, UIElement.MouseDownEvent, mouseButton, targets);
@@ -458,17 +566,22 @@ internal static partial class TargetActionCommand
 				RaiseMouseButtonEvent(target, UIElement.PreviewMouseUpEvent, mouseButton, targets);
 				RaiseMouseButtonEvent(target, UIElement.MouseUpEvent, mouseButton, targets);
 
-				if (clickEvent is not null && observedClickCount == observedBeforeClick)
+				var observedDoubleClickDuringThisClick = observedDoubleClickCount != observedBeforeDoubleClick;
+				if (clickEvent is not null && observedClickCount == observedBeforeClick && !observedDoubleClickDuringThisClick)
 					target.RaiseEvent(new RoutedEventArgs(clickEvent, target));
 			}
 
-			if (count > 1 && mouseButton == MouseButton.Left && target is Control control)
-				RaiseMouseButtonEvent(control, Control.MouseDoubleClickEvent, MouseButton.Left, targets);
+			if (count > 1 && mouseButton == MouseButton.Left)
+				RaiseMouseButtonEvent(target, Control.MouseDoubleClickEvent, MouseButton.Left, targets, count);
+			else if (count > 1)
+				InvokeMouseGestureBindings(target, mouseButton, count);
 		}
 		finally
 		{
 			if (clickEvent is not null && clickObserver is not null)
 				target.RemoveHandler(clickEvent, clickObserver);
+			if (doubleClickObserver is not null)
+				target.RemoveHandler(Control.MouseDoubleClickEvent, doubleClickObserver);
 			AppHooks.ResetMouseState();
 		}
 
@@ -497,13 +610,17 @@ internal static partial class TargetActionCommand
 		}
 	}
 
-	private static bool RaiseMouseButtonEvent(UIElement target, RoutedEvent routedEvent, MouseButton button, IReadOnlyList<UIElement> targets)
+	private static bool RaiseMouseButtonEvent(UIElement target, RoutedEvent routedEvent, MouseButton button, IReadOnlyList<UIElement> targets, int clickCount = 1)
 	{
 		var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, button)
 		{
 			RoutedEvent = routedEvent,
 			Source = target,
 		};
+		SetMouseButtonClickCount(args, clickCount);
+		if (routedEvent == Control.MouseDoubleClickEvent)
+			InvokeMouseGestureBindings(target, button, clickCount);
+
 		AppHooks.MouseOverElement?.SetValue(Mouse.PrimaryDevice, target);
 		foreach (var hoveredTarget in targets)
 			AppHooks.WriteElementOverElement?.Invoke(hoveredTarget, new object[] { AppHooks.CoreFlags.IsMouseOverCache, true });
@@ -632,6 +749,9 @@ internal static partial class TargetActionCommand
 			return ActionResult.Unsupported($"Routed event '{eventName}' is not allow-listed.");
 
 		var args = CreateKnownRoutedEventArgs(eventName, routedEvent, target);
+		if (args is MouseButtonEventArgs && string.Equals(eventName?.Trim(), "MouseDoubleClick", StringComparison.Ordinal))
+			InvokeMouseGestureBindings(target, MouseButton.Left, 2);
+
 		if (target is UIElement targetElement)
 			targetElement.RaiseEvent(args);
 		else
@@ -664,14 +784,228 @@ internal static partial class TargetActionCommand
 	{
 		if (string.Equals(eventName?.Trim(), "MouseDoubleClick", StringComparison.Ordinal))
 		{
-			return new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+			var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
 			{
 				RoutedEvent = routedEvent,
 				Source = source,
 			};
+			SetMouseButtonClickCount(args, 2);
+			return args;
 		}
 
 		return new RoutedEventArgs(routedEvent, source);
+	}
+
+	private static void SetMouseButtonClickCount(MouseButtonEventArgs args, int clickCount)
+	{
+		var count = Math.Max(1, clickCount);
+		var property = typeof(MouseButtonEventArgs).GetProperty(nameof(MouseButtonEventArgs.ClickCount), InvokeCommandBindings);
+		if (property?.SetMethod is not null)
+		{
+			property.SetValue(args, count, null);
+			return;
+		}
+
+		typeof(MouseButtonEventArgs).GetField("_count", InvokeCommandBindings)?.SetValue(args, count);
+	}
+
+	private static bool TryInvokeKeyGestureBindings(object target, string keyText)
+	{
+		var invoked = false;
+		foreach (var group in KeyboardInput.ParseKeyGroups(keyText))
+		{
+			if (!TryGetKeyGestureParts(group, out var key, out var modifiers))
+				continue;
+
+			invoked |= InvokeMatchingCommandGestures(
+				target,
+				gesture => gesture is KeyGesture keyGesture
+					&& keyGesture.Key == key
+					&& keyGesture.Modifiers == modifiers);
+		}
+
+		return invoked;
+	}
+
+	private static bool InvokeMouseGestureBindings(object target, MouseButton button, int clickCount)
+	{
+		if (!TryGetMouseAction(button, clickCount, out var mouseAction))
+			return false;
+
+		return InvokeMatchingCommandGestures(
+			target,
+			gesture => gesture is MouseGesture mouseGesture
+				&& mouseGesture.MouseAction == mouseAction
+				&& mouseGesture.Modifiers == ModifierKeys.None);
+	}
+
+	private static bool InvokeMatchingCommandGestures(object target, Func<InputGesture, bool> matches)
+	{
+		var invoked = false;
+		var executedCommands = new HashSet<ICommand>();
+		foreach (var bindingOwner in EnumerateInputBindingOwners(target))
+		{
+			var inputBindings = GetInputBindings(bindingOwner);
+			if (inputBindings is not null)
+			{
+				foreach (var candidate in inputBindings)
+				{
+					if (candidate is not InputBinding binding)
+						continue;
+
+					if (binding.Gesture is null || !matches(binding.Gesture))
+						continue;
+
+					invoked |= ExecuteInputBinding(binding, bindingOwner, target, executedCommands);
+				}
+			}
+
+			var commandBindings = GetCommandBindings(bindingOwner);
+			if (commandBindings is null)
+				continue;
+
+			foreach (var candidate in commandBindings)
+			{
+				if (candidate is not CommandBinding binding)
+					continue;
+
+				if (binding.Command is not RoutedCommand routedCommand)
+					continue;
+				if (!routedCommand.InputGestures.OfType<InputGesture>().Any(matches))
+					continue;
+
+				var commandTarget = target as IInputElement ?? bindingOwner as IInputElement;
+				invoked |= ExecuteRoutedCommand(routedCommand, parameter: null, commandTarget, executedCommands);
+			}
+		}
+
+		return invoked;
+	}
+
+	private static bool TryGetKeyGestureParts(IReadOnlyCollection<Key> keys, out Key key, out ModifierKeys modifiers)
+	{
+		key = Key.None;
+		modifiers = ModifierKeys.None;
+		foreach (var candidate in keys)
+		{
+			if (TryAddModifier(candidate, ref modifiers))
+				continue;
+
+			if (key != Key.None)
+				return false;
+			key = candidate;
+		}
+
+		return key != Key.None;
+	}
+
+	private static bool TryAddModifier(Key key, ref ModifierKeys modifiers)
+	{
+		switch (key)
+		{
+			case Key.LeftCtrl:
+			case Key.RightCtrl:
+				modifiers |= ModifierKeys.Control;
+				return true;
+			case Key.LeftAlt:
+			case Key.RightAlt:
+				modifiers |= ModifierKeys.Alt;
+				return true;
+			case Key.LeftShift:
+			case Key.RightShift:
+				modifiers |= ModifierKeys.Shift;
+				return true;
+			case Key.LWin:
+			case Key.RWin:
+				modifiers |= ModifierKeys.Windows;
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	private static bool TryGetMouseAction(MouseButton button, int clickCount, out MouseAction mouseAction)
+	{
+		mouseAction = MouseAction.None;
+		var isDoubleClick = clickCount > 1;
+		switch (button)
+		{
+			case MouseButton.Left:
+				mouseAction = isDoubleClick ? MouseAction.LeftDoubleClick : MouseAction.LeftClick;
+				return true;
+			case MouseButton.Right:
+				mouseAction = isDoubleClick ? MouseAction.RightDoubleClick : MouseAction.RightClick;
+				return true;
+			case MouseButton.Middle:
+				mouseAction = isDoubleClick ? MouseAction.MiddleDoubleClick : MouseAction.MiddleClick;
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	private static IEnumerable<object> EnumerateInputBindingOwners(object target)
+	{
+		var current = target;
+		while (current is not null)
+		{
+			yield return current;
+			current = current is DependencyObject dependencyObject
+				? VisualTreeHelper.GetParent(dependencyObject) ?? LogicalTreeHelper.GetParent(dependencyObject)
+				: null;
+		}
+	}
+
+	private static InputBindingCollection? GetInputBindings(object owner) =>
+		owner switch
+		{
+			UIElement uiElement => uiElement.InputBindings,
+			ContentElement contentElement => contentElement.InputBindings,
+			_ => null,
+		};
+
+	private static CommandBindingCollection? GetCommandBindings(object owner) =>
+		owner switch
+		{
+			UIElement uiElement => uiElement.CommandBindings,
+			ContentElement contentElement => contentElement.CommandBindings,
+			_ => null,
+		};
+
+	private static bool ExecuteInputBinding(InputBinding binding, object bindingOwner, object originalTarget, ISet<ICommand>? executedCommands)
+	{
+		var command = binding.Command;
+		if (command is null)
+			return false;
+
+		var parameter = binding.CommandParameter;
+		var commandTarget = binding.CommandTarget
+			?? bindingOwner as IInputElement
+			?? originalTarget as IInputElement;
+
+		if (command is RoutedCommand routedCommand)
+			return ExecuteRoutedCommand(routedCommand, parameter, commandTarget, executedCommands);
+
+		if (command.CanExecute(parameter))
+		{
+			if (executedCommands is not null && !executedCommands.Add(command))
+				return false;
+			command.Execute(parameter);
+			return true;
+		}
+
+		return false;
+	}
+
+	private static bool ExecuteRoutedCommand(RoutedCommand routedCommand, object? parameter, IInputElement? commandTarget, ISet<ICommand>? executedCommands)
+	{
+		if (commandTarget is null || !routedCommand.CanExecute(parameter, commandTarget))
+			return false;
+		if (executedCommands is not null && !executedCommands.Add(routedCommand))
+			return false;
+
+		routedCommand.Execute(parameter, commandTarget);
+		return true;
 	}
 
 	private static RoutedEvent? ResolveRoutedEvent(Type targetType, string eventName)

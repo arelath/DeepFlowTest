@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Linq;
 using System.Threading;
@@ -89,6 +90,7 @@ public sealed class TargetActionCommandTests
 		var downCount = 0;
 		var upCount = 0;
 		var doubleClickCount = 0;
+		var buttonEvents = new List<string>();
 		var panel = new StackPanel();
 		var border = new Border
 		{
@@ -101,7 +103,12 @@ public sealed class TargetActionCommandTests
 		border.PreviewMouseDown += (_, _) => previewDownCount++;
 		border.MouseDown += (_, _) => downCount++;
 		border.MouseUp += (_, _) => upCount++;
-		button.MouseDoubleClick += (_, _) => doubleClickCount++;
+		button.Click += (_, _) => buttonEvents.Add("Click");
+		button.MouseDoubleClick += (_, _) =>
+		{
+			doubleClickCount++;
+			buttonEvents.Add("MouseDoubleClick");
+		};
 		panel.Children.Add(border);
 		panel.Children.Add(button);
 		var window = CreateWindow("Mouse routed actions", panel);
@@ -119,10 +126,260 @@ public sealed class TargetActionCommandTests
 
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = buttonId, ClickCount = 2 }));
 			Assert.That(doubleClickCount, Is.EqualTo(1));
+			Assert.That(buttonEvents.Last(), Is.EqualTo("MouseDoubleClick"));
 
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = borderId, MouseButton = "right" }));
 			Assert.That(border.ContextMenu.IsOpen, Is.True);
 			border.ContextMenu.IsOpen = false;
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void ClickCountTwoTriggersWpfMouseBindingDoubleClickGesture()
+	{
+		var commandCount = 0;
+		var command = new TestCommand(() => commandCount++);
+		var target = new Border
+		{
+			Name = "doubleClickGestureTarget",
+			Width = 80,
+			Height = 40,
+			Background = Brushes.Transparent,
+			Focusable = true,
+		};
+		target.InputBindings.Add(new MouseBinding(command, new MouseGesture(MouseAction.LeftDoubleClick)));
+		var window = CreateWindow("MouseBinding double click", target);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("doubleClickGestureTarget");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, ClickCount = 2 }));
+
+			Assert.That(commandCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void RaiseMouseDoubleClickTriggersWpfMouseBindingDoubleClickGesture()
+	{
+		var commandCount = 0;
+		var doubleClickCount = 0;
+		var command = new TestCommand(() => commandCount++);
+		var target = new Button
+		{
+			Name = "raiseDoubleClickGestureTarget",
+			Content = "Double",
+			Width = 80,
+			Height = 32,
+		};
+		target.MouseDoubleClick += (_, _) => doubleClickCount++;
+		target.InputBindings.Add(new MouseBinding(command, new MouseGesture(MouseAction.LeftDoubleClick)));
+		var window = CreateWindow("Raised MouseBinding double click", target);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("raiseDoubleClickGestureTarget");
+
+			AssertOk(CaptureResponse(new RaiseEventCommandRequest { TargetId = targetId, EventName = "MouseDoubleClick" }));
+
+			Assert.That(commandCount, Is.EqualTo(1));
+			Assert.That(doubleClickCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void ClickTriggersWpfMouseBindingClickGestures()
+	{
+		var leftClickCount = 0;
+		var rightClickCount = 0;
+		var leftCommand = new TestCommand(() => leftClickCount++);
+		var rightCommand = new TestCommand(() => rightClickCount++);
+		var panel = new StackPanel();
+		var leftTarget = new Border
+		{
+			Name = "leftClickGestureTarget",
+			Width = 80,
+			Height = 40,
+			Background = Brushes.Transparent,
+		};
+		var rightTarget = new Border
+		{
+			Name = "rightClickGestureTarget",
+			Width = 80,
+			Height = 40,
+			Background = Brushes.Transparent,
+		};
+		leftTarget.InputBindings.Add(new MouseBinding(leftCommand, new MouseGesture(MouseAction.LeftClick)));
+		rightTarget.InputBindings.Add(new MouseBinding(rightCommand, new MouseGesture(MouseAction.RightClick)));
+		panel.Children.Add(leftTarget);
+		panel.Children.Add(rightTarget);
+		var window = CreateWindow("MouseBinding click gestures", panel);
+
+		try
+		{
+			window.Show();
+			var leftTargetId = FindTargetId("leftClickGestureTarget");
+			var rightTargetId = FindTargetId("rightClickGestureTarget");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = leftTargetId }));
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = rightTargetId, MouseButton = "right" }));
+
+			Assert.That(leftClickCount, Is.EqualTo(1));
+			Assert.That(rightClickCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void RightDoubleClickTriggersWpfMouseBindingDoubleClickGesture()
+	{
+		var commandCount = 0;
+		var command = new TestCommand(() => commandCount++);
+		var target = new Border
+		{
+			Name = "rightDoubleClickGestureTarget",
+			Width = 80,
+			Height = 40,
+			Background = Brushes.Transparent,
+		};
+		target.InputBindings.Add(new MouseBinding(command, new MouseGesture(MouseAction.RightDoubleClick)));
+		var window = CreateWindow("MouseBinding right double click", target);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("rightDoubleClickGestureTarget");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, MouseButton = "right", ClickCount = 2 }));
+
+			Assert.That(commandCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void KeyPressTriggersWpfKeyBindingGestureOnTarget()
+	{
+		var commandCount = 0;
+		var command = new TestCommand(() => commandCount++);
+		var target = new Button
+		{
+			Name = "keyBindingGestureTarget",
+			Content = "Keys",
+			Width = 80,
+			Height = 32,
+		};
+		target.InputBindings.Add(new KeyBinding(command, new KeyGesture(Key.K, ModifierKeys.Control)));
+		var window = CreateWindow("KeyBinding target gesture", target);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("keyBindingGestureTarget");
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest
+			{
+				TargetId = targetId,
+				Keys = "Control+K",
+				DelayMs = 1,
+				EnsureForeground = false,
+			}));
+
+			Assert.That(commandCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void KeyPressTriggersRoutedCommandInputGestureOnAncestor()
+	{
+		var commandCount = 0;
+		var routedCommand = new RoutedCommand();
+		routedCommand.InputGestures.Add(new KeyGesture(Key.L, ModifierKeys.Control));
+		var target = new Button
+		{
+			Name = "routedGestureTarget",
+			Content = "Routed",
+			Width = 80,
+			Height = 32,
+		};
+		var window = CreateWindow("RoutedCommand gesture", target);
+		window.CommandBindings.Add(new CommandBinding(routedCommand, (_, _) => commandCount++));
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("routedGestureTarget");
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest
+			{
+				TargetId = targetId,
+				Keys = "Control+L",
+				DelayMs = 1,
+				EnsureForeground = false,
+			}));
+
+			Assert.That(commandCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void TextBoxKeyPressTriggersKeyBindingWithoutInsertingShortcutText()
+	{
+		var commandCount = 0;
+		var command = new TestCommand(() => commandCount++);
+		var textBox = new TextBox
+		{
+			Name = "textBoxKeyBindingTarget",
+			Text = "ready",
+			Width = 120,
+		};
+		textBox.InputBindings.Add(new KeyBinding(command, new KeyGesture(Key.K, ModifierKeys.Control)));
+		var window = CreateWindow("TextBox KeyBinding gesture", textBox);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("textBoxKeyBindingTarget");
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest
+			{
+				TargetId = targetId,
+				Keys = "Control+K",
+				DelayMs = 1,
+				EnsureForeground = false,
+			}));
+
+			Assert.That(commandCount, Is.EqualTo(1));
+			Assert.That(textBox.Text, Is.EqualTo("ready"));
 		}
 		finally
 		{
@@ -183,6 +440,67 @@ public sealed class TargetActionCommandTests
 			}));
 
 			Assert.That(textBox.IsKeyboardFocusWithin, Is.True);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void WpfKeyPressDeletesSelectedTextAndNavigatesBackward()
+	{
+		var first = new TextBox { Name = "firstEditBox", Text = "abcdef", Width = 120, IsTabStop = true };
+		var second = new TextBox { Name = "secondEditBox", Width = 120, IsTabStop = true };
+		var panel = new StackPanel();
+		panel.Children.Add(first);
+		panel.Children.Add(second);
+		var window = CreateWindow("WPF keyboard editing", panel);
+
+		try
+		{
+			window.Show();
+			var firstId = FindTargetId("firstEditBox");
+			var secondId = FindTargetId("secondEditBox");
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = firstId, Keys = "Control+A", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(first.SelectionLength, Is.EqualTo(6));
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = firstId, Keys = "Backspace", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(first.Text, Is.Empty);
+			Assert.That(first.CaretIndex, Is.EqualTo(0));
+
+			first.Text = "abc";
+			first.CaretIndex = 1;
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = firstId, Keys = "Delete", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(first.Text, Is.EqualTo("ac"));
+			Assert.That(first.CaretIndex, Is.EqualTo(1));
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = secondId, Keys = "Shift+Tab", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(first.IsKeyboardFocusWithin, Is.True);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void DisabledWpfButtonClickDoesNotRaiseClick()
+	{
+		var clickCount = 0;
+		var button = new Button { Name = "disabledButton", Content = "Disabled", IsEnabled = false };
+		button.Click += (_, _) => clickCount++;
+		var window = CreateWindow("Disabled WPF click", button);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("disabledButton");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId }));
+
+			Assert.That(clickCount, Is.EqualTo(0));
 		}
 		finally
 		{
@@ -336,6 +654,35 @@ public sealed class TargetActionCommandTests
 			AssertOk(CaptureResponse(new RaiseEventCommandRequest { TargetId = targetId, EventName = "Checked" }));
 
 			Assert.That(checkedCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void RaiseEventUsesMouseButtonArgsForMouseDoubleClick()
+	{
+		var doubleClickCount = 0;
+		MouseButton? changedButton = null;
+		var button = new Button { Name = "raiseDoubleClickButton", Content = "Double" };
+		button.MouseDoubleClick += (_, args) =>
+		{
+			doubleClickCount++;
+			changedButton = args.ChangedButton;
+		};
+		var window = CreateWindow("Raise double click", button);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("raiseDoubleClickButton");
+
+			AssertOk(CaptureResponse(new RaiseEventCommandRequest { TargetId = targetId, EventName = "MouseDoubleClick" }));
+
+			Assert.That(doubleClickCount, Is.EqualTo(1));
+			Assert.That(changedButton, Is.EqualTo(MouseButton.Left));
 		}
 		finally
 		{
@@ -624,6 +971,17 @@ public sealed class TargetActionCommandTests
 			e.Handled = true;
 			base.OnPreviewTextInput(e);
 		}
+	}
+
+	private sealed class TestCommand(Action execute) : ICommand
+	{
+		public event EventHandler? CanExecuteChanged;
+
+		public bool CanExecute(object? parameter) => true;
+
+		public void Execute(object? parameter) => execute();
+
+		public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 	}
 
 	private static object? CaptureResponse(object request)

@@ -354,6 +354,54 @@ public sealed class ElementApiTests
 	}
 
 	[Test]
+	public void DoubleClickUsesMouseDoubleClickRoutedEvent()
+	{
+		var session = new FakeSession(
+			FindMatch("button", "submit"),
+			StandardIpcResponse.Ok());
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(ElementSelector.ByName("submit"));
+
+		var returned = element.DoubleClick();
+
+		Assert.That(returned, Is.SameAs(element));
+		var raiseEvent = session.SentCommands.OfType<RaiseEventCommandRequest>().Single();
+		Assert.That(raiseEvent.TargetId, Is.EqualTo("button"));
+		Assert.That(raiseEvent.EventName, Is.EqualTo("MouseDoubleClick"));
+		Assert.That(session.SentCommands.OfType<ClickCommandRequest>(), Is.Empty);
+	}
+
+	[Test]
+	public void DoubleClickKeepsClickPayloadForWinFormsAndNativeTargets()
+	{
+		var session = new FakeSession(
+			new FindElementCommandResponse
+			{
+				Matches =
+				{
+					new FindElementMatchResponse
+					{
+						TargetId = "forms-button",
+						TypeName = "Button",
+						FrameworkTypeName = "System.Windows.Forms.Button",
+						Properties = { ["Name"] = "submit" },
+					},
+				},
+				MatchCount = 1,
+			},
+			StandardIpcResponse.Ok());
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(ElementSelector.ByName("submit"));
+
+		element.DoubleClick();
+
+		var click = session.SentCommands.OfType<ClickCommandRequest>().Single();
+		Assert.That(click.TargetId, Is.EqualTo("forms-button"));
+		Assert.That(click.ClickCount, Is.EqualTo(2));
+		Assert.That(session.SentCommands.OfType<RaiseEventCommandRequest>(), Is.Empty);
+	}
+
+	[Test]
 	public void ElementScreenshotWaitsForAdjacentStableCapture()
 	{
 		var first = Convert.ToBase64String(new byte[] { 1 });

@@ -197,6 +197,21 @@ public sealed class RunningProcessAttachIntegrationTests
 	}
 
 	[Test]
+	public void DoubleClickingAttachedHarnessButtonRaisesMouseDoubleClick()
+	{
+		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
+		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
+		{
+			Timeout = TimeSpan.FromSeconds(30),
+			PayloadRoot = ResolvePayloadRoot(),
+		});
+
+		FindByAutomationId(driver, "HelloWorldButton").DoubleClick();
+
+		WaitForElementText(driver, "HelloWorldInput", "HelloWorldButton_DoubleClick event triggered.");
+	}
+
+	[Test]
 	public void RootScopedServerFindsDescendantInAttachedHarness()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());

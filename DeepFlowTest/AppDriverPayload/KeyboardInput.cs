@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Input;
+using DeepFlowTest.AppDriverPayload.Native;
 
 internal static class KeyboardInput
 {
@@ -206,55 +207,5 @@ internal static class KeyboardInput
 	{
 		var input = Input.Keyboard(keyboardInput);
 		NativeMethods.SendInput(1, new[] { input }, Marshal.SizeOf(typeof(Input)));
-	}
-
-	[StructLayout(LayoutKind.Sequential)]
-	private struct Input
-	{
-		public int Type;
-		public InputUnion Union;
-
-		public static Input Keyboard(KeyboardInputData input) =>
-			new()
-			{
-				Type = NativeMethods.INPUT_KEYBOARD,
-				Union = new InputUnion { Keyboard = input },
-			};
-	}
-
-	[StructLayout(LayoutKind.Explicit)]
-	private struct InputUnion
-	{
-		[FieldOffset(0)]
-		public KeyboardInputData Keyboard;
-	}
-
-	[StructLayout(LayoutKind.Sequential)]
-	private struct KeyboardInputData
-	{
-		public ushort VirtualKey;
-		public ushort Scan;
-		public uint Flags;
-		public uint Time;
-		public IntPtr ExtraInfo;
-	}
-
-	private static class NativeMethods
-	{
-		public const int INPUT_KEYBOARD = 1;
-		public const ushort VK_SHIFT = 0x10;
-		public const ushort VK_CONTROL = 0x11;
-		public const ushort VK_MENU = 0x12;
-		public const uint KEYEVENTF_KEYUP = 0x0002;
-		public const uint KEYEVENTF_UNICODE = 0x0004;
-
-		[DllImport("user32.dll", SetLastError = true)]
-		public static extern uint SendInput(uint inputCount, Input[] inputs, int inputSize);
-
-		[DllImport("user32.dll")]
-		public static extern IntPtr GetMessageExtraInfo();
-
-		[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-		public static extern short VkKeyScan(char character);
 	}
 }

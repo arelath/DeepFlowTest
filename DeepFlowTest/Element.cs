@@ -148,7 +148,10 @@ public class Element
 
 	public virtual Element RightClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, MouseButton = "right" });
 
-	public virtual Element DoubleClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, ClickCount = 2 });
+	public virtual Element DoubleClick() =>
+		UsesNativeClickPayload()
+			? SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, ClickCount = 2 })
+			: RaiseEvent("MouseDoubleClick");
 
 	public virtual Element Focus() => SendTargetedWithRepair(() => new FocusCommandRequest { TargetId = TargetId });
 
@@ -320,6 +323,10 @@ public class Element
 
 	private Element KnownOperation(string operation) =>
 		SendTargetedWithRepair(() => new KnownOperationCommandRequest { TargetId = TargetId, Operation = operation });
+
+	private bool UsesNativeClickPayload() =>
+		string.Equals(TypeName, "HWND", StringComparison.Ordinal)
+		|| FrameworkTypeName?.StartsWith("System.Windows.Forms.", StringComparison.Ordinal) == true;
 
 	private Element SendTargetedWithRepair(Func<IpcCommand> commandFactory)
 	{
