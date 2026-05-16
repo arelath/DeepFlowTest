@@ -2,6 +2,7 @@ namespace DeepFlowTest.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Linq;
 using System.Threading;
@@ -11,10 +12,13 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using NUnit.Framework;
+using static DeepFlowTest.Tests.TestIpcHost;
+using static DeepFlowTest.Tests.WpfTestHelpers;
 
 [TestFixture]
 [Apartment(ApartmentState.STA)]
@@ -46,7 +50,7 @@ public sealed class TargetActionCommandTests
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, ClickCount = 2 }));
 			Assert.That(clickCount, Is.EqualTo(3));
 
-			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, MouseButton = "right" }));
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, MouseButton = MouseButtonKind.Right }));
 			Assert.That(rightClickCount, Is.EqualTo(1));
 
 			AssertOk(CaptureResponse(new KnownRoutedEventCommandRequest { TargetId = targetId, EventName = "Click" }));
@@ -76,6 +80,61 @@ public sealed class TargetActionCommandTests
 			AssertOk(CaptureResponse(new KnownRoutedEventCommandRequest { TargetId = targetId, EventName = "Click" }));
 
 			Assert.That(clickCount, Is.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void MenuHeaderReopensAfterNestedSubmenuIsClosedWithEscapeTwice()
+	{
+		var menu = new Menu();
+		var header = new MenuItem { Name = "reopenMenuHeader", Header = "Menu Header" };
+		var nestedHeader = new MenuItem { Name = "reopenNestedMenuHeader", Header = "Nested" };
+		nestedHeader.Items.Add(new MenuItem { Name = "reopenNestedLeaf", Header = "Leaf" });
+		header.Items.Add(nestedHeader);
+		menu.Items.Add(header);
+		var window = CreateWindow("Menu reopen after escape", menu);
+
+		try
+		{
+			window.Left = 0;
+			window.Top = 0;
+			window.Show();
+			window.Activate();
+			DoEvents();
+			var headerId = FindTargetId("reopenMenuHeader");
+			var nestedHeaderId = FindTargetId("reopenNestedMenuHeader");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = headerId }));
+			Assert.That(WaitUntil(() => header.IsSubmenuOpen), Is.True, "Initial menu header click should open the menu.");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = nestedHeaderId }));
+			Assert.That(WaitUntil(() => nestedHeader.IsSubmenuOpen), Is.True, "Nested submenu click should open the nested menu.");
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest
+			{
+				TargetId = nestedHeaderId,
+				Keys = "Escape",
+				DelayMs = 1,
+				EnsureForeground = true,
+			}));
+			Assert.That(WaitUntil(() => !nestedHeader.IsSubmenuOpen), Is.True, "First Escape should close the nested submenu.");
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest
+			{
+				TargetId = headerId,
+				Keys = "Escape",
+				DelayMs = 1,
+				EnsureForeground = true,
+			}));
+			Assert.That(WaitUntil(() => !header.IsSubmenuOpen), Is.True, "Second Escape should close the parent menu.");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = headerId }));
+
+			Assert.That(WaitUntil(() => header.IsSubmenuOpen), Is.True, "Menu header should reopen after closing with Escape twice.");
 		}
 		finally
 		{
@@ -128,12 +187,122 @@ public sealed class TargetActionCommandTests
 			Assert.That(doubleClickCount, Is.EqualTo(1));
 			Assert.That(buttonEvents.Last(), Is.EqualTo("MouseDoubleClick"));
 
-			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = borderId, MouseButton = "right" }));
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = borderId, MouseButton = MouseButtonKind.Right }));
 			Assert.That(border.ContextMenu.IsOpen, Is.True);
 			border.ContextMenu.IsOpen = false;
 		}
 		finally
 		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void RightClickOnWpfButtonOpensContextMenuThatCanBeFoundAndClicked()
+	{
+		var rightButtonDownCount = 0;
+		var contextMenuClickCount = 0;
+		var status = new TextBlock { Name = "documentTabStatus", Text = "Ready" };
+		var closeMenuItem = new MenuItem
+		{
+			Name = "closeDocumentContextMenuItem",
+			Header = "Close Document",
+		};
+		closeMenuItem.Click += (_, _) =>
+		{
+			contextMenuClickCount++;
+			status.Text = "Closed";
+		};
+		var contextMenu = new ContextMenu();
+		contextMenu.Items.Add(closeMenuItem);
+		var documentTab = new Button
+		{
+			Name = "midiDocumentTabButton",
+			Content = "Midi Document",
+			ContextMenu = contextMenu,
+			Width = 140,
+			Height = 32,
+		};
+		documentTab.MouseRightButtonDown += (_, args) =>
+		{
+			rightButtonDownCount++;
+			args.Handled = true;
+		};
+		var panel = new StackPanel();
+		panel.Children.Add(documentTab);
+		panel.Children.Add(status);
+		var window = CreateWindow("Document tab context menu", panel);
+
+		try
+		{
+			window.Show();
+			var documentTabId = FindTargetId("midiDocumentTabButton");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = documentTabId, MouseButton = MouseButtonKind.Right }));
+
+			Assert.That(rightButtonDownCount, Is.EqualTo(1));
+			Assert.That(WaitUntil(() => contextMenu.IsOpen), Is.True, "Right-clicking a WPF Button should open its ContextMenu.");
+			Assert.That(contextMenu.PlacementTarget, Is.SameAs(documentTab));
+
+			var menuItemId = FindTargetId("closeDocumentContextMenuItem");
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = menuItemId }));
+
+			Assert.That(contextMenuClickCount, Is.EqualTo(1));
+			Assert.That(status.Text, Is.EqualTo("Closed"));
+		}
+		finally
+		{
+			contextMenu.IsOpen = false;
+			window.Close();
+		}
+	}
+
+	// Repro for Actipro's docking-tab context menu, which does not use a static
+	// ContextMenu property — instead it subscribes to ContextMenuOpening and
+	// assembles the menu on the fly in response. ClickWpfElement's right-click
+	// path must raise ContextMenuOpeningEvent for that pattern to fire.
+	[Test]
+	public void RightClickRaisesContextMenuOpeningForDynamicallyBuiltMenu()
+	{
+		var contextMenuOpeningCount = 0;
+		var dynamicallyBuiltMenuOpened = false;
+		ContextMenu? builtMenu = null;
+		var documentTab = new Button
+		{
+			Name = "dynamicMenuDocumentTab",
+			Content = "Tab",
+			Width = 140,
+			Height = 32,
+		};
+		documentTab.ContextMenuOpening += (sender, args) =>
+		{
+			contextMenuOpeningCount++;
+			builtMenu = new ContextMenu
+			{
+				PlacementTarget = documentTab,
+				Placement = PlacementMode.Bottom,
+			};
+			builtMenu.Items.Add(new MenuItem { Header = "Close Others", Name = "dynamicMenuCloseOthers" });
+			builtMenu.Opened += (_, _) => dynamicallyBuiltMenuOpened = true;
+			builtMenu.IsOpen = true;
+			args.Handled = true;
+		};
+		var window = CreateWindow("Dynamic context menu", documentTab);
+
+		try
+		{
+			window.Show();
+			var documentTabId = FindTargetId("dynamicMenuDocumentTab");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = documentTabId, MouseButton = MouseButtonKind.Right }));
+
+			Assert.That(contextMenuOpeningCount, Is.EqualTo(1), "Right-click should raise ContextMenuOpening on the target.");
+			Assert.That(WaitUntil(() => dynamicallyBuiltMenuOpened), Is.True, "Dynamically-built ContextMenu should open.");
+		}
+		finally
+		{
+			if (builtMenu is not null)
+				builtMenu.IsOpen = false;
 			window.Close();
 		}
 	}
@@ -237,7 +406,7 @@ public sealed class TargetActionCommandTests
 			var rightTargetId = FindTargetId("rightClickGestureTarget");
 
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = leftTargetId }));
-			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = rightTargetId, MouseButton = "right" }));
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = rightTargetId, MouseButton = MouseButtonKind.Right }));
 
 			Assert.That(leftClickCount, Is.EqualTo(1));
 			Assert.That(rightClickCount, Is.EqualTo(1));
@@ -268,7 +437,7 @@ public sealed class TargetActionCommandTests
 			window.Show();
 			var targetId = FindTargetId("rightDoubleClickGestureTarget");
 
-			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, MouseButton = "right", ClickCount = 2 }));
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, MouseButton = MouseButtonKind.Right, ClickCount = 2 }));
 
 			Assert.That(commandCount, Is.EqualTo(1));
 		}
@@ -925,6 +1094,35 @@ public sealed class TargetActionCommandTests
 		Assert.That(standard.Status, Is.EqualTo(ProtocolConstants.Statuses.Ok));
 	}
 
+	private static bool WaitUntil(Func<bool> condition, int timeoutMs = 5_000)
+	{
+		var stopwatch = Stopwatch.StartNew();
+		while (stopwatch.ElapsedMilliseconds < timeoutMs)
+		{
+			if (condition())
+				return true;
+
+			DoEvents();
+			Thread.Sleep(25);
+		}
+
+		return condition();
+	}
+
+	private static void DoEvents()
+	{
+		var frame = new DispatcherFrame();
+		Dispatcher.CurrentDispatcher.BeginInvoke(
+			DispatcherPriority.Background,
+			new DispatcherOperationCallback(_ =>
+			{
+				frame.Continue = false;
+				return null;
+			}),
+			null);
+		Dispatcher.PushFrame(frame);
+	}
+
 	private sealed class PropertyConversionTarget : Control
 	{
 		public SolidColorBrush AccentBrush { get; set; } = new(Colors.Black);
@@ -984,52 +1182,4 @@ public sealed class TargetActionCommandTests
 		public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 	}
 
-	private static object? CaptureResponse(object request)
-	{
-		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
-		object? response = null;
-		var responseCount = 0;
-		var command = new NamedPipeServer.Command
-		{
-			Value = request,
-			Respond = value =>
-			{
-				response = value;
-				responseCount++;
-			},
-			CheckHasResponded = () => responseCount != 0,
-			HoldConnectionOpen = () => { },
-			TrySend = value =>
-			{
-				response = value;
-				responseCount++;
-				return true;
-			},
-		};
-		var options = new AppDriverPayloadStartupOptions
-		{
-			PipeName = "test-pipe",
-			Mode = PayloadStartupModes.OneShotDriver,
-			PayloadRoot = AppContext.BaseDirectory,
-			ProtocolVersion = ProtocolConstants.ProtocolVersion,
-		};
-
-		AppDriverCommandDispatcher.Process(command, options, null);
-		return response;
-	}
-
-	private static Window CreateWindow(string title, object content)
-	{
-		return new Window
-		{
-			Title = title,
-			Content = content,
-			Width = 260,
-			Height = 180,
-			ShowInTaskbar = false,
-			WindowStartupLocation = WindowStartupLocation.Manual,
-			Left = -20000,
-			Top = -20000,
-		};
-	}
 }

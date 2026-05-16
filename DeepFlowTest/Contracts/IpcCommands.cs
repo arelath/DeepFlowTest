@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Contracts;
 
 using System.Collections.Generic;
+using Newtonsoft.Json;
 
 public abstract record class IpcCommand
 {
@@ -149,6 +150,11 @@ public sealed record class ScreenshotCommandRequest : IpcCommand
 	}
 
 	public ScreenshotCommandRequest(string format, string? targetId = null, int? timeoutMs = null)
+		: this(ImageFormatExtensions.ParseProtocolString(format), targetId, timeoutMs)
+	{
+	}
+
+	public ScreenshotCommandRequest(ImageFormat format, string? targetId = null, int? timeoutMs = null)
 		: this()
 	{
 		Format = format;
@@ -156,7 +162,8 @@ public sealed record class ScreenshotCommandRequest : IpcCommand
 		TimeoutMs = timeoutMs;
 	}
 
-	public string Format { get; set; } = "png";
+	[JsonConverter(typeof(ProtocolImageFormatJsonConverter))]
+	public ImageFormat Format { get; set; } = ImageFormat.Png;
 
 	public string? TargetId { get; set; }
 }
@@ -185,12 +192,18 @@ public sealed record class ClickCommandRequest : TargetedIpcCommand
 	}
 
 	public ClickCommandRequest(string targetId, string mouseButton, int? timeoutMs = null)
+		: this(targetId, ProtocolValueMapper.ParseMouseButton(mouseButton), timeoutMs)
+	{
+	}
+
+	public ClickCommandRequest(string targetId, MouseButtonKind mouseButton, int? timeoutMs = null)
 		: base(ProtocolConstants.Commands.Click, targetId, timeoutMs)
 	{
 		MouseButton = mouseButton;
 	}
 
-	public string MouseButton { get; set; } = "left";
+	[JsonConverter(typeof(ProtocolMouseButtonJsonConverter))]
+	public MouseButtonKind MouseButton { get; set; } = MouseButtonKind.Left;
 
 	public int ClickCount { get; set; } = 1;
 }
@@ -357,6 +370,17 @@ public sealed record class StartSendingCommandRequest : IpcCommand
 		string format = "png",
 		string? targetId = null,
 		int? timeoutMs = null)
+		: this(streamKind, intervalMs, propNames, ImageFormatExtensions.ParseProtocolString(format), targetId, timeoutMs)
+	{
+	}
+
+	public StartSendingCommandRequest(
+		string streamKind,
+		int intervalMs,
+		IReadOnlyList<string>? propNames,
+		ImageFormat format,
+		string? targetId = null,
+		int? timeoutMs = null)
 		: this()
 	{
 		StreamKind = streamKind;
@@ -373,7 +397,8 @@ public sealed record class StartSendingCommandRequest : IpcCommand
 
 	public IReadOnlyList<string>? PropNames { get; set; }
 
-	public string Format { get; set; } = "png";
+	[JsonConverter(typeof(ProtocolImageFormatJsonConverter))]
+	public ImageFormat Format { get; set; } = ImageFormat.Png;
 
 	public string? TargetId { get; set; }
 }

@@ -13,6 +13,8 @@ using DeepFlowTest.AppDriverPayload.Commands;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using NUnit.Framework;
+using static DeepFlowTest.Tests.TestIpcHost;
+using static DeepFlowTest.Tests.WpfTestHelpers;
 
 [TestFixture]
 [Apartment(ApartmentState.STA)]
@@ -382,57 +384,8 @@ public sealed class FindElementCommandTests
 		return CreateWindow("Find selectors", panel);
 	}
 
-	private static object? CaptureResponse(object request)
-	{
-		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
-		object? response = null;
-		var responseCount = 0;
-		var command = new NamedPipeServer.Command
-		{
-			Value = request,
-			Respond = value =>
-			{
-				response = value;
-				responseCount++;
-			},
-			CheckHasResponded = () => responseCount != 0,
-			HoldConnectionOpen = () => { },
-			TrySend = value =>
-			{
-				response = value;
-				responseCount++;
-				return true;
-			},
-		};
-		var options = new AppDriverPayloadStartupOptions
-		{
-			PipeName = "test-pipe",
-			Mode = PayloadStartupModes.OneShotDriver,
-			PayloadRoot = AppContext.BaseDirectory,
-			ProtocolVersion = ProtocolConstants.ProtocolVersion,
-		};
-
-		AppDriverCommandDispatcher.Process(command, options, null);
-		return response;
-	}
-
 	private static object? InvokeFindElementProcess(FindElementCommandRequest request, DeepFlowTest.Utility.WpfUtility.Tree.TreeService treeService, ExpressionCache cache)
 	{
 		return FindElementCommand.Process(request, treeService, cache);
-	}
-
-	private static Window CreateWindow(string title, object content)
-	{
-		return new Window
-		{
-			Title = title,
-			Content = content,
-			Width = 240,
-			Height = 160,
-			ShowInTaskbar = false,
-			WindowStartupLocation = WindowStartupLocation.Manual,
-			Left = -20000,
-			Top = -20000,
-		};
 	}
 }

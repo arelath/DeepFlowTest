@@ -14,6 +14,7 @@ using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Utility;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
+using static DeepFlowTest.Tests.WpfTestHelpers;
 
 [TestFixture]
 [Apartment(ApartmentState.STA)]
@@ -246,21 +247,6 @@ public sealed class TreeServiceTests
 		{
 			window.Close();
 		}
-	}
-
-	private static Window CreateWindow(string title, object content)
-	{
-		return new Window
-		{
-			Title = title,
-			Content = content,
-			Width = 240,
-			Height = 160,
-			ShowInTaskbar = false,
-			WindowStartupLocation = WindowStartupLocation.Manual,
-			Left = -20000,
-			Top = -20000,
-		};
 	}
 
 	private static bool HasNodeNamed(DeepFlowTest.Interop.VisualTreeSnapshot snapshot, string name)

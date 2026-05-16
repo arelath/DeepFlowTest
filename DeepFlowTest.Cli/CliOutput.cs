@@ -31,6 +31,12 @@ public static class CliOutput
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
 		DictionaryKeyPolicy = null,
 		WriteIndented = false,
+		Converters =
+		{
+			new CliImageFormatJsonConverter(),
+			new CliTreeShapeJsonConverter(),
+			new CliMouseButtonJsonConverter(),
+		},
 	};
 
 	public static void Write(CliResponseEnvelope envelope, CliCommonOptions options, TextWriter writer)

@@ -6,22 +6,18 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
-using System.Windows.Threading;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Shared;
 using DeepFlowTest.Utility;
 using Forms = System.Windows.Forms;
 
-public sealed class TreeService
+public sealed partial class TreeService
 {
 	private readonly TargetIdService targetIds;
 	private readonly VisualTreePropertyExtractor propertyExtractor;
@@ -41,7 +37,7 @@ public sealed class TreeService
 	public VisualTreeSnapshot CaptureSnapshot(TreeSnapshotOptions? options = null)
 	{
 		options ??= new TreeSnapshotOptions();
-		var dispatcher = FindWpfDispatcher();
+		var dispatcher = ThreadUtility.FindWpfDispatcher();
 		if (dispatcher is not null && !dispatcher.CheckAccess())
 		{
 			VisualTreeSnapshot? snapshot = null;
@@ -239,84 +235,20 @@ public sealed class TreeService
 
 	private static IEnumerable<object?> EnumerateChildren(object target, TargetObjectMetadata metadata)
 	{
-		if (TryGetHybridBridgeChild(target, out var bridgeChild))
+		foreach (var adapter in TreeTargetAdapters)
 		{
-			yield return bridgeChild;
-			yield break;
-		}
+			if (!adapter.CanHandle(target, metadata))
+				continue;
 
-		if (target is Application application)
-		{
-			if (application.Resources.Count != 0)
-				yield return application.Resources;
-
-			foreach (Window? window in application.Windows)
-				yield return window;
-		}
-
-		if (target is ResourceDictionary resourceDictionary)
-		{
-			foreach (var mergedDictionary in resourceDictionary.MergedDictionaries)
-				yield return mergedDictionary;
-
-			foreach (var item in resourceDictionary)
-				if (item is DictionaryEntry entry && entry.Value is not null)
-					yield return entry.Value;
-		}
-
-		if (target is SystemResourceRoot systemResourceRoot)
-			yield return systemResourceRoot.Resources;
-
-		if (target is FrameworkElement { Resources.Count: > 0 } frameworkElementWithResources)
-			yield return frameworkElementWithResources.Resources;
-
-		if (target is Image { Source: { } imageSource })
-			yield return imageSource;
-
-		if (target is DependencyObject dependencyObject)
-		{
-			foreach (var visualChild in EnumerateVisualChildren(dependencyObject))
-				yield return visualChild;
-
-			foreach (var logicalChild in EnumerateLogicalChildren(dependencyObject))
-				yield return logicalChild;
-
-			if (target is Popup { Child: { } popupChild })
-				yield return popupChild;
-		}
-
-		if (target is Forms.Control control)
-		{
-			foreach (object? child in control.Controls)
-				if (child is not null)
-					yield return child;
-		}
-
-		if (metadata.Hwnd.HasValue && ShouldEnumerateNativeChildren(target))
-		{
-			var metadataHwnd = new IntPtr(metadata.Hwnd.Value);
-			foreach (var childHwnd in EnumerateNativeChildWindows(metadataHwnd))
-				yield return childHwnd;
-		}
-
-		if (target is IntPtr hwnd)
-		{
-			var automationElement = TryGetAutomationElement(hwnd);
-			if (automationElement is not null)
-				yield return automationElement;
-
-			foreach (var childHwnd in EnumerateNativeChildWindows(hwnd))
-				yield return childHwnd;
-		}
-
-		if (target is AutomationElement automationTarget)
-		{
-			foreach (var child in EnumerateAutomationChildren(automationTarget))
+			foreach (var child in adapter.EnumerateChildren(target, metadata))
 				yield return child;
+
+			if (adapter.StopsChildEnumeration)
+				yield break;
 		}
 	}
 
-	private static IEnumerable<DependencyObject> EnumerateVisualChildren(DependencyObject dependencyObject)
+	internal static IEnumerable<DependencyObject> EnumerateVisualChildren(DependencyObject dependencyObject)
 	{
 		var count = 0;
 		try
@@ -345,7 +277,7 @@ public sealed class TreeService
 		}
 	}
 
-	private static IEnumerable<object> EnumerateLogicalChildren(DependencyObject dependencyObject)
+	internal static IEnumerable<object> EnumerateLogicalChildren(DependencyObject dependencyObject)
 	{
 		IEnumerable? children;
 		try
@@ -365,7 +297,7 @@ public sealed class TreeService
 				yield return child;
 	}
 
-	private static bool TryGetHybridBridgeChild(object target, out object? child)
+	internal static bool TryGetHybridBridgeChild(object target, out object? child)
 	{
 		child = null;
 		var typeName = target.GetType().FullName;
@@ -388,19 +320,12 @@ public sealed class TreeService
 		if (options.IncludeHidden)
 			return true;
 
-		return target switch
-		{
-			UIElement { Visibility: Visibility.Visible } => true,
-			UIElement => false,
-			Forms.Control { Visible: false } => false,
-			_ => true,
-		};
-	}
+		foreach (var adapter in TreeTargetAdapters)
+			if (adapter.TryGetIsVisible(target, out var isVisible))
+				return isVisible;
 
-	private static bool ShouldEnumerateNativeChildren(object target) =>
-		target is Window
-		|| target is HwndHost
-		|| target is Forms.Control;
+		return true;
+	}
 
 	private static bool ShouldExclude(object target)
 	{
@@ -450,53 +375,13 @@ public sealed class TreeService
 		return "unknown";
 	}
 
-	private static Dispatcher? FindWpfDispatcher()
-	{
-		var currentDispatcher = GetCurrentStaDispatcher();
-		if (currentDispatcher is not null)
-			return currentDispatcher;
-
-		Dispatcher? firstSourceDispatcher = null;
-		try
-		{
-			foreach (PresentationSource? source in PresentationSource.CurrentSources)
-			{
-				if (source?.RootVisual is null || source.Dispatcher is null)
-					continue;
-
-				if (source.Dispatcher.CheckAccess())
-					return source.Dispatcher;
-
-				firstSourceDispatcher ??= source.Dispatcher;
-			}
-		}
-		catch (InvalidOperationException)
-		{
-		}
-
-		if (Application.Current?.Dispatcher is { } applicationDispatcher)
-			return applicationDispatcher.CheckAccess() || firstSourceDispatcher is null
-				? applicationDispatcher
-				: firstSourceDispatcher;
-
-		if (firstSourceDispatcher is not null)
-			return firstSourceDispatcher;
-
-		return currentDispatcher;
-	}
-
-	private static Dispatcher? GetCurrentStaDispatcher() =>
-		Thread.CurrentThread.GetApartmentState() == ApartmentState.STA
-			? Dispatcher.FromThread(Thread.CurrentThread)
-			: null;
-
-	private static IEnumerable<IntPtr> EnumerateNativeChildWindows(IntPtr hwnd)
+	internal static IEnumerable<IntPtr> EnumerateNativeChildWindows(IntPtr hwnd)
 	{
 		if (hwnd == IntPtr.Zero)
 			yield break;
 
 		var children = new List<IntPtr>();
-		EnumChildWindows(hwnd, (child, _) =>
+		NativeMethods.EnumChildWindows(hwnd, (child, _) =>
 		{
 			children.Add(child);
 			return true;
@@ -510,9 +395,9 @@ public sealed class TreeService
 	{
 		var processId = Process.GetCurrentProcess().Id;
 		var windows = new List<IntPtr>();
-		EnumWindows((hwnd, _) =>
+		NativeMethods.EnumWindows((hwnd, _) =>
 		{
-			GetWindowThreadProcessId(hwnd, out var windowProcessId);
+			NativeMethods.GetWindowThreadProcessId(hwnd, out var windowProcessId);
 			if (windowProcessId == processId)
 				windows.Add(hwnd);
 
@@ -523,7 +408,7 @@ public sealed class TreeService
 			yield return window;
 	}
 
-	private static AutomationElement? TryGetAutomationElement(IntPtr hwnd)
+	internal static AutomationElement? TryGetAutomationElement(IntPtr hwnd)
 	{
 		if (hwnd == IntPtr.Zero)
 			return null;
@@ -542,7 +427,7 @@ public sealed class TreeService
 		}
 	}
 
-	private static IEnumerable<AutomationElement> EnumerateAutomationChildren(AutomationElement element)
+	internal static IEnumerable<AutomationElement> EnumerateAutomationChildren(AutomationElement element)
 	{
 		AutomationElement? child;
 		try
@@ -575,19 +460,6 @@ public sealed class TreeService
 			}
 		}
 	}
-
-	[DllImport("user32.dll")]
-	private static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildWindowsProc lpEnumFunc, IntPtr lParam);
-
-	[DllImport("user32.dll")]
-	private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-
-	[DllImport("user32.dll")]
-	private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int processId);
-
-	private delegate bool EnumChildWindowsProc(IntPtr hwnd, IntPtr lParam);
-
-	private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 
 	private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
 	{

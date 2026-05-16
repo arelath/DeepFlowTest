@@ -59,6 +59,16 @@ public sealed class CommandParsingTests
 		Assert.That(parse.Errors, Is.Not.Empty);
 	}
 
+	[TestCase("tree --pid 1 --shape sideways")]
+	[TestCase("screenshot --pid 1 --image-format tiff")]
+	[TestCase("click --pid 1 --target dft-1 --button sideways")]
+	public void ParserRejectsUnsupportedEnumOptions(string commandLine)
+	{
+		var parse = Program.CreateRootCommand().Parse(Split(commandLine), new ParserConfiguration());
+
+		Assert.That(parse.Errors, Is.Not.Empty);
+	}
+
 	[Test]
 	public void RegisteredLaterCommandReturnsStableNotImplementedEnvelope()
 	{

@@ -2,6 +2,7 @@ namespace DeepFlowTest.Cli.Tests;
 
 using System.IO;
 using System.Text.Json.Nodes;
+using DeepFlowTest.Contracts;
 using NUnit.Framework;
 
 [TestFixture]
@@ -15,7 +16,7 @@ public sealed class CliDefaultsTests
 		Assert.That(defaults.TimeoutMs, Is.EqualTo(10_000));
 		Assert.That(defaults.SchemaVersion, Is.EqualTo(1));
 		Assert.That(defaults.Common.TimeoutMs, Is.EqualTo(10_000));
-		Assert.That(defaults.Commands.Tree.Shape, Is.EqualTo("flat"));
+		Assert.That(defaults.Commands.Tree.Shape, Is.EqualTo(TreeShape.Flat));
 		Assert.That(defaults.OutputFormat, Is.EqualTo("json"));
 		Assert.That(defaults.HideEmpty, Is.True);
 		Assert.That(defaults.UseShortIds, Is.True);

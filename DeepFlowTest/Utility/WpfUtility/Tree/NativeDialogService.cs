@@ -4,8 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text;
+using DeepFlowTest.Shared;
 
 internal static class NativeDialogService
 {
@@ -33,9 +33,9 @@ internal static class NativeDialogService
 
 		var processId = Process.GetCurrentProcess().Id;
 		var windows = new List<IntPtr>();
-		EnumWindows((hwnd, _) =>
+		NativeMethods.EnumWindows((hwnd, _) =>
 		{
-			GetWindowThreadProcessId(hwnd, out var windowProcessId);
+			NativeMethods.GetWindowThreadProcessId(hwnd, out var windowProcessId);
 			if (windowProcessId == processId && IsNativeDialogRoot(hwnd))
 				windows.Add(hwnd);
 
@@ -54,7 +54,7 @@ internal static class NativeDialogService
 
 	private static bool IsNativeDialogRoot(IntPtr hwnd)
 	{
-		if (hwnd == IntPtr.Zero || !IsWindow(hwnd) || !IsWindowVisible(hwnd))
+		if (hwnd == IntPtr.Zero || !NativeMethods.IsWindow(hwnd) || !NativeMethods.IsWindowVisible(hwnd))
 			return false;
 
 		var className = GetClassName(hwnd);
@@ -64,31 +64,31 @@ internal static class NativeDialogService
 		if (string.Equals(className, "#32770", StringComparison.Ordinal))
 			return true;
 
-		var style = GetWindowLong(hwnd, GwlStyle);
+		var style = NativeMethods.GetWindowLong(hwnd, GwlStyle);
 		return (style & WsPopup) == WsPopup && (style & WsCaption) == WsCaption;
 	}
 
 	internal static string GetClassName(IntPtr hwnd)
 	{
 		var builder = new StringBuilder(256);
-		return GetClassName(hwnd, builder, builder.Capacity) == 0 ? string.Empty : builder.ToString();
+		return NativeMethods.GetClassName(hwnd, builder, builder.Capacity) == 0 ? string.Empty : builder.ToString();
 	}
 
 	internal static string GetWindowText(IntPtr hwnd)
 	{
-		var length = Math.Max(0, GetWindowTextLength(hwnd));
+		var length = Math.Max(0, NativeMethods.GetWindowTextLength(hwnd));
 		var builder = new StringBuilder(length + 1);
-		return GetWindowText(hwnd, builder, builder.Capacity) == 0 ? string.Empty : builder.ToString();
+		return NativeMethods.GetWindowText(hwnd, builder, builder.Capacity) == 0 ? string.Empty : builder.ToString();
 	}
 
 	internal static bool IsVisible(IntPtr hwnd) =>
-		hwnd != IntPtr.Zero && IsWindowVisible(hwnd);
+		hwnd != IntPtr.Zero && NativeMethods.IsWindowVisible(hwnd);
 
 	internal static bool IsEnabled(IntPtr hwnd) =>
-		hwnd != IntPtr.Zero && IsWindowEnabled(hwnd);
+		hwnd != IntPtr.Zero && NativeMethods.IsWindowEnabled(hwnd);
 
 	internal static int GetControlId(IntPtr hwnd) =>
-		hwnd == IntPtr.Zero ? 0 : GetDlgCtrlID(hwnd);
+		hwnd == IntPtr.Zero ? 0 : NativeMethods.GetDlgCtrlID(hwnd);
 
 	private static bool IsKnownManagedRootClass(string className) =>
 		className.StartsWith("HwndWrapper", StringComparison.Ordinal)
@@ -108,36 +108,4 @@ internal static class NativeDialogService
 			rootWindowsForTests = previous;
 		}
 	}
-
-	[DllImport("user32.dll")]
-	private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-
-	[DllImport("user32.dll")]
-	private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int processId);
-
-	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-	private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
-
-	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-	private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-
-	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-	private static extern int GetWindowTextLength(IntPtr hWnd);
-
-	[DllImport("user32.dll")]
-	private static extern bool IsWindow(IntPtr hWnd);
-
-	[DllImport("user32.dll")]
-	private static extern bool IsWindowVisible(IntPtr hWnd);
-
-	[DllImport("user32.dll")]
-	private static extern bool IsWindowEnabled(IntPtr hWnd);
-
-	[DllImport("user32.dll")]
-	private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-
-	[DllImport("user32.dll")]
-	private static extern int GetDlgCtrlID(IntPtr hWnd);
-
-	private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 }

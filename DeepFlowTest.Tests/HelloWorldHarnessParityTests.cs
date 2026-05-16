@@ -15,6 +15,7 @@ using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using HelloWorld;
 using NUnit.Framework;
+using static DeepFlowTest.Tests.TestIpcHost;
 
 [TestFixture]
 [Apartment(ApartmentState.STA)]
@@ -86,7 +87,7 @@ public sealed class HelloWorldHarnessParityTests
 		AssertOk(Send(new ClickCommandRequest { TargetId = TargetIdByName("HelloWorldButton"), ClickCount = 2 }));
 		AssertEventText("HelloWorldButton_DoubleClick event triggered.");
 
-		AssertOk(Send(new ClickCommandRequest { TargetId = TargetIdByName("HelloWorldButton"), MouseButton = "right" }));
+		AssertOk(Send(new ClickCommandRequest { TargetId = TargetIdByName("HelloWorldButton"), MouseButton = MouseButtonKind.Right }));
 		AssertEventText("HelloWorldButton_RightClick event triggered.");
 		AssertOk(Send(new ClickCommandRequest { TargetId = TargetIdByName("FileContextMenuItem") }));
 		AssertEventText("HelloWorldContextMenuFile_Click event triggered.");
@@ -317,47 +318,13 @@ public sealed class HelloWorldHarnessParityTests
 	{
 		try
 		{
-			return CaptureResponse(request);
+			return CaptureResponse(request, logPrefix: "deepflowtest-helloworld");
 		}
 		catch (Exception ex)
 		{
 			Assert.Fail($"Command failed: {ex}");
 			return null;
 		}
-	}
-
-	private static object? CaptureResponse(object request)
-	{
-		PayloadLog.Initialize($"deepflowtest-helloworld-{Guid.NewGuid():N}");
-		object? response = null;
-		var responseCount = 0;
-		var command = new NamedPipeServer.Command
-		{
-			Value = request,
-			Respond = value =>
-			{
-				response = value;
-				responseCount++;
-			},
-			CheckHasResponded = () => responseCount != 0,
-			HoldConnectionOpen = () => { },
-			TrySend = value =>
-			{
-				response = value;
-				responseCount++;
-				return true;
-			},
-		};
-		var options = new AppDriverPayloadStartupOptions
-		{
-			PipeName = "test-pipe",
-			Mode = PayloadStartupModes.OneShotDriver,
-			PayloadRoot = AppContext.BaseDirectory,
-			ProtocolVersion = ProtocolConstants.ProtocolVersion,
-		};
-
-		AppDriverCommandDispatcher.Process(command, options, null);
-		return response;
 	}
 
 	private static bool WaitUntil(Func<bool> condition, int timeoutMs = 5_000)

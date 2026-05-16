@@ -18,7 +18,7 @@ public sealed class ActionCommandHandlerTests
 		Assert.That(result.ExitCode, Is.EqualTo(0));
 		var command = session.Session.Commands.OfType<ClickCommandRequest>().Single();
 		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
-		Assert.That(command.MouseButton, Is.EqualTo("right"));
+		Assert.That(command.MouseButton, Is.EqualTo(MouseButtonKind.Right));
 	}
 
 	[Test]
@@ -57,7 +57,7 @@ public sealed class ActionCommandHandlerTests
 
 		Assert.That(result.ExitCode, Is.EqualTo(0));
 		var command = session.Session.Commands.OfType<ClickCommandRequest>().Single();
-		Assert.That(command.MouseButton, Is.EqualTo("right"));
+		Assert.That(command.MouseButton, Is.EqualTo(MouseButtonKind.Right));
 		Assert.That(command.ClickCount, Is.EqualTo(2));
 	}
 
@@ -78,7 +78,7 @@ public sealed class ActionCommandHandlerTests
 		Assert.That(CliTestHost.Run(new[] { "type", "--pid", "1234", "--target", "0002" }, services).ExitCode, Is.EqualTo(0));
 		Assert.That(CliTestHost.Run(new[] { "key", "--pid", "1234", "--target", "0002" }, services).ExitCode, Is.EqualTo(0));
 
-		Assert.That(session.Session.Commands.OfType<ClickCommandRequest>().Single().MouseButton, Is.EqualTo("right"));
+		Assert.That(session.Session.Commands.OfType<ClickCommandRequest>().Single().MouseButton, Is.EqualTo(MouseButtonKind.Right));
 		Assert.That(session.Session.Commands.OfType<TypeTextCommandRequest>().Single().Text, Is.EqualTo("from-default"));
 		Assert.That(session.Session.Commands.OfType<TypeTextCommandRequest>().Single().ClearFirst, Is.True);
 		Assert.That(session.Session.Commands.OfType<KeyPressCommandRequest>().Single().Keys, Is.EqualTo("Enter"));

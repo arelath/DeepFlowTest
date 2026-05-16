@@ -4,33 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.Linq;
+using DeepFlowTest.Contracts;
 
 public static class CliRootCommand
 {
-	private static readonly HashSet<string> TargetBoundCommands = new(StringComparer.Ordinal)
-	{
-		"ping",
-		"pipe status",
-		"tree",
-		"find",
-		"node",
-		"props",
-		"selectors",
-		"screenshot",
-		"wait",
-		"stream visual-tree",
-		"stream visual-tree-delta",
-		"stream screenshot",
-		"stream event-log",
-		"click",
-		"focus",
-		"type",
-		"key",
-		"set",
-		"raise",
-		"invoke",
-	};
-
 	private static readonly HashSet<string> TopLevelCommands = new(StringComparer.Ordinal)
 	{
 		"config",
@@ -55,32 +32,34 @@ public static class CliRootCommand
 		"version",
 	};
 
-	public static RootCommand Create()
+	public static RootCommand Create() => Create(actions: null);
+
+	internal static RootCommand Create(CliCommandActions? actions)
 	{
 		var root = new RootCommand("Drive DeepFlowTest automation workflows.");
-		root.SetAction(_ => 0);
+		SetAction(root, actions?.Root);
 		AddTargetOptions(root, recursive: true);
 
-		root.Add(CreateConfigCommand());
-		root.Add(CreateProcessesCommand());
-		root.Add(CreateTargetCommand("ping", "Ping a reusable target listener."));
-		root.Add(CreatePipeCommand());
-		root.Add(CreateTargetCommand("tree", "Read a target visual tree.", AddTreeOptions));
-		root.Add(CreateTargetCommand("find", "Find nodes in a target.", AddFindOptions));
-		root.Add(CreateTargetCommand("node", "Read one target node.", AddNodeContextOptions));
-		root.Add(CreateTargetCommand("props", "Read node properties.", AddNodeContextOptions));
-		root.Add(CreateTargetCommand("selectors", "Suggest selectors for a node.", AddTargetIdOption));
-		root.Add(CreateTargetCommand("screenshot", "Capture a screenshot.", AddScreenshotOptions));
-		root.Add(CreateTargetCommand("wait", "Wait for a node or state.", AddWaitOptions));
-		root.Add(CreateStreamCommand());
-		root.Add(CreateTargetCommand("click", "Click a target node.", AddClickOptions));
-		root.Add(CreateTargetCommand("focus", "Focus a target node.", AddActionTargetOptions));
-		root.Add(CreateTargetCommand("type", "Type text into a target node.", AddTypeOptions));
-		root.Add(CreateTargetCommand("key", "Send key input.", AddKeyOptions));
-		root.Add(CreateTargetCommand("set", "Set a property on a target node.", AddSetOptions));
-		root.Add(CreateTargetCommand("raise", "Raise an event on a target node.", AddRaiseOptions));
-		root.Add(CreateTargetCommand("invoke", "Invoke target-side code.", AddInvokeOptions));
-		root.Add(CreateVersionCommand());
+		root.Add(CreateConfigCommand(actions));
+		root.Add(CreateProcessesCommand(actions));
+		root.Add(CreateTargetCommand("ping", "Ping a reusable target listener.", actions, static actionSet => actionSet.Ping));
+		root.Add(CreatePipeCommand(actions));
+		root.Add(CreateTargetCommand("tree", "Read a target visual tree.", actions, static actionSet => actionSet.Tree, AddTreeOptions));
+		root.Add(CreateTargetCommand("find", "Find nodes in a target.", actions, static actionSet => actionSet.Find, AddFindOptions));
+		root.Add(CreateTargetCommand("node", "Read one target node.", actions, static actionSet => actionSet.Node, AddNodeContextOptions));
+		root.Add(CreateTargetCommand("props", "Read node properties.", actions, static actionSet => actionSet.Props, AddNodeContextOptions));
+		root.Add(CreateTargetCommand("selectors", "Suggest selectors for a node.", actions, static actionSet => actionSet.Selectors, AddTargetIdOption));
+		root.Add(CreateTargetCommand("screenshot", "Capture a screenshot.", actions, static actionSet => actionSet.Screenshot, AddScreenshotOptions));
+		root.Add(CreateTargetCommand("wait", "Wait for a node or state.", actions, static actionSet => actionSet.Wait, AddWaitOptions));
+		root.Add(CreateStreamCommand(actions));
+		root.Add(CreateTargetCommand("click", "Click a target node.", actions, static actionSet => actionSet.Click, AddClickOptions));
+		root.Add(CreateTargetCommand("focus", "Focus a target node.", actions, static actionSet => actionSet.Focus, AddActionTargetOptions));
+		root.Add(CreateTargetCommand("type", "Type text into a target node.", actions, static actionSet => actionSet.Type, AddTypeOptions));
+		root.Add(CreateTargetCommand("key", "Send key input.", actions, static actionSet => actionSet.Key, AddKeyOptions));
+		root.Add(CreateTargetCommand("set", "Set a property on a target node.", actions, static actionSet => actionSet.Set, AddSetOptions));
+		root.Add(CreateTargetCommand("raise", "Raise an event on a target node.", actions, static actionSet => actionSet.Raise, AddRaiseOptions));
+		root.Add(CreateTargetCommand("invoke", "Invoke target-side code.", actions, static actionSet => actionSet.Invoke, AddInvokeOptions));
+		root.Add(CreateVersionCommand(actions));
 
 		return root;
 	}
@@ -88,8 +67,6 @@ public static class CliRootCommand
 	public static string HelpText =>
 		$"{DeepFlowTest.ProductInfo.Name} CLI{Environment.NewLine}"
 		+ "Commands: config, processes, ping, pipe status, tree, find, node, props, selectors, screenshot, wait, stream, click, focus, type, key, set, raise, invoke, version";
-
-	public static bool IsTargetBound(string commandPath) => TargetBoundCommands.Contains(commandPath);
 
 	public static string GetCommandPath(IReadOnlyList<string> args)
 	{
@@ -122,29 +99,29 @@ public static class CliRootCommand
 	public static bool IsHelpRequest(IReadOnlyList<string> args) =>
 		args.Count == 0 || args.Any(static x => x is "--help" or "-h" or "/?");
 
-	private static Command CreateConfigCommand()
+	private static Command CreateConfigCommand(CliCommandActions? actions)
 	{
 		var config = new Command("config", "Read and edit CLI defaults.");
-		config.SetAction(_ => 0);
+		SetAction(config, actions?.Config);
 
 		var get = new Command("get", "Get one default or all defaults.");
 		var getKey = new Argument<string>("key") { Arity = ArgumentArity.ZeroOrOne, Description = "Default key." };
 		get.Add(getKey);
-		get.SetAction(_ => 0);
+		SetAction(get, actions?.ConfigGet);
 
 		var set = new Command("set", "Set a default value.");
 		set.Add(new Argument<string>("key") { Description = "Default key." });
 		set.Add(new Argument<string>("value") { Description = "Default value." });
 		set.Add(CreateOption<bool>("--json", "Parse the value as JSON."));
-		set.SetAction(_ => 0);
+		SetAction(set, actions?.ConfigSet);
 
 		var clear = new Command("clear", "Clear one default value.");
 		clear.Add(new Argument<string>("key") { Description = "Default key." });
-		clear.SetAction(_ => 0);
+		SetAction(clear, actions?.ConfigClear);
 
 		var reset = new Command("reset", "Reset all CLI defaults.");
 		reset.Add(CreateOption<bool>("--yes", "Confirm the reset."));
-		reset.SetAction(_ => 0);
+		SetAction(reset, actions?.ConfigReset);
 
 		config.Add(get);
 		config.Add(set);
@@ -153,47 +130,57 @@ public static class CliRootCommand
 		return config;
 	}
 
-	private static Command CreateProcessesCommand()
+	private static Command CreateProcessesCommand(CliCommandActions? actions)
 	{
 		var command = new Command("processes", "List candidate target processes without injection.");
 		command.Add(CreateOption<bool>("--candidates-only", "Only show likely WPF candidates."));
 		command.Add(CreateOption<bool>("--show-all", "Show all processes. This is the default and is accepted for compatibility."));
-		command.SetAction(_ => 0);
+		SetAction(command, actions?.Processes);
 		return command;
 	}
 
-	private static Command CreatePipeCommand()
+	private static Command CreatePipeCommand(CliCommandActions? actions)
 	{
 		var pipe = new Command("pipe", "Inspect reusable listener pipes.");
-		pipe.SetAction(_ => 0);
-		pipe.Add(CreateTargetCommand("status", "Read reusable listener status."));
+		SetAction(pipe, actions?.Pipe);
+		pipe.Add(CreateTargetCommand("status", "Read reusable listener status.", actions, static actionSet => actionSet.PipeStatus));
 		return pipe;
 	}
 
-	private static Command CreateStreamCommand()
+	private static Command CreateStreamCommand(CliCommandActions? actions)
 	{
 		var stream = new Command("stream", "Stream target data.");
-		stream.SetAction(_ => 0);
-		stream.Add(CreateTargetCommand("visual-tree", "Stream visual tree snapshots.", AddStreamOptions));
-		stream.Add(CreateTargetCommand("visual-tree-delta", "Stream visual tree deltas.", AddStreamOptions));
-		stream.Add(CreateTargetCommand("screenshot", "Stream screenshots.", AddStreamScreenshotOptions));
-		stream.Add(CreateTargetCommand("event-log", "Stream target event logs.", AddStreamOptions));
+		SetAction(stream, actions?.Stream);
+		stream.Add(CreateTargetCommand("visual-tree", "Stream visual tree snapshots.", actions, static actionSet => actionSet.StreamVisualTree, AddStreamOptions));
+		stream.Add(CreateTargetCommand("visual-tree-delta", "Stream visual tree deltas.", actions, static actionSet => actionSet.StreamVisualTreeDelta, AddStreamOptions));
+		stream.Add(CreateTargetCommand("screenshot", "Stream screenshots.", actions, static actionSet => actionSet.StreamScreenshot, AddStreamScreenshotOptions));
+		stream.Add(CreateTargetCommand("event-log", "Stream target event logs.", actions, static actionSet => actionSet.StreamEventLog, AddStreamOptions));
 		return stream;
 	}
 
-	private static Command CreateVersionCommand()
+	private static Command CreateVersionCommand(CliCommandActions? actions)
 	{
 		var version = new Command("version", "Print product version information.");
-		version.SetAction(_ => 0);
+		SetAction(version, actions?.Version);
 		return version;
 	}
 
-	private static Command CreateTargetCommand(string name, string description, Action<Command>? configure = null)
+	private static Command CreateTargetCommand(
+		string name,
+		string description,
+		CliCommandActions? actions,
+		Func<CliCommandActions, Func<int>> selectAction,
+		Action<Command>? configure = null)
 	{
 		var command = new Command(name, description);
 		configure?.Invoke(command);
-		command.SetAction(_ => 0);
+		SetAction(command, actions is null ? null : selectAction(actions));
 		return command;
+	}
+
+	private static void SetAction(Command command, Func<int>? action)
+	{
+		command.SetAction(_ => action?.Invoke() ?? 0);
 	}
 
 	private static void AddTargetOptions(Command command, bool recursive = false)
@@ -225,7 +212,7 @@ public static class CliRootCommand
 		command.Add(CreateOption<string>("--target-id", "Root target ID."));
 		command.Add(CreateOption<int>("--max-depth", "Maximum tree depth."));
 		command.Add(CreateOption<int>("--limit", "Maximum node count."));
-		command.Add(CreateOption<string>("--shape", "Tree shape: flat or nested."));
+		command.Add(CreateParsedOption<TreeShape>("--shape", "Tree shape: flat or nested.", CliValueParser.ParseTreeShape));
 		command.Add(CreateOption<string>("--props", "Comma-separated property names."));
 		command.Add(CreateOption<bool>("--include-hidden", "Include hidden nodes."));
 		command.Add(CreateOption<string>("--type-names", "Comma-separated type names to include."));
@@ -264,7 +251,7 @@ public static class CliRootCommand
 	private static void AddScreenshotOptions(Command command)
 	{
 		AddActionTargetOptions(command);
-		command.Add(CreateOption<string>("--image-format", "Image format."));
+		command.Add(CreateParsedOption<ImageFormat>("--image-format", "Image format.", CliValueParser.ParseImageFormat));
 		command.Add(CreateOption<string>("--output", "Output image path.", "--out"));
 		command.Add(CreateOption<bool>("--base64", "Include base64 bytes in JSON output."));
 	}
@@ -281,7 +268,7 @@ public static class CliRootCommand
 	private static void AddStreamScreenshotOptions(Command command)
 	{
 		AddStreamOptions(command);
-		command.Add(CreateOption<string>("--image-format", "Image format."));
+		command.Add(CreateParsedOption<ImageFormat>("--image-format", "Image format.", CliValueParser.ParseImageFormat));
 	}
 
 	private static void AddWaitOptions(Command command)
@@ -307,7 +294,7 @@ public static class CliRootCommand
 	private static void AddClickOptions(Command command)
 	{
 		AddActionTargetOptions(command);
-		command.Add(CreateOption<string>("--button", "Mouse button."));
+		command.Add(CreateParsedOption<CliClickButton>("--button", "Mouse button.", CliValueParser.ParseClickButton));
 		command.Add(CreateOption<int>("--count", "Click count."));
 		command.Add(CreateOption<bool>("--double", "Send a double-click routed event."));
 	}
@@ -375,6 +362,29 @@ public static class CliRootCommand
 			Description = description,
 			Recursive = recursive,
 		}, name);
+
+	private static Option<T> CreateParsedOption<T>(string name, string description, Func<string?, T> parse, params string[] aliases)
+	{
+		var option = new Option<T>(name, aliases)
+		{
+			Description = description,
+			Arity = ArgumentArity.ExactlyOne,
+		};
+		option.CustomParser = result =>
+		{
+			var value = result.Tokens.Count == 0 ? null : result.Tokens[0].Value;
+			try
+			{
+				return parse(value);
+			}
+			catch (CliException ex)
+			{
+				result.AddError(ex.Message);
+				return default!;
+			}
+		};
+		return option;
+	}
 
 	private static Option<T> ConfigureOption<T>(Option<T> option, string name)
 	{

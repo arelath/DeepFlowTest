@@ -191,7 +191,7 @@ public static class ThreadUtility
 		await (await taskSource.Task.ConfigureAwait(false)).ConfigureAwait(false);
 	}
 
-	private static Dispatcher? FindWpfDispatcher()
+	internal static Dispatcher? FindWpfDispatcher()
 	{
 		var currentDispatcher = GetCurrentStaDispatcher();
 		if (currentDispatcher is not null)

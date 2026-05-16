@@ -94,8 +94,8 @@ public sealed class CliReadServiceTests
 		var snapshot = Snapshot(Node("root-1", isRoot: true, childIds: new[] { "child-2" }), Node("child-2", "root-1"));
 		var service = new TreeSnapshotService();
 
-		var flat = service.Shape(snapshot, new TreeSnapshotOptions { Shape = "flat", IncludePath = true });
-		var nested = service.Shape(snapshot, new TreeSnapshotOptions { Shape = "nested" });
+		var flat = service.Shape(snapshot, new TreeSnapshotOptions { Shape = TreeShape.Flat, IncludePath = true });
+		var nested = service.Shape(snapshot, new TreeSnapshotOptions { Shape = TreeShape.Nested });
 
 		Assert.That(flat.Nodes, Has.Count.EqualTo(2));
 		Assert.That(flat.Nodes[1].Depth, Is.EqualTo(1));
@@ -104,17 +104,14 @@ public sealed class CliReadServiceTests
 	}
 
 	[Test]
-	public void TreeSnapshotServiceRejectsUnknownShapeAndNormalizesDefaultProperties()
+	public void TreeSnapshotServiceNormalizesDefaultProperties()
 	{
 		var snapshot = Snapshot(Node("root", isRoot: true));
 		snapshot.Nodes[0].Properties["Complex"] = new Version(1, 2);
 
-		var shaped = new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions { Shape = "flat" });
+		var shaped = new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions { Shape = TreeShape.Flat });
 
 		Assert.That(shaped.Nodes[0].Properties["Complex"], Is.EqualTo("1.2"));
-		Assert.That(
-			() => new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions { Shape = "sideways" }),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
 	}
 
 	[Test]

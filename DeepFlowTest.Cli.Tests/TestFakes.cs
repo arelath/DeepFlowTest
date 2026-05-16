@@ -139,7 +139,7 @@ internal sealed class FakeCliAppSession : ICliAppSession
 	public ScreenshotCommandResponse Screenshot { get; set; } = new()
 	{
 		TargetId = "root-0001",
-		Format = "png",
+		Format = ImageFormat.Png,
 		Width = 2,
 		Height = 1,
 		ByteCount = 4,

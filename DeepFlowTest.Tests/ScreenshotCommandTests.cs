@@ -14,6 +14,8 @@ using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
 using DrawingPoint = System.Drawing.Point;
 using Forms = System.Windows.Forms;
+using static DeepFlowTest.Tests.TestIpcHost;
+using static DeepFlowTest.Tests.WpfTestHelpers;
 
 [TestFixture]
 [Apartment(ApartmentState.STA)]
@@ -28,9 +30,9 @@ public sealed class ScreenshotCommandTests
 		{
 			window.Show();
 
-			var response = (ScreenshotCommandResponse)CaptureResponse(new ScreenshotCommandRequest { Format = "png" })!;
+			var response = (ScreenshotCommandResponse)CaptureResponse(new ScreenshotCommandRequest { Format = ImageFormat.Png })!;
 
-			Assert.That(response.Format, Is.EqualTo("png"));
+			Assert.That(response.Format, Is.EqualTo(ImageFormat.Png));
 			Assert.That(response.TargetId, Is.Not.Empty);
 			Assert.That(response.Width, Is.GreaterThan(0));
 			Assert.That(response.Height, Is.GreaterThan(0));
@@ -63,11 +65,11 @@ public sealed class ScreenshotCommandTests
 			var response = (ScreenshotCommandResponse)CaptureResponse(new ScreenshotCommandRequest
 			{
 				TargetId = buttonNode.TargetId,
-				Format = "jpg",
+				Format = ImageFormat.Jpeg,
 			})!;
 
 			Assert.That(response.TargetId, Is.EqualTo(buttonNode.TargetId));
-			Assert.That(response.Format, Is.EqualTo("jpeg"));
+			Assert.That(response.Format, Is.EqualTo(ImageFormat.Jpeg));
 			Assert.That(response.Width, Is.GreaterThan(0));
 			Assert.That(response.Height, Is.GreaterThan(0));
 			Assert.That(response.ByteCount, Is.GreaterThan(0));
@@ -90,7 +92,7 @@ public sealed class ScreenshotCommandTests
 			var response = (StandardIpcResponse)CaptureResponse(new ScreenshotCommandRequest
 			{
 				TargetId = "dft-target-missing",
-				Format = "png",
+				Format = ImageFormat.Png,
 			})!;
 
 			Assert.That(response.Success, Is.False);
@@ -113,7 +115,7 @@ public sealed class ScreenshotCommandTests
 		var response = (StandardIpcResponse)InvokeScreenshotProcess(new ScreenshotCommandRequest
 		{
 			TargetId = targetId,
-			Format = "png",
+			Format = ImageFormat.Png,
 		}, treeService)!;
 
 		Assert.That(response.Success, Is.False);
@@ -137,9 +139,9 @@ public sealed class ScreenshotCommandTests
 		{
 			form.Show();
 
-			var response = (ScreenshotCommandResponse)CaptureResponse(new ScreenshotCommandRequest { Format = "png" })!;
+			var response = (ScreenshotCommandResponse)CaptureResponse(new ScreenshotCommandRequest { Format = ImageFormat.Png })!;
 
-			Assert.That(response.Format, Is.EqualTo("png"));
+			Assert.That(response.Format, Is.EqualTo(ImageFormat.Png));
 			Assert.That(response.TargetId, Is.Not.Empty);
 			Assert.That(response.Width, Is.GreaterThan(0));
 			Assert.That(response.Height, Is.GreaterThan(0));
@@ -149,40 +151,6 @@ public sealed class ScreenshotCommandTests
 		{
 			form.Close();
 		}
-	}
-
-	private static object? CaptureResponse(object request)
-	{
-		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
-		object? response = null;
-		var responseCount = 0;
-		var command = new NamedPipeServer.Command
-		{
-			Value = request,
-			Respond = value =>
-			{
-				response = value;
-				responseCount++;
-			},
-			CheckHasResponded = () => responseCount != 0,
-			HoldConnectionOpen = () => { },
-			TrySend = value =>
-			{
-				response = value;
-				responseCount++;
-				return true;
-			},
-		};
-		var options = new AppDriverPayloadStartupOptions
-		{
-			PipeName = "test-pipe",
-			Mode = PayloadStartupModes.OneShotDriver,
-			PayloadRoot = AppContext.BaseDirectory,
-			ProtocolVersion = ProtocolConstants.ProtocolVersion,
-		};
-
-		AppDriverCommandDispatcher.Process(command, options, null);
-		return response;
 	}
 
 	private static object? InvokeScreenshotProcess(ScreenshotCommandRequest request, TreeService treeService)
@@ -208,18 +176,4 @@ public sealed class ScreenshotCommandTests
 		}
 	}
 
-	private static Window CreateWindow(string title, object content)
-	{
-		return new Window
-		{
-			Title = title,
-			Content = content,
-			Width = 240,
-			Height = 160,
-			ShowInTaskbar = false,
-			WindowStartupLocation = WindowStartupLocation.Manual,
-			Left = -20000,
-			Top = -20000,
-		};
-	}
 }

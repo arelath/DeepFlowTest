@@ -26,7 +26,7 @@ public sealed class LibraryApiTests
 			new ScreenshotCommandResponse
 			{
 				TargetId = "input",
-				Format = "png",
+				Format = ImageFormat.Png,
 				Width = 12,
 				Height = 8,
 				ByteCount = 3,
@@ -35,7 +35,7 @@ public sealed class LibraryApiTests
 			new ScreenshotCommandResponse
 			{
 				TargetId = "input",
-				Format = "png",
+				Format = ImageFormat.Png,
 				Width = 12,
 				Height = 8,
 				ByteCount = 3,
@@ -63,7 +63,7 @@ public sealed class LibraryApiTests
 	{
 		var session = new FakeSession(new ScreenshotCommandResponse
 		{
-			Format = "jpeg",
+			Format = ImageFormat.Jpeg,
 			Width = 1,
 			Height = 1,
 			ByteCount = 2,
@@ -71,7 +71,7 @@ public sealed class LibraryApiTests
 		},
 		new ScreenshotCommandResponse
 		{
-			Format = "jpeg",
+			Format = ImageFormat.Jpeg,
 			Width = 1,
 			Height = 1,
 			ByteCount = 2,
@@ -85,7 +85,7 @@ public sealed class LibraryApiTests
 
 		Assert.That(backend.LastLaunchOptions!.Arguments, Is.EqualTo("--demo"));
 		Assert.That(bytes, Is.EqualTo(new byte[] { 5, 6 }));
-		Assert.That(session.SentCommands.OfType<ScreenshotCommandRequest>().Select(static command => command.Format), Is.EqualTo(new[] { "jpeg", "jpeg" }));
+		Assert.That(session.SentCommands.OfType<ScreenshotCommandRequest>().Select(static command => command.Format), Is.EqualTo(new[] { ImageFormat.Jpeg, ImageFormat.Jpeg }));
 	}
 
 	[Test]
@@ -163,9 +163,9 @@ public sealed class LibraryApiTests
 		var first = Convert.ToBase64String(new byte[] { 1 });
 		var stable = Convert.ToBase64String(new byte[] { 2 });
 		var session = new FakeSession(
-			new ScreenshotCommandResponse { Format = "png", ByteCount = 1, BytesBase64 = first },
-			new ScreenshotCommandResponse { Format = "png", ByteCount = 1, BytesBase64 = stable },
-			new ScreenshotCommandResponse { Format = "png", ByteCount = 1, BytesBase64 = stable });
+			new ScreenshotCommandResponse { Format = ImageFormat.Png, ByteCount = 1, BytesBase64 = first },
+			new ScreenshotCommandResponse { Format = ImageFormat.Png, ByteCount = 1, BytesBase64 = stable },
+			new ScreenshotCommandResponse { Format = ImageFormat.Png, ByteCount = 1, BytesBase64 = stable });
 		using var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
 			session);
@@ -206,7 +206,7 @@ public sealed class LibraryApiTests
 		typeof(ReflectionTarget).InvokeOn(target, "SetSecret", "value");
 		target.SetField("field", 42);
 		target.SetProperty("Name", "updated");
-		var dictionary = new ClickCommandRequest { TargetId = "button", MouseButton = "right" }.ToDictionary();
+		var dictionary = new ClickCommandRequest { TargetId = "button", MouseButton = MouseButtonKind.Right }.ToDictionary();
 
 		Assert.That(target.Property<string>("Name"), Is.EqualTo("updated"));
 		Assert.That(target.Field<int>("field"), Is.EqualTo(42));

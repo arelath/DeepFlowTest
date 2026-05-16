@@ -1,14 +1,17 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.AppDriverPayload;
+using DeepFlowTest.AppDriverPayload.Commands;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
 using NUnit.Framework;
+using static DeepFlowTest.Tests.TestIpcHost;
 
 [TestFixture]
 public sealed class ProtocolCommandTests
@@ -45,7 +48,7 @@ public sealed class ProtocolCommandTests
 
 		Assert.That(leftClick, Is.EqualTo(sameLeftClick));
 		Assert.That(leftClick.TargetId, Is.EqualTo("button"));
-		Assert.That(leftClick.MouseButton, Is.EqualTo("Left"));
+		Assert.That(leftClick.MouseButton, Is.EqualTo(MouseButtonKind.Left));
 		Assert.That(leftClick.TimeoutMs, Is.EqualTo(123));
 		Assert.That(screenshot.BytesBase64, Is.EqualTo("AQID"));
 		Assert.That(screenshot.Base64Screenshot, Is.EqualTo("AQID"));
@@ -58,6 +61,27 @@ public sealed class ProtocolCommandTests
 		Assert.That(stream.Sequence, Is.EqualTo(7));
 		Assert.That(ProtocolConstants.Properties.Base64Screenshot, Is.EqualTo("Base64Screenshot"));
 		Assert.That(ProtocolConstants.Properties.MaxMatches, Is.EqualTo("MaxMatches"));
+	}
+
+	[Test]
+	public void ProtocolEnumsConvertLegacyStringsToTypedValues()
+	{
+		var click = MessagePacker.ConvertTo<ClickCommandRequest>(new Dictionary<string, object?>
+		{
+			["Kind"] = ProtocolConstants.Commands.Click,
+			["TargetId"] = "button",
+			["MouseButton"] = "right",
+		});
+		var screenshot = MessagePacker.ConvertTo<ScreenshotCommandRequest>(new Dictionary<string, object?>
+		{
+			["Kind"] = ProtocolConstants.Commands.Screenshot,
+			["Format"] = "jpg",
+		});
+
+		Assert.That(click.MouseButton, Is.EqualTo(MouseButtonKind.Right));
+		Assert.That(screenshot.Format, Is.EqualTo(ImageFormat.Jpeg));
+		Assert.That(click.ToDictionary()["MouseButton"], Is.EqualTo("right"));
+		Assert.That(screenshot.ToDictionary()["Format"], Is.EqualTo("jpeg"));
 	}
 
 	[Test]
@@ -127,6 +151,19 @@ public sealed class ProtocolCommandTests
 
 			Assert.That(capture.ResponseCount, Is.EqualTo(1), request.Kind);
 			Assert.That(capture.Response, Is.Not.Null, request.Kind);
+		}
+	}
+
+	[Test]
+	public void CommandHandlersAreDiscoveredForEveryProtocolCommandDto()
+	{
+		var registry = CommandHandlerRegistry.CreateDefault();
+		var handlersByKind = registry.AllHandlers.ToLookup(static handler => handler.Kind, StringComparer.Ordinal);
+
+		foreach (var request in CreateAllProtocolCommandDtos())
+		{
+			Assert.That(handlersByKind[request.Kind].Count(), Is.EqualTo(1), request.GetType().Name);
+			Assert.That(handlersByKind[request.Kind].Single().RequestType, Is.EqualTo(request.GetType()), request.Kind);
 		}
 	}
 
@@ -250,49 +287,6 @@ public sealed class ProtocolCommandTests
 		Assert.That(logged, Is.True);
 	}
 
-	private static object? CaptureResponse(object request, ReusablePipeSession? reusableSession)
-	{
-		return CaptureDispatch(request, reusableSession).Response;
-	}
-
-	private static object? CaptureResponse(object request, ReusablePipeSession? reusableSession, string pipeName)
-	{
-		return CaptureDispatch(request, reusableSession, pipeName).Response;
-	}
-
-	private static DispatchCapture CaptureDispatch(object request, ReusablePipeSession? reusableSession, string pipeName = "test-pipe")
-	{
-		object? response = null;
-		var responseCount = 0;
-		var command = new NamedPipeServer.Command
-		{
-			Value = request,
-			Respond = value =>
-			{
-				response = value;
-				responseCount++;
-			},
-			CheckHasResponded = () => responseCount != 0,
-			HoldConnectionOpen = () => { },
-			TrySend = value =>
-			{
-				response = value;
-				responseCount++;
-				return true;
-			},
-		};
-		var options = new AppDriverPayloadStartupOptions
-		{
-			PipeName = pipeName,
-			Mode = reusableSession is null ? PayloadStartupModes.OneShotDriver : PayloadStartupModes.ReusableCli,
-			PayloadRoot = AppContext.BaseDirectory,
-			ProtocolVersion = ProtocolConstants.ProtocolVersion,
-		};
-
-		AppDriverCommandDispatcher.Process(command, options, reusableSession);
-		return new DispatchCapture(response, responseCount);
-	}
-
 	private static IDisposable DelayUiHandlers(int delayMs)
 	{
 		return AppDriverCommandDispatcher.DelayUiHandlersForTests(delayMs);
@@ -327,5 +321,4 @@ public sealed class ProtocolCommandTests
 		public string Kind { get; set; } = "UnknownCommand";
 	}
 
-	private sealed record DispatchCapture(object? Response, int ResponseCount);
 }

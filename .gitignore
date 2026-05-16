@@ -60,3 +60,4 @@ nunit-*.xml
 MegaContext.txt
 MegaContext-files.txt
 MegaContext-files.txt
+*.lscache

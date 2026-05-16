@@ -4,10 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Serialization;
 using DeepFlowTest;
+using DeepFlowTest.Shared;
 
 public sealed class ProcessSnapshot
 {
@@ -161,14 +161,14 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 
 		try
 		{
-			if (IsWow64Process2(process.Handle, out var processMachine, out var nativeMachine))
+			if (NativeMethods.IsWow64Process2(process.Handle, out var processMachine, out var nativeMachine))
 			{
 				return processMachine switch
 				{
-					ImageFileMachineI386 => "x86",
-					ImageFileMachineArm32 => "arm",
-					0 when nativeMachine == ImageFileMachineArm64 => "arm64",
-					0 => "x64",
+					NativeMethods.ImageFileMachine.I386 => "x86",
+					NativeMethods.ImageFileMachine.Arm or NativeMethods.ImageFileMachine.ArmNt => "arm",
+					NativeMethods.ImageFileMachine.Unknown when nativeMachine == NativeMethods.ImageFileMachine.Arm64 => "arm64",
+					NativeMethods.ImageFileMachine.Unknown => "x64",
 					_ => "unknown",
 				};
 			}
@@ -183,7 +183,7 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 
 		try
 		{
-			return Environment.Is64BitProcess && IsWow64Process(process.Handle, out var isWow64) && isWow64
+			return Environment.Is64BitProcess && NativeMethods.IsWow64Process(process.Handle, out var isWow64) && isWow64
 				? "x86"
 				: "x64";
 		}
@@ -199,18 +199,18 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 			return Array.Empty<ProcessWindowSnapshot>();
 
 		var windows = new List<ProcessWindowSnapshot>();
-		EnumWindows((hwnd, _) =>
+		NativeMethods.EnumWindows((hwnd, _) =>
 		{
-			GetWindowThreadProcessId(hwnd, out var windowProcessId);
-			if (windowProcessId != processId || !IsWindowVisible(hwnd))
+			NativeMethods.GetWindowThreadProcessId(hwnd, out var windowProcessId);
+			if (windowProcessId != processId || !NativeMethods.IsWindowVisible(hwnd))
 				return true;
 
-			var titleLength = GetWindowTextLength(hwnd);
+			var titleLength = NativeMethods.GetWindowTextLength(hwnd);
 			if (titleLength <= 0)
 				return true;
 
 			var builder = new StringBuilder(titleLength + 1);
-			GetWindowText(hwnd, builder, builder.Capacity);
+			NativeMethods.GetWindowText(hwnd, builder, builder.Capacity);
 			windows.Add(new ProcessWindowSnapshot
 			{
 				Hwnd = hwnd.ToInt64(),
@@ -233,32 +233,6 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 		}
 	}
 
-	private const ushort ImageFileMachineI386 = 0x014c;
-	private const ushort ImageFileMachineArm32 = 0x01c4;
-	private const ushort ImageFileMachineArm64 = 0xaa64;
-
-	private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
-
-	[DllImport("user32.dll")]
-	private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-
-	[DllImport("user32.dll")]
-	private static extern bool IsWindowVisible(IntPtr hwnd);
-
-	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-	private static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
-
-	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-	private static extern int GetWindowTextLength(IntPtr hwnd);
-
-	[DllImport("user32.dll")]
-	private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out int processId);
-
-	[DllImport("kernel32.dll", SetLastError = true)]
-	private static extern bool IsWow64Process(IntPtr process, out bool wow64Process);
-
-	[DllImport("kernel32.dll", SetLastError = true)]
-	private static extern bool IsWow64Process2(IntPtr process, out ushort processMachine, out ushort nativeMachine);
 }
 
 public sealed class ProcessListData

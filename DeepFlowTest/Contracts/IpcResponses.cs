@@ -3,6 +3,7 @@ namespace DeepFlowTest.Contracts;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Newtonsoft.Json;
 using DeepFlowTest.Interop;
 
 public sealed record class StandardIpcResponse
@@ -288,7 +289,8 @@ public sealed record class ScreenshotCommandResponse
 
 	public string TargetId { get; set; } = string.Empty;
 
-	public string Format { get; set; } = "png";
+	[JsonConverter(typeof(ProtocolImageFormatJsonConverter))]
+	public ImageFormat Format { get; set; } = ImageFormat.Png;
 
 	public int Width { get; set; }
 

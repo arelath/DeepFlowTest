@@ -2,6 +2,7 @@ namespace DeepFlowTest.Tests;
 
 using System.Diagnostics;
 using DeepFlowTest.InjectorLauncher;
+using DeepFlowTest.Shared;
 using NUnit.Framework;
 
 [TestFixture]

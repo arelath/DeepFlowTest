@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Cli.Tests;
 
 using System.Linq;
+using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using NUnit.Framework;
@@ -56,7 +57,7 @@ public sealed class StreamCommandHandlerTests
 		Assert.That(result.Stdout, Does.Contain("\"bytesBase64\":\"AQIDBA==\""));
 		var start = session.Session.Commands.OfType<StartSendingCommandRequest>().Single();
 		Assert.That(start.TargetId, Is.EqualTo("button-0002"));
-		Assert.That(start.Format, Is.EqualTo("jpeg"));
+		Assert.That(start.Format, Is.EqualTo(ImageFormat.Jpeg));
 	}
 
 	[Test]
@@ -90,7 +91,7 @@ public sealed class StreamCommandHandlerTests
 				IntervalMs = 100,
 				TargetId = "target",
 				PropNames = new[] { "Name" },
-				Format = "png",
+				Format = ImageFormat.Png,
 			};
 			var unpacked = MessagePacker.ConvertTo<StartSendingCommandRequest>(MessagePacker.Unpack(MessagePacker.Pack(request)));
 			Assert.That(unpacked.StreamKind, Is.EqualTo(kind));

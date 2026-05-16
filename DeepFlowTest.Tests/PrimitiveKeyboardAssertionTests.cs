@@ -48,6 +48,7 @@ public sealed class PrimitiveKeyboardAssertionTests
 		Assert.That((five - two).To<int>(), Is.EqualTo(3));
 		Assert.That((five * two).To<int>(), Is.EqualTo(10));
 		Assert.That((five / two).To<int>(), Is.EqualTo(2));
+		Assert.That((five / two).To<decimal>(), Is.EqualTo(2.5m));
 		Assert.That((five % two).To<int>(), Is.EqualTo(1));
 		Assert.That((text + " world").S, Is.EqualTo("Hello world"));
 		Assert.That((!truth).To<bool>(), Is.False);
@@ -66,6 +67,28 @@ public sealed class PrimitiveKeyboardAssertionTests
 		Assert.That(modeName.To<SampleMode>(), Is.EqualTo(SampleMode.Second));
 		Assert.That(Primitive.Empty.S, Is.Empty);
 		Assert.That(Primitive.Empty.To<int?>(), Is.Null);
+	}
+
+	[Test]
+	public void PrimitiveOperatorsRejectNonNumericValuesWithPredictableExceptions()
+	{
+		Primitive two = 2;
+		Primitive numericText = "5";
+		var incompatible = new Primitive(new object());
+		Primitive fractional = 2.5m;
+
+		Assert.That((numericText - two).To<decimal>(), Is.EqualTo(3m));
+		var arithmetic = Assert.Throws<InvalidOperationException>(() =>
+		{
+			var _ = incompatible + two;
+		});
+		var bitwise = Assert.Throws<InvalidOperationException>(() =>
+		{
+			var _ = fractional & two;
+		});
+
+		Assert.That(arithmetic!.Message, Does.Contain("not numeric"));
+		Assert.That(bitwise!.Message, Does.Contain("not an integral number"));
 	}
 
 	[Test]

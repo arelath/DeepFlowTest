@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using DeepFlowTest.Shared;
 
 internal static class FrameworkDetector
 {

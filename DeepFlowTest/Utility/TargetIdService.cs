@@ -4,8 +4,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
+using DeepFlowTest.Shared;
 
 public sealed class TargetIdService
 {
@@ -43,7 +43,7 @@ public sealed class TargetIdService
 		{
 			if (TryParseNativeWindowTargetId(targetId, out var parsedHwnd))
 			{
-				if (!IsWindow(parsedHwnd))
+				if (!NativeMethods.IsWindow(parsedHwnd))
 					return TargetIdResolution.Stale(targetId);
 
 				valueTargetsById[targetId] = parsedHwnd;
@@ -52,7 +52,7 @@ public sealed class TargetIdService
 
 			if (valueTargetsById.TryGetValue(targetId, out var valueTarget))
 			{
-				if (valueTarget is IntPtr hwnd && !IsWindow(hwnd))
+				if (valueTarget is IntPtr hwnd && !NativeMethods.IsWindow(hwnd))
 				{
 					valueTargetsById.TryRemove(targetId, out _);
 					return TargetIdResolution.Stale(targetId);
@@ -101,8 +101,6 @@ public sealed class TargetIdService
 		public string TargetId { get; }
 	}
 
-	[DllImport("user32.dll")]
-	private static extern bool IsWindow(IntPtr hWnd);
 }
 
 public sealed class TargetIdResolution

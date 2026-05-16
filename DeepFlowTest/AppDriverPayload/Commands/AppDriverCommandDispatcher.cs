@@ -1,7 +1,6 @@
 namespace DeepFlowTest.AppDriverPayload;
 
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.AppDriverPayload.Commands;
@@ -18,49 +17,8 @@ internal static class AppDriverCommandDispatcher
 
 	private static readonly TreeService TreeService = new();
 	private static readonly ExpressionCache ExpressionCache = new();
+	private static readonly CommandHandlerRegistry HandlerRegistry = CommandHandlerRegistry.CreateDefault();
 	private static int delayBeforeUiHandlerForTests;
-
-	private static readonly Dictionary<string, CommandHandler> ImmediateHandlers = new()
-	{
-		[ProtocolConstants.Commands.Hello] = context =>
-			HelloCommand.Process(context.Request<HelloCommandRequest>(), context.Options, context.ReusableSession),
-		[ProtocolConstants.Commands.PipeStatus] = context =>
-			PipeStatusCommand.Process(context.Request<PipeStatusCommandRequest>(), context.Options, context.ReusableSession),
-		[ProtocolConstants.Commands.StartSending] = context =>
-			StartSendingCommand.Process(context.Request<StartSendingCommandRequest>(), context.Command, context.ReusableSession, context.TreeService),
-		[ProtocolConstants.Commands.StopSending] = context =>
-			StopSendingCommand.Process(context.Request<StopSendingCommandRequest>(), context.ReusableSession),
-	};
-
-	private static readonly Dictionary<string, AsyncCommandHandler> UiHandlers = new()
-	{
-		[ProtocolConstants.Commands.Ping] = context =>
-			Task.FromResult(PingCommand.Process(context.Request<PingCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.GetVisualTree] = context =>
-			Task.FromResult(GetVisualTreeCommand.Process(context.Request<GetVisualTreeCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.FindElement] = context =>
-			Task.FromResult(FindElementCommand.Process(context.Request<FindElementCommandRequest>(), context.TreeService, context.ExpressionCache)),
-		[ProtocolConstants.Commands.Screenshot] = context =>
-			Task.FromResult(ScreenshotCommand.Process(context.Request<ScreenshotCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.Click] = context =>
-			Task.FromResult(TargetActionCommand.Click(context.Request<ClickCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.Focus] = context =>
-			Task.FromResult(TargetActionCommand.Focus(context.Request<FocusCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.TypeText] = context =>
-			Task.FromResult(TargetActionCommand.TypeText(context.Request<TypeTextCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.KeyPress] = context =>
-			Task.FromResult(TargetActionCommand.KeyPress(context.Request<KeyPressCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.SetProperty] = context =>
-			Task.FromResult(TargetActionCommand.SetProperty(context.Request<SetPropertyCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.RaiseEvent] = context =>
-			Task.FromResult(TargetActionCommand.RaiseEvent(context.Request<RaiseEventCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.KnownRoutedEvent] = context =>
-			Task.FromResult(TargetActionCommand.KnownRoutedEvent(context.Request<KnownRoutedEventCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.KnownOperation] = context =>
-			Task.FromResult(TargetActionCommand.KnownOperation(context.Request<KnownOperationCommandRequest>(), context.TreeService)),
-		[ProtocolConstants.Commands.Invoke] = context =>
-			Task.FromResult(TargetActionCommand.Invoke(context.Request<InvokeCommandRequest>(), context.TreeService)),
-	};
 
 	public static void Process(NamedPipeServer.Command command, AppDriverPayloadStartupOptions options, ReusablePipeSession? reusableSession)
 	{
@@ -70,13 +28,13 @@ internal static class AppDriverCommandDispatcher
 			var kind = GetCommandKind(command.Value);
 			PayloadLog.Write($"Processing command '{kind}'.");
 
-			if (ImmediateHandlers.TryGetValue(kind, out var immediateHandler))
+			if (HandlerRegistry.ImmediateHandlers.TryGetValue(kind, out var immediateHandler))
 			{
-				RespondIfNeeded(command, immediateHandler(context));
+				RespondIfNeeded(command, immediateHandler.Handle(context));
 				return;
 			}
 
-			if (UiHandlers.TryGetValue(kind, out var uiHandler))
+			if (HandlerRegistry.UiHandlers.TryGetValue(kind, out var uiHandler))
 			{
 				if (TryProcessNativeCommand(kind, context, allowUntargetedCommands: false, out var nativeResponse))
 				{
@@ -115,19 +73,20 @@ internal static class AppDriverCommandDispatcher
 
 	private static async Task<object> RunUiHandlerAsync(
 		string kind,
-		AsyncCommandHandler handler,
+		RegisteredCommandHandler handler,
 		CommandContext context)
 	{
 		if (delayBeforeUiHandlerForTests > 0)
 			await Task.Delay(delayBeforeUiHandlerForTests).ConfigureAwait(false);
 
 		if (kind == ProtocolConstants.Commands.Ping)
-			return await handler(context).ConfigureAwait(false);
+			return handler.Handle(context);
 
 		object? result = null;
-		var runResult = await ThreadUtility.RunOnUIThreadAsync(async () =>
+		var runResult = await ThreadUtility.RunOnUIThreadAsync(() =>
 		{
-			result = await handler(context).ConfigureAwait(false);
+			result = handler.Handle(context);
+			return Task.CompletedTask;
 		}).ConfigureAwait(false);
 
 		if (runResult == UiThreadRunResult.Finished)
@@ -138,7 +97,7 @@ internal static class AppDriverCommandDispatcher
 
 	private static async Task<object> RunUiHandlerWithModalWatchAsync(
 		string kind,
-		AsyncCommandHandler handler,
+		RegisteredCommandHandler handler,
 		CommandContext context,
 		int timeoutMs)
 	{
@@ -210,7 +169,7 @@ internal static class AppDriverCommandDispatcher
 		out object response)
 	{
 		response = null!;
-		if (!UiHandlers.TryGetValue(kind, out var handler) || !ShouldProcessNatively(kind, context.Command.Value, allowUntargetedCommands))
+		if (!HandlerRegistry.UiHandlers.TryGetValue(kind, out var handler) || !ShouldProcessNatively(kind, context.Command.Value, allowUntargetedCommands))
 			return false;
 
 		var treeService = NativeDialogService.TryCreateTreeService();
@@ -226,7 +185,7 @@ internal static class AppDriverCommandDispatcher
 		var nativeContext = new CommandContext(context.Command, context.Options, context.ReusableSession, treeService, context.ExpressionCache);
 		try
 		{
-			response = handler(nativeContext).ConfigureAwait(false).GetAwaiter().GetResult();
+			response = handler.Handle(nativeContext);
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
@@ -333,40 +292,4 @@ internal static class AppDriverCommandDispatcher
 			delayBeforeUiHandlerForTests = previous;
 		}
 	}
-
-	private sealed class CommandContext
-	{
-		public CommandContext(
-			NamedPipeServer.Command command,
-			AppDriverPayloadStartupOptions options,
-			ReusablePipeSession? reusableSession,
-			TreeService treeService,
-			ExpressionCache expressionCache)
-		{
-			Command = command;
-			Options = options ?? throw new ArgumentNullException(nameof(options));
-			ReusableSession = reusableSession;
-			TreeService = treeService ?? throw new ArgumentNullException(nameof(treeService));
-			ExpressionCache = expressionCache ?? throw new ArgumentNullException(nameof(expressionCache));
-			LogCorrelationId = PayloadLog.CurrentCorrelationId;
-		}
-
-		public NamedPipeServer.Command Command { get; }
-
-		public AppDriverPayloadStartupOptions Options { get; }
-
-		public ReusablePipeSession? ReusableSession { get; }
-
-		public TreeService TreeService { get; }
-
-		public ExpressionCache ExpressionCache { get; }
-
-		public string LogCorrelationId { get; }
-
-		public TRequest Request<TRequest>() => MessagePacker.ConvertTo<TRequest>(Command.Value);
-	}
-
-	private delegate object CommandHandler(CommandContext context);
-
-	private delegate Task<object> AsyncCommandHandler(CommandContext context);
 }

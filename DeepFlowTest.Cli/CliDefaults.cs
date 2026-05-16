@@ -2,6 +2,7 @@ namespace DeepFlowTest.Cli;
 
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using DeepFlowTest.Contracts;
 
 public sealed class CliDefaults
 {
@@ -27,7 +28,7 @@ public sealed class CliDefaults
 	public string AfterSnapshot { get => Common.After; set => Common.After = value; }
 
 	[JsonIgnore]
-	public string TreeShape { get => Commands.Tree.Shape; set => Commands.Tree.Shape = value; }
+	public string TreeShape { get => ProtocolValueMapper.FormatTreeShape(Commands.Tree.Shape); set => Commands.Tree.Shape = ProtocolValueMapper.ParseTreeShape(value); }
 
 	[JsonIgnore]
 	public int TreeMaxDepth { get => Commands.Tree.MaxDepth; set => Commands.Tree.MaxDepth = value; }
@@ -54,7 +55,7 @@ public sealed class CliDefaults
 	public int StreamIntervalMs { get => Commands.Stream.IntervalMs; set => Commands.Stream.IntervalMs = value; }
 
 	[JsonIgnore]
-	public string ScreenshotFormat { get => Commands.Screenshot.ImageFormat; set => Commands.Screenshot.ImageFormat = value; }
+	public string ScreenshotFormat { get => Commands.Screenshot.ImageFormat.ToProtocolString(); set => Commands.Screenshot.ImageFormat = ImageFormatExtensions.ParseProtocolString(value); }
 
 	[JsonIgnore]
 	public int KeyDelayMs { get => Commands.Key.DelayMs; set => Commands.Key.DelayMs = value; }
@@ -122,7 +123,7 @@ public sealed class CliProcessesDefaults
 
 public sealed class CliTreeDefaults
 {
-	public string Shape { get; set; } = "flat";
+	public TreeShape Shape { get; set; } = TreeShape.Flat;
 	public string? Root { get; set; }
 	public int MaxDepth { get; set; } = -1;
 	public int Limit { get; set; } = 1_000;
@@ -174,7 +175,7 @@ public sealed class CliSelectorsDefaults
 public sealed class CliScreenshotDefaults
 {
 	public string? TargetId { get; set; }
-	public string ImageFormat { get; set; } = "png";
+	public ImageFormat ImageFormat { get; set; } = ImageFormat.Png;
 	public string? OutputPath { get; set; }
 	public bool Base64 { get; set; }
 }
@@ -203,7 +204,7 @@ public sealed class CliStreamDefaults
 	public int IntervalMs { get; set; } = 1_000;
 	public List<string> Props { get; set; } = CliDefaults.CreateDefaultPropertyList();
 	public string? TargetId { get; set; }
-	public string ImageFormat { get; set; } = "png";
+	public ImageFormat ImageFormat { get; set; } = ImageFormat.Png;
 }
 
 public sealed class CliElementSelectorDefaults
@@ -244,7 +245,7 @@ public sealed class CliElementSelectorWithoutTextDefaults
 public sealed class CliClickDefaults
 {
 	public CliElementSelectorDefaults Selector { get; set; } = new();
-	public string Button { get; set; } = "left";
+	public MouseButtonKind Button { get; set; } = MouseButtonKind.Left;
 	public bool Double { get; set; }
 }
 

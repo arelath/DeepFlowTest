@@ -1,6 +1,7 @@
 namespace DeepFlowTest;
 
 using System;
+using DeepFlowTest.Contracts;
 
 public enum ImageFormat
 {
@@ -13,42 +14,15 @@ public enum ImageFormat
 public static class ImageFormatExtensions
 {
 	public static string ToProtocolString(this ImageFormat format) =>
-		format switch
-		{
-			ImageFormat.Bmp => "bmp",
-			ImageFormat.Gif => "gif",
-			ImageFormat.Jpeg => "jpeg",
-			_ => "png",
-		};
+		ProtocolValueMapper.FormatImageFormat(format);
 
 	public static ImageFormat ParseProtocolString(string? format)
 	{
-		if (TryParseProtocolString(format, out var imageFormat))
-			return imageFormat;
-
-		throw new FormatException($"Unsupported image format '{format}'.");
+		return ProtocolValueMapper.ParseImageFormat(format);
 	}
 
 	public static bool TryParseProtocolString(string? format, out ImageFormat imageFormat)
 	{
-		switch ((format ?? "png").Trim().ToLowerInvariant())
-		{
-			case "png":
-				imageFormat = ImageFormat.Png;
-				return true;
-			case "bmp":
-				imageFormat = ImageFormat.Bmp;
-				return true;
-			case "gif":
-				imageFormat = ImageFormat.Gif;
-				return true;
-			case "jpg":
-			case "jpeg":
-				imageFormat = ImageFormat.Jpeg;
-				return true;
-			default:
-				imageFormat = default;
-				return false;
-		}
+		return ProtocolValueMapper.TryParseImageFormat(format, out imageFormat);
 	}
 }

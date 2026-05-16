@@ -2,7 +2,7 @@ namespace DeepFlowTest.InjectorLauncher;
 
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using DeepFlowTest.Shared;
 
 internal static class ArchitectureDetector
 {
@@ -76,5 +76,20 @@ internal static class ArchitectureDetector
 			InjectorLog.Write($"Architecture detection failed for PID {process.Id}: {ex}");
 			throw new InjectorLauncherException(InjectorExitCode.UnsupportedTarget, $"Could not detect architecture for target process {process.Id}.", ex);
 		}
+	}
+}
+
+internal static class ImageFileMachineExtensions
+{
+	public static string ToStableName(this NativeMethods.ImageFileMachine machine)
+	{
+		return machine switch
+		{
+			NativeMethods.ImageFileMachine.I386 => ArchitectureDetector.X86,
+			NativeMethods.ImageFileMachine.Amd64 => ArchitectureDetector.X64,
+			NativeMethods.ImageFileMachine.Arm or NativeMethods.ImageFileMachine.ArmNt => ArchitectureDetector.Arm,
+			NativeMethods.ImageFileMachine.Arm64 => ArchitectureDetector.Arm64,
+			_ => throw new InjectorLauncherException(InjectorExitCode.UnsupportedTarget, $"Unsupported target machine type '{machine}'."),
+		};
 	}
 }

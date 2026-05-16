@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Input;
-using DeepFlowTest.AppDriverPayload.Native;
+using DeepFlowTest.Shared;
 
 internal static class KeyboardInput
 {
@@ -188,7 +188,7 @@ internal static class KeyboardInput
 	}
 
 	private static void SendUnicode(char character, bool isKeyDown) =>
-		SendKeyboardInput(new KeyboardInputData
+		SendKeyboardInput(new NativeMethods.KeyboardInputData
 		{
 			Scan = character,
 			Flags = NativeMethods.KEYEVENTF_UNICODE | (isKeyDown ? 0u : NativeMethods.KEYEVENTF_KEYUP),
@@ -196,16 +196,16 @@ internal static class KeyboardInput
 		});
 
 	private static void SendKeyInput(ushort keyCode, bool isKeyDown) =>
-		SendKeyboardInput(new KeyboardInputData
+		SendKeyboardInput(new NativeMethods.KeyboardInputData
 		{
 			VirtualKey = keyCode,
 			Flags = isKeyDown ? 0u : NativeMethods.KEYEVENTF_KEYUP,
 			ExtraInfo = NativeMethods.GetMessageExtraInfo(),
 		});
 
-	private static void SendKeyboardInput(KeyboardInputData keyboardInput)
+	private static void SendKeyboardInput(NativeMethods.KeyboardInputData keyboardInput)
 	{
-		var input = Input.Keyboard(keyboardInput);
-		NativeMethods.SendInput(1, new[] { input }, Marshal.SizeOf(typeof(Input)));
+		var input = NativeMethods.Input.Keyboard(keyboardInput);
+		NativeMethods.SendInput(1, new[] { input }, Marshal.SizeOf(typeof(NativeMethods.Input)));
 	}
 }

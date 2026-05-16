@@ -14,6 +14,7 @@ using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
+using static DeepFlowTest.Tests.TestIpcHost;
 using Forms = System.Windows.Forms;
 
 [TestFixture]
@@ -251,7 +252,7 @@ public sealed class WinFormsSupportTests
 			var hwndNode = snapshot.Nodes.FirstOrDefault(node => node.TypeName == "HWND" && node.Hwnd == button.Handle.ToInt64());
 			Assert.That(hwndNode, Is.Not.Null);
 
-			var screenshot = (ScreenshotCommandResponse)CaptureResponse(new ScreenshotCommandRequest { TargetId = hwndNode!.TargetId, Format = "png" })!;
+			var screenshot = (ScreenshotCommandResponse)CaptureResponse(new ScreenshotCommandRequest { TargetId = hwndNode!.TargetId, Format = ImageFormat.Png })!;
 			Assert.That(screenshot.ByteCount, Is.GreaterThan(0));
 
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = hwndNode.TargetId }));
@@ -510,40 +511,6 @@ public sealed class WinFormsSupportTests
 	{
 		Assert.That(response, Is.TypeOf<StandardIpcResponse>());
 		Assert.That(((StandardIpcResponse)response!).Success, Is.True, ((StandardIpcResponse)response).Error);
-	}
-
-	private static object? CaptureResponse(object request)
-	{
-		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
-		object? response = null;
-		var responseCount = 0;
-		var command = new NamedPipeServer.Command
-		{
-			Value = request,
-			Respond = value =>
-			{
-				response = value;
-				responseCount++;
-			},
-			CheckHasResponded = () => responseCount != 0,
-			HoldConnectionOpen = () => { },
-			TrySend = value =>
-			{
-				response = value;
-				responseCount++;
-				return true;
-			},
-		};
-		var options = new AppDriverPayloadStartupOptions
-		{
-			PipeName = "test-pipe",
-			Mode = PayloadStartupModes.OneShotDriver,
-			PayloadRoot = AppContext.BaseDirectory,
-			ProtocolVersion = ProtocolConstants.ProtocolVersion,
-		};
-
-		AppDriverCommandDispatcher.Process(command, options, null);
-		return response;
 	}
 
 }

@@ -2,19 +2,20 @@ namespace DeepFlowTest.AppDriverPayload.Commands;
 
 using System;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Shared;
 using DeepFlowTest.Utility;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using Forms = System.Windows.Forms;
+using DrawingImageFormat = System.Drawing.Imaging.ImageFormat;
 using Point = System.Drawing.Point;
+using ProtocolImageFormat = DeepFlowTest.ImageFormat;
 using Rectangle = System.Drawing.Rectangle;
 using Size = System.Drawing.Size;
 
@@ -25,11 +26,11 @@ internal static class ScreenshotCommand
 		_ = request ?? throw new ArgumentNullException(nameof(request));
 		_ = treeService ?? throw new ArgumentNullException(nameof(treeService));
 
-		var format = NormalizeFormat(request.Format);
-		if (format is null)
+		var format = request.Format;
+		if (!Enum.IsDefined(typeof(ProtocolImageFormat), format))
 		{
 			return StandardIpcResponse.FromError(
-				$"Unsupported screenshot format '{request.Format}'.",
+				$"Unsupported screenshot format '{format}'.",
 				ProtocolConstants.ErrorCodes.ProtocolError,
 				PayloadLog.CurrentCorrelationId);
 		}
@@ -75,7 +76,7 @@ internal static class ScreenshotCommand
 			: treeService.ResolveTarget(targetId);
 	}
 
-	private static bool TryCapture(object target, string format, out ScreenshotCapture capture, out string? error)
+	private static bool TryCapture(object target, ProtocolImageFormat format, out ScreenshotCapture capture, out string? error)
 	{
 		if (target is Visual visual)
 			return TryCaptureWpfVisual(visual, format, out capture, out error);
@@ -94,7 +95,7 @@ internal static class ScreenshotCommand
 		return false;
 	}
 
-	private static bool TryCaptureWpfVisual(Visual visual, string format, out ScreenshotCapture capture, out string? error)
+	private static bool TryCaptureWpfVisual(Visual visual, ProtocolImageFormat format, out ScreenshotCapture capture, out string? error)
 	{
 		if (visual is FrameworkElement frameworkElement)
 			frameworkElement.UpdateLayout();
@@ -129,7 +130,7 @@ internal static class ScreenshotCommand
 		return true;
 	}
 
-	private static bool TryCaptureWinFormsControl(Forms.Control control, string format, out ScreenshotCapture capture, out string? error)
+	private static bool TryCaptureWinFormsControl(Forms.Control control, ProtocolImageFormat format, out ScreenshotCapture capture, out string? error)
 	{
 		if (control.Width <= 0 || control.Height <= 0)
 		{
@@ -146,7 +147,7 @@ internal static class ScreenshotCommand
 		return true;
 	}
 
-	private static bool TryCaptureAutomationElement(AutomationElement automationElement, string format, out ScreenshotCapture capture, out string? error)
+	private static bool TryCaptureAutomationElement(AutomationElement automationElement, ProtocolImageFormat format, out ScreenshotCapture capture, out string? error)
 	{
 		try
 		{
@@ -165,9 +166,9 @@ internal static class ScreenshotCommand
 		}
 	}
 
-	private static bool TryCaptureNativeWindow(IntPtr hwnd, string format, out ScreenshotCapture capture, out string? error)
+	private static bool TryCaptureNativeWindow(IntPtr hwnd, ProtocolImageFormat format, out ScreenshotCapture capture, out string? error)
 	{
-		if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var rect))
+		if (hwnd == IntPtr.Zero || !NativeMethods.GetWindowRect(hwnd, out var rect))
 		{
 			capture = ScreenshotCapture.Empty;
 			error = "Native window handle is not available.";
@@ -181,7 +182,7 @@ internal static class ScreenshotCommand
 			out error);
 	}
 
-	private static bool TryCaptureScreenBounds(Rectangle bounds, string format, out ScreenshotCapture capture, out string? error)
+	private static bool TryCaptureScreenBounds(Rectangle bounds, ProtocolImageFormat format, out ScreenshotCapture capture, out string? error)
 	{
 		if (bounds.Width <= 0 || bounds.Height <= 0)
 		{
@@ -200,13 +201,13 @@ internal static class ScreenshotCommand
 		return true;
 	}
 
-	private static byte[] EncodeBitmapSource(BitmapSource bitmap, string format)
+	private static byte[] EncodeBitmapSource(BitmapSource bitmap, ProtocolImageFormat format)
 	{
 		BitmapEncoder encoder = format switch
 		{
-			"bmp" => new BmpBitmapEncoder(),
-			"gif" => new GifBitmapEncoder(),
-			"jpeg" => new JpegBitmapEncoder(),
+			ProtocolImageFormat.Bmp => new BmpBitmapEncoder(),
+			ProtocolImageFormat.Gif => new GifBitmapEncoder(),
+			ProtocolImageFormat.Jpeg => new JpegBitmapEncoder(),
 			_ => new PngBitmapEncoder(),
 		};
 		encoder.Frames.Add(BitmapFrame.Create(bitmap));
@@ -215,36 +216,18 @@ internal static class ScreenshotCommand
 		return stream.ToArray();
 	}
 
-	private static byte[] EncodeDrawingBitmap(Bitmap bitmap, string format)
+	private static byte[] EncodeDrawingBitmap(Bitmap bitmap, ProtocolImageFormat format)
 	{
 		var imageFormat = format switch
 		{
-			"bmp" => ImageFormat.Bmp,
-			"gif" => ImageFormat.Gif,
-			"jpeg" => ImageFormat.Jpeg,
-			_ => ImageFormat.Png,
+			ProtocolImageFormat.Bmp => DrawingImageFormat.Bmp,
+			ProtocolImageFormat.Gif => DrawingImageFormat.Gif,
+			ProtocolImageFormat.Jpeg => DrawingImageFormat.Jpeg,
+			_ => DrawingImageFormat.Png,
 		};
 		using var stream = new MemoryStream();
 		bitmap.Save(stream, imageFormat);
 		return stream.ToArray();
-	}
-
-	private static string? NormalizeFormat(string? format)
-	{
-		return DeepFlowTest.ImageFormatExtensions.TryParseProtocolString(format, out var imageFormat)
-			? imageFormat.ToProtocolString()
-			: null;
-	}
-
-	[DllImport("user32.dll")]
-	private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
-
-	private struct NativeRect
-	{
-		public int Left;
-		public int Top;
-		public int Right;
-		public int Bottom;
 	}
 
 	private readonly struct ScreenshotCapture

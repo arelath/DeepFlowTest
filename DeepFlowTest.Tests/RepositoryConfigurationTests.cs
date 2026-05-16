@@ -78,6 +78,20 @@ public sealed class RepositoryConfigurationTests
 	}
 
 	[Test]
+	public void NativeInteropDeclarationsAreCentralized()
+	{
+		var root = FindRepositoryRoot();
+		var disallowedMarkers = new[] { "[" + "DllImport(", "[" + "LibraryImport(" };
+		var offenders = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+			.Where(IsProductSourceFile)
+			.Where(file => !IsSharedNativeMethodsFile(root, file))
+			.SelectMany(file => FindLines(file, disallowedMarkers))
+			.ToList();
+
+		Assert.That(offenders, Is.Empty);
+	}
+
+	[Test]
 	public void BuildScriptDeclaresMilestoneTargets()
 	{
 		var buildScript = File.ReadAllText(Path.Combine(FindRepositoryRoot(), ".build", "Build.cs"));
@@ -299,6 +313,24 @@ public sealed class RepositoryConfigurationTests
 		return extension is ".dll" or ".exe" or ".pdb" ||
 			fileName.EndsWith(".deps.json", StringComparison.OrdinalIgnoreCase) ||
 			fileName.EndsWith(".runtimeconfig.json", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool IsSharedNativeMethodsFile(string root, string file)
+	{
+		var relative = Path.GetRelativePath(root, file);
+		return relative.StartsWith("Shared" + Path.DirectorySeparatorChar + "NativeMethods", StringComparison.OrdinalIgnoreCase) ||
+			relative.StartsWith("Shared" + Path.AltDirectorySeparatorChar + "NativeMethods", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static IEnumerable<string> FindLines(string file, IReadOnlyList<string> markers)
+	{
+		var lineNumber = 0;
+		foreach (var line in File.ReadLines(file))
+		{
+			lineNumber++;
+			if (markers.Any(marker => line.Contains(marker, StringComparison.Ordinal)))
+				yield return $"{Path.GetRelativePath(FindRepositoryRoot(), file)}:{lineNumber}";
+		}
 	}
 
 	private static bool IsExcluded(string path)

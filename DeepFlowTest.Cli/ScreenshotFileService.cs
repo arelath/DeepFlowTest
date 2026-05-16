@@ -19,9 +19,10 @@ public sealed class ScreenshotFileService
 		_ = options ?? throw new ArgumentNullException(nameof(options));
 
 		if (!response.Success)
-			throw new CliException(MapProtocolError(response.ErrorCode), response.Error ?? "Screenshot command failed.", response);
+			throw new CliException(ProtocolErrorMapper.Map(response.ErrorCode), response.Error ?? "Screenshot command failed.", response);
 
-		var format = NormalizeFormat(response.Format);
+		var format = response.Format;
+		var formatName = format.ToProtocolString();
 		byte[] bytes;
 		try
 		{
@@ -35,7 +36,7 @@ public sealed class ScreenshotFileService
 		string? outputPath = null;
 		if (!string.IsNullOrWhiteSpace(options.OutputPath))
 		{
-			outputPath = NormalizeOutputPath(options.OutputPath!, format);
+			outputPath = NormalizeOutputPath(options.OutputPath!, formatName);
 			try
 			{
 				var directory = Path.GetDirectoryName(outputPath);
@@ -52,7 +53,7 @@ public sealed class ScreenshotFileService
 		return new ScreenshotResultData
 		{
 			TargetId = response.TargetId,
-			Format = format,
+			Format = formatName,
 			Width = response.Width,
 			Height = response.Height,
 			ByteCount = response.ByteCount == 0 ? bytes.Length : response.ByteCount,
@@ -63,15 +64,11 @@ public sealed class ScreenshotFileService
 
 	public static string NormalizeFormat(string? format)
 	{
-		try
-		{
-			return DeepFlowTest.ImageFormatExtensions.ParseProtocolString(format).ToProtocolString();
-		}
-		catch (FormatException)
-		{
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported image format '{format}'.");
-		}
+		return NormalizeImageFormat(format).ToProtocolString();
 	}
+
+	public static ImageFormat NormalizeImageFormat(string? format) =>
+		CliValueParser.ParseImageFormat(format);
 
 	private static string NormalizeOutputPath(string outputPath, string format)
 	{
@@ -88,17 +85,6 @@ public sealed class ScreenshotFileService
 		}
 	}
 
-	private static string MapProtocolError(string? errorCode)
-	{
-		return errorCode switch
-		{
-			ProtocolConstants.ErrorCodes.StaleTarget => CliErrorCodes.StaleTarget,
-			ProtocolConstants.ErrorCodes.TargetExited => CliErrorCodes.TargetExited,
-			ProtocolConstants.ErrorCodes.UnsupportedTarget => CliErrorCodes.UnsupportedTarget,
-			ProtocolConstants.ErrorCodes.CommandTimeout => CliErrorCodes.CommandTimeout,
-			_ => CliErrorCodes.ProtocolError,
-		};
-	}
 }
 
 public sealed class ScreenshotResultData

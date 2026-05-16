@@ -3,11 +3,12 @@ namespace DeepFlowTest.Cli;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
 public sealed class TreeSnapshotOptions
 {
-	public string Shape { get; set; } = "flat";
+	public TreeShape Shape { get; set; } = TreeShape.Flat;
 
 	public string? RootTargetId { get; set; }
 
@@ -45,7 +46,8 @@ public sealed class TreeSnapshotService
 		_ = options ?? throw new ArgumentNullException(nameof(options));
 
 		var relationships = SnapshotRelationships.Create(snapshot);
-		var shape = NormalizeShape(options.Shape);
+		var shape = options.Shape;
+		var shapeName = ProtocolValueMapper.FormatTreeShape(shape);
 		var rootIds = ResolveRootIds(snapshot, options);
 		var flattened = Flatten(snapshot, relationships, rootIds)
 			.Where(item => options.MaxDepth < 0 || item.Depth <= options.MaxDepth)
@@ -75,16 +77,16 @@ public sealed class TreeSnapshotService
 
 		return new TreeSnapshotData
 		{
-			Shape = shape,
+			Shape = shapeName,
 			NodeCount = nodeOutputs.Count,
 			TotalNodeCount = snapshot.NodeCount,
 			Truncated = truncated,
 			TruncationReason = truncationReason,
 			RequestedProperties = options.Properties,
-			Roots = shape == "nested"
+			Roots = shape == TreeShape.Nested
 				? BuildNested(nodeOutputs)
 				: nodeOutputs.Where(static node => node.ParentId is null).ToList(),
-			Nodes = shape == "flat" ? nodeOutputs : Array.Empty<TreeNodeData>(),
+			Nodes = shape == TreeShape.Flat ? nodeOutputs : Array.Empty<TreeNodeData>(),
 		};
 	}
 
@@ -229,17 +231,6 @@ public sealed class TreeSnapshotService
 			return visible;
 
 		return !string.Equals(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture), "false", StringComparison.OrdinalIgnoreCase);
-	}
-
-	private static string NormalizeShape(string shape)
-	{
-		if (string.Equals(shape, "nested", StringComparison.OrdinalIgnoreCase))
-			return "nested";
-
-		if (string.Equals(shape, "flat", StringComparison.OrdinalIgnoreCase))
-			return "flat";
-
-		throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported tree shape '{shape}'.");
 	}
 
 	private sealed record TreeNodeTraversalItem(VisualTreeNodeDto Node, int Depth);

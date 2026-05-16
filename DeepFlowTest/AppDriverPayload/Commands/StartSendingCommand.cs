@@ -67,7 +67,7 @@ internal static class StartSendingCommand
 		if (request.IntervalMs < 50)
 			return StandardIpcResponse.FromError("Stream interval must be at least 50 ms.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
 
-		if (!DeepFlowTest.ImageFormatExtensions.TryParseProtocolString(request.Format, out _))
+		if (!Enum.IsDefined(typeof(DeepFlowTest.ImageFormat), request.Format))
 			return StandardIpcResponse.FromError($"Unsupported stream image format '{request.Format}'.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
 
 		if (request.PropNames is not null)
@@ -98,7 +98,7 @@ internal static class StartSendingCommand
 	private static Func<long, object> CreateCapture(StartSendingCommandRequest request, TreeService treeService)
 	{
 		VisualTreeSnapshot? previous = null;
-		var imageFormat = DeepFlowTest.ImageFormatExtensions.ParseProtocolString(request.Format).ToProtocolString();
+		var imageFormat = request.Format;
 		if (request.StreamKind == ProtocolConstants.StreamKinds.EventLog)
 			return _ => CaptureEventLog(treeService);
 

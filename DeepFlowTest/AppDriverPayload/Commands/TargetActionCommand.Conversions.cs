@@ -8,7 +8,7 @@ using System.Windows;
 using System.Windows.Media;
 using Newtonsoft.Json.Linq;
 
-internal static partial class TargetActionCommand
+internal static class TargetValueConverter
 {
 	private static readonly IReadOnlyDictionary<string, FontWeight> FontWeightsByName =
 		new Dictionary<string, FontWeight>(StringComparer.OrdinalIgnoreCase)
@@ -54,7 +54,7 @@ internal static partial class TargetActionCommand
 			[nameof(FontStretches.UltraExpanded)] = FontStretches.UltraExpanded,
 		};
 
-	private static object? ConvertValue(object? value, Type targetType)
+	public static object? ConvertValue(object? value, Type targetType)
 	{
 		if (value is null)
 			return targetType.IsValueType && Nullable.GetUnderlyingType(targetType) is null
@@ -159,7 +159,7 @@ internal static partial class TargetActionCommand
 		throw new ArgumentOutOfRangeException(nameof(text), $"Could not convert '{text}' to a FontStretch.");
 	}
 
-	private static object? UnwrapJsonValue(object? value)
+	public static object? UnwrapJsonValue(object? value)
 	{
 		return value switch
 		{

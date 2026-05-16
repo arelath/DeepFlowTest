@@ -15,7 +15,7 @@ public sealed class VisualTreeResponseReader
 			throw new CliException(CliErrorCodes.ProtocolError, "Visual tree response was empty.");
 
 		if (response is StandardIpcResponse standard && standard.Success == false)
-			throw new CliException(MapProtocolError(standard.ErrorCode), standard.Error ?? "Visual tree command failed.");
+			throw new CliException(ProtocolErrorMapper.Map(standard.ErrorCode), standard.Error ?? "Visual tree command failed.");
 
 		if (response is VisualTreeSnapshot snapshot)
 			return NormalizeSnapshot(snapshot, requestedProperties);
@@ -77,15 +77,4 @@ public sealed class VisualTreeResponseReader
 		return snapshot;
 	}
 
-	private static string MapProtocolError(string? errorCode)
-	{
-		return errorCode switch
-		{
-			ProtocolConstants.ErrorCodes.StaleTarget => CliErrorCodes.StaleTarget,
-			ProtocolConstants.ErrorCodes.TargetExited => CliErrorCodes.TargetExited,
-			ProtocolConstants.ErrorCodes.UnsupportedTarget => CliErrorCodes.UnsupportedTarget,
-			ProtocolConstants.ErrorCodes.CommandTimeout => CliErrorCodes.CommandTimeout,
-			_ => CliErrorCodes.ProtocolError,
-		};
-	}
 }

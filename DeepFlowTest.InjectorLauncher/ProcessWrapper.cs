@@ -2,6 +2,7 @@ namespace DeepFlowTest.InjectorLauncher;
 
 using System;
 using System.Diagnostics;
+using DeepFlowTest.Shared;
 
 internal sealed class ProcessWrapper : IDisposable
 {

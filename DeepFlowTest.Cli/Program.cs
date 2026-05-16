@@ -29,6 +29,7 @@ public static class Program
 		var stopwatch = Stopwatch.StartNew();
 		var commandPath = CliRootCommand.GetCommandPath(args);
 		var commandName = string.IsNullOrWhiteSpace(commandPath) ? "help" : commandPath;
+		var executionContext = new CliCommandExecutionContext(args, services, stdout, stderr, stopwatch);
 
 		if (CliRootCommand.IsHelpRequest(args))
 		{
@@ -36,7 +37,7 @@ public static class Program
 			return 0;
 		}
 
-		var root = CreateRootCommand();
+		var root = CreateRootCommand(CreateCommandActions(executionContext));
 		var parseResult = root.Parse(args, new ParserConfiguration());
 		if (parseResult.Errors.Count != 0)
 		{
@@ -61,20 +62,13 @@ public static class Program
 		var commonOptions = CreateOutputOptions(args, defaults);
 		try
 		{
-			commonOptions.ValidateEnums();
-			if (CliRootCommand.IsTargetBound(commandPath))
-				commonOptions.ValidateTargetSelectorRequired();
-
-			var data = Execute(commandPath, args, services, defaults, commonOptions, stderr);
-			if (data is CliResponseSequence sequence)
+			executionContext.Configure(defaults, commonOptions);
+			return parseResult.Invoke(new InvocationConfiguration
 			{
-				foreach (var envelope in sequence.Envelopes)
-					CliOutput.Write(envelope, commonOptions, stdout);
-				return 0;
-			}
-
-			CliOutput.Write(CliResponseFactory.Success(commandName, data, stopwatch), commonOptions, stdout);
-			return 0;
+				EnableDefaultExceptionHandler = false,
+				Output = stdout,
+				Error = stderr,
+			});
 		}
 		catch (CliException ex)
 		{
@@ -93,104 +87,109 @@ public static class Program
 		return CliRootCommand.Create();
 	}
 
+	internal static RootCommand CreateRootCommand(CliCommandActions actions)
+	{
+		return CliRootCommand.Create(actions);
+	}
+
 	public static bool IsHelpRequest(string[] args)
 	{
 		return CliRootCommand.IsHelpRequest(args);
 	}
 
-	private static object Execute(
-		string commandPath,
-		string[] args,
-		CliServices services,
-		CliDefaults defaults,
-		CliCommonOptions commonOptions,
-		TextWriter stderr)
-	{
-		switch (commandPath)
+	private static CliCommandActions CreateCommandActions(CliCommandExecutionContext context) =>
+		new()
 		{
-			case "version":
-				return new ProductVersionData { ProductName = DeepFlowTest.ProductInfo.Name };
-			case "config get":
-				return services.DefaultsStore.Get(GetConfigPositional(args, 0)) ?? new object();
-			case "config set":
-				var setKey = GetRequiredConfigPositional(args, 0, "key");
-				var setValue = GetRequiredConfigPositional(args, 1, "value");
-				services.DefaultsStore.Set(setKey, setValue, HasOption(args, "--json"));
+			Root = () => context.Execute(
+				"help",
+				targetBound: false,
+				() => throw new CliException(CliErrorCodes.NotImplemented, "Command '' is not implemented.")),
+			Config = () => context.NotImplemented("config"),
+			ConfigGet = () => context.Execute("config get", targetBound: false, () =>
+				context.Services.DefaultsStore.Get(GetConfigPositional(context.Args, 0)) ?? new object()),
+			ConfigSet = () => context.Execute("config set", targetBound: false, () =>
+			{
+				var setKey = GetRequiredConfigPositional(context.Args, 0, "key");
+				var setValue = GetRequiredConfigPositional(context.Args, 1, "value");
+				context.Services.DefaultsStore.Set(setKey, setValue, HasOption(context.Args, "--json"));
 				return new
 				{
 					key = setKey,
-					value = services.DefaultsStore.Get(setKey),
+					value = context.Services.DefaultsStore.Get(setKey),
 				};
-			case "config clear":
-				var clearKey = GetRequiredConfigPositional(args, 0, "key");
-				services.DefaultsStore.Clear(clearKey);
+			}),
+			ConfigClear = () => context.Execute("config clear", targetBound: false, () =>
+			{
+				var clearKey = GetRequiredConfigPositional(context.Args, 0, "key");
+				context.Services.DefaultsStore.Clear(clearKey);
 				return new
 				{
 					key = clearKey,
-					value = services.DefaultsStore.Get(clearKey),
+					value = context.Services.DefaultsStore.Get(clearKey),
 				};
-			case "config reset":
-				if (!HasOption(args, "--yes"))
+			}),
+			ConfigReset = () => context.Execute("config reset", targetBound: false, () =>
+			{
+				if (!HasOption(context.Args, "--yes"))
 					throw new CliException(CliErrorCodes.InvalidArguments, "`config reset` requires --yes.");
-				services.DefaultsStore.Reset();
+				context.Services.DefaultsStore.Reset();
 				return new { reset = true };
-			case "processes":
-				return GetProcesses(services, HasOption(args, "--candidates-only") && !HasOption(args, "--show-all"));
-			case "ping":
-				return SendProtocolCommand<PingCommandResponse>(
-					services,
-					commonOptions,
-					new PingCommandRequest { TimeoutMs = commonOptions.TimeoutMs },
-					stderr);
-			case "pipe status":
-				return SendProtocolCommand<PipeStatusCommandResponse>(
-					services,
-					commonOptions,
-					new PipeStatusCommandRequest { TimeoutMs = commonOptions.TimeoutMs },
-					stderr);
-			case "tree":
-				return ExecuteTree(args, services, defaults, commonOptions);
-			case "find":
-				return ExecuteFind(args, services, defaults, commonOptions);
-			case "node":
-				return ExecuteNode(args, services, defaults, commonOptions);
-			case "props":
-				return ExecuteProps(args, services, defaults, commonOptions);
-			case "selectors":
-				return ExecuteSelectors(args, services, defaults, commonOptions);
-			case "screenshot":
-				return ExecuteScreenshot(args, services, defaults, commonOptions);
-			case "wait":
-				return ExecuteWait(args, services, defaults, commonOptions);
-			case "stream visual-tree":
-				return ExecuteStream(args, services, defaults, commonOptions, ProtocolConstants.StreamKinds.VisualTree);
-			case "stream visual-tree-delta":
-				return ExecuteStream(args, services, defaults, commonOptions, ProtocolConstants.StreamKinds.VisualTreeDelta);
-			case "stream screenshot":
-				return ExecuteStream(args, services, defaults, commonOptions, ProtocolConstants.StreamKinds.Screenshot);
-			case "stream event-log":
-				return ExecuteStream(args, services, defaults, commonOptions, ProtocolConstants.StreamKinds.EventLog);
-			case "click":
-				return ExecuteClick(args, services, defaults, commonOptions);
-			case "focus":
-				return ExecuteFocus(args, services, defaults, commonOptions);
-			case "type":
-				return ExecuteType(args, services, defaults, commonOptions);
-			case "key":
-				return ExecuteKey(args, services, defaults, commonOptions);
-			case "set":
-				return ExecuteSet(args, services, defaults, commonOptions);
-			case "raise":
-				return ExecuteRaise(args, services, defaults, commonOptions);
-			case "invoke":
-				return ExecuteInvoke(args, services, defaults, commonOptions);
-			default:
-				if (CliRootCommand.IsTargetBound(commandPath))
-					throw new CliException(CliErrorCodes.NotImplemented, $"Command '{commandPath}' is registered but its handler is not implemented yet.");
-
-				throw new CliException(CliErrorCodes.NotImplemented, $"Command '{commandPath}' is not implemented.");
-		}
-	}
+			}),
+			Processes = () => context.Execute("processes", targetBound: false, () =>
+				GetProcesses(context.Services, HasOption(context.Args, "--candidates-only") && !HasOption(context.Args, "--show-all"))),
+			Ping = () => context.Execute("ping", targetBound: true, () =>
+				SendProtocolCommand<PingCommandResponse>(
+					context.Services,
+					context.CommonOptions,
+					new PingCommandRequest { TimeoutMs = context.CommonOptions.TimeoutMs },
+					context.Stderr)),
+			Pipe = () => context.NotImplemented("pipe"),
+			PipeStatus = () => context.Execute("pipe status", targetBound: true, () =>
+				SendProtocolCommand<PipeStatusCommandResponse>(
+					context.Services,
+					context.CommonOptions,
+					new PipeStatusCommandRequest { TimeoutMs = context.CommonOptions.TimeoutMs },
+					context.Stderr)),
+			Tree = () => context.Execute("tree", targetBound: true, () =>
+				ExecuteTree(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Find = () => context.Execute("find", targetBound: true, () =>
+				ExecuteFind(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Node = () => context.Execute("node", targetBound: true, () =>
+				ExecuteNode(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Props = () => context.Execute("props", targetBound: true, () =>
+				ExecuteProps(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Selectors = () => context.Execute("selectors", targetBound: true, () =>
+				ExecuteSelectors(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Screenshot = () => context.Execute("screenshot", targetBound: true, () =>
+				ExecuteScreenshot(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Wait = () => context.Execute("wait", targetBound: true, () =>
+				ExecuteWait(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Stream = () => context.NotImplemented("stream"),
+			StreamVisualTree = () => context.Execute("stream visual-tree", targetBound: true, () =>
+				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.VisualTree)),
+			StreamVisualTreeDelta = () => context.Execute("stream visual-tree-delta", targetBound: true, () =>
+				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.VisualTreeDelta)),
+			StreamScreenshot = () => context.Execute("stream screenshot", targetBound: true, () =>
+				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.Screenshot)),
+			StreamEventLog = () => context.Execute("stream event-log", targetBound: true, () =>
+				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.EventLog)),
+			Click = () => context.Execute("click", targetBound: true, () =>
+				ExecuteClick(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Focus = () => context.Execute("focus", targetBound: true, () =>
+				ExecuteFocus(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Type = () => context.Execute("type", targetBound: true, () =>
+				ExecuteType(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Key = () => context.Execute("key", targetBound: true, () =>
+				ExecuteKey(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Set = () => context.Execute("set", targetBound: true, () =>
+				ExecuteSet(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Raise = () => context.Execute("raise", targetBound: true, () =>
+				ExecuteRaise(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Invoke = () => context.Execute("invoke", targetBound: true, () =>
+				ExecuteInvoke(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Version = () => context.Execute("version", targetBound: false, () =>
+				new ProductVersionData { ProductName = DeepFlowTest.ProductInfo.Name }),
+		};
 
 	private static ProtocolCommandData<TResponse> SendProtocolCommand<TResponse>(
 		CliServices services,
@@ -223,7 +222,7 @@ public static class Program
 		var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.Commands.Tree.Limit, limit));
 		var options = new TreeSnapshotOptions
 		{
-			Shape = CliArgumentReader.GetOption(args, "--shape") ?? defaults.Commands.Tree.Shape,
+			Shape = GetTreeShapeOption(args, defaults.Commands.Tree.Shape),
 			RootTargetId = CliArgumentReader.GetOption(args, "--root", "--target-id") ?? defaults.Commands.Tree.Root,
 			MaxDepth = CliArgumentReader.GetInt(args, "--max-depth", defaults.Commands.Tree.MaxDepth),
 			Limit = limit,
@@ -281,7 +280,7 @@ public static class Program
 	private static ScreenshotResultData ExecuteScreenshot(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		using var session = OpenSession(services, commonOptions);
-		var format = ScreenshotFileService.NormalizeFormat(CliArgumentReader.GetOption(args, "--image-format") ?? defaults.Commands.Screenshot.ImageFormat);
+		var format = GetImageFormatOption(args, defaults.Commands.Screenshot.ImageFormat);
 		var targetId = CliArgumentReader.GetOption(args, "--target", "--target-id") ?? defaults.Commands.Screenshot.TargetId;
 		var selector = ElementSelector.FromArgs(args);
 		if (string.IsNullOrWhiteSpace(targetId) && !selector.IsEmpty)
@@ -368,7 +367,7 @@ public static class Program
 			throw new CliException(CliErrorCodes.InvalidArguments, "Stream duration must be zero or greater.");
 
 		var format = streamKind == ProtocolConstants.StreamKinds.Screenshot
-			? ScreenshotFileService.NormalizeFormat(CliArgumentReader.GetOption(args, "--image-format") ?? defaults.Commands.Stream.ImageFormat)
+			? GetImageFormatOption(args, defaults.Commands.Stream.ImageFormat)
 			: defaults.Commands.Stream.ImageFormat;
 		var properties = CliArgumentReader.GetStringList(args, "--props", defaults.Commands.Stream.Props);
 		using var session = OpenSession(services, commonOptions);
@@ -477,6 +476,26 @@ public static class Program
 			: Array.Empty<string>();
 	}
 
+	private static TreeShape GetTreeShapeOption(string[] args, TreeShape defaultValue)
+	{
+		var value = CliArgumentReader.GetOption(args, "--shape");
+		return value is null ? defaultValue : CliValueParser.ParseTreeShape(value);
+	}
+
+	private static ImageFormat GetImageFormatOption(string[] args, ImageFormat defaultValue)
+	{
+		var value = CliArgumentReader.GetOption(args, "--image-format");
+		return value is null ? defaultValue : CliValueParser.ParseImageFormat(value);
+	}
+
+	private static CliClickButton GetClickButtonOption(string[] args, MouseButtonKind defaultValue)
+	{
+		var value = CliArgumentReader.GetOption(args, "--button");
+		return value is null
+			? CliValueParser.ParseClickButton(ProtocolValueMapper.FormatMouseButton(defaultValue))
+			: CliValueParser.ParseClickButton(value);
+	}
+
 	private static FindSnapshotOptions CreateFindOptions(
 		string[] args,
 		CliDefaults defaults,
@@ -563,13 +582,11 @@ public static class Program
 	private static ActionCommandResult ExecuteClick(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("click", commonOptions);
-		var button = (CliArgumentReader.GetOption(args, "--button") ?? defaults.Commands.Click.Button).ToLowerInvariant();
+		var button = GetClickButtonOption(args, defaults.Commands.Click.Button);
 		var count = CliArgumentReader.GetInt(args, "--count", 1);
 		var isDouble = CliArgumentReader.HasOption(args, "--double") || defaults.Commands.Click.Double;
 		if (count <= 0)
 			throw new CliException(CliErrorCodes.InvalidArguments, "Click count must be greater than zero.");
-		if (button is not ("left" or "right" or "double"))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported click button '{button}'.");
 
 		using var session = OpenSession(services, commonOptions);
 		return new ActionCommandSupport().Execute(
@@ -580,7 +597,7 @@ public static class Program
 			ElementSelector.FromArgs(args),
 			targetId =>
 			{
-				if (isDouble || button == "double")
+				if (isDouble || button == CliClickButton.Double)
 				{
 					return new KnownRoutedEventCommandRequest
 					{
@@ -592,7 +609,7 @@ public static class Program
 				return new ClickCommandRequest
 				{
 					TargetId = targetId ?? string.Empty,
-					MouseButton = button,
+					MouseButton = CliValueParser.ToMouseButton(button),
 					ClickCount = count,
 				};
 			},

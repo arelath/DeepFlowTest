@@ -13,7 +13,7 @@ public static class IpcCommandExtensions
 		{
 			var value = property.GetValue(command);
 			if (value is not null)
-				result[property.Name] = value;
+				result[property.Name] = ProtocolValueMapper.ToProtocolValue(value);
 		}
 
 		return result;

@@ -1,5 +1,7 @@
 namespace DeepFlowTest.InjectorLauncher;
 
+using DeepFlowTest.Shared;
+
 internal static class ConsoleHelper
 {
 	public static void AttachConsoleToParentProcessOrAllocateNewOne()

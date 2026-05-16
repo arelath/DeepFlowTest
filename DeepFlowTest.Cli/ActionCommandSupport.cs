@@ -78,7 +78,7 @@ public sealed class ActionCommandSupport
 		{
 			return new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions
 			{
-				Shape = defaults.TreeShape,
+				Shape = defaults.Commands.Tree.Shape,
 				Limit = defaults.TreeLimit,
 				Properties = properties,
 				UseShortIds = commonOptions.UseShortIds,
@@ -139,24 +139,12 @@ public sealed class ActionCommandSupport
 		if (payload is not StandardIpcResponse standard || standard.Success != false)
 			return;
 
-		throw new CliException(MapProtocolError(standard.ErrorCode), standard.Error ?? "Payload action failed.", standard);
+		throw new CliException(ProtocolErrorMapper.Map(standard.ErrorCode), standard.Error ?? "Payload action failed.", standard);
 	}
 
 	private static bool LooksLikeFullTargetId(string targetId) =>
 		targetId.Length > 8 && targetId.Contains('-', StringComparison.Ordinal);
 
-	private static string MapProtocolError(string? errorCode)
-	{
-		return errorCode switch
-		{
-			ProtocolConstants.ErrorCodes.StaleTarget => CliErrorCodes.StaleTarget,
-			ProtocolConstants.ErrorCodes.TargetExited => CliErrorCodes.TargetExited,
-			ProtocolConstants.ErrorCodes.UnsupportedTarget => CliErrorCodes.UnsupportedTarget,
-			ProtocolConstants.ErrorCodes.CommandTimeout => CliErrorCodes.CommandTimeout,
-			ProtocolConstants.ErrorCodes.UnsupportedCommand => CliErrorCodes.UnsupportedTarget,
-			_ => CliErrorCodes.ProtocolError,
-		};
-	}
 }
 
 public sealed class ActionCommandResult

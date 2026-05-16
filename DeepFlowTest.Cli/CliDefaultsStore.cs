@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using DeepFlowTest.Contracts;
 
 public sealed class CliDefaultsStore
 {
@@ -39,6 +40,12 @@ public sealed class CliDefaultsStore
 		DefaultIgnoreCondition = JsonIgnoreCondition.Never,
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
 		WriteIndented = true,
+		Converters =
+		{
+			new CliImageFormatJsonConverter(),
+			new CliTreeShapeJsonConverter(),
+			new CliMouseButtonJsonConverter(),
+		},
 	};
 
 	public CliDefaultsStore(string? configPath = null)
@@ -140,15 +147,15 @@ public sealed class CliDefaultsStore
 
 		RequireOneOf(defaults.Common.Format, "common.format", "json", "text");
 		RequireOneOf(defaults.Common.After, "common.after", "none", "target", "tree");
-		RequireOneOf(defaults.Commands.Tree.Shape, "commands.tree.shape", "flat", "nested");
+		RequireDefinedEnum(defaults.Commands.Tree.Shape, "commands.tree.shape");
 		RequireStringList(defaults.Commands.Tree.Props, "commands.tree.props");
 		RequireNullableStringList(defaults.Commands.Tree.TypeNames, "commands.tree.typeNames");
 		RequireStringList(defaults.Commands.Find.Include, "commands.find.include");
 		RequireStringList(defaults.Commands.Props.Props, "commands.props.props");
-		RequireImageFormat(defaults.Commands.Screenshot.ImageFormat, "commands.screenshot.imageFormat");
+		RequireDefinedEnum(defaults.Commands.Screenshot.ImageFormat, "commands.screenshot.imageFormat");
 		RequireStringList(defaults.Commands.Stream.Props, "commands.stream.props");
-		RequireImageFormat(defaults.Commands.Stream.ImageFormat, "commands.stream.imageFormat");
-		RequireOneOf(defaults.Commands.Click.Button, "commands.click.button", "left", "right", "Left", "Right");
+		RequireDefinedEnum(defaults.Commands.Stream.ImageFormat, "commands.stream.imageFormat");
+		RequireDefinedEnum(defaults.Commands.Click.Button, "commands.click.button");
 	}
 
 	private static void ValidateDocument(JsonObject document)
@@ -167,21 +174,16 @@ public sealed class CliDefaultsStore
 		Validate(defaults);
 	}
 
-	private static void RequireImageFormat(string value, string path)
-	{
-		try
-		{
-			RequireOneOf(ScreenshotFileService.NormalizeFormat(value), path, "png", "jpeg", "bmp", "gif");
-		}
-		catch (CliException ex) when (ex.ErrorCode == CliErrorCodes.InvalidArguments)
-		{
-			throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{value}'.");
-		}
-	}
-
 	private static void RequireOneOf(string? value, string path, params string[] allowedValues)
 	{
 		if (value is null || !allowedValues.Contains(value, StringComparer.Ordinal))
+			throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{value}'.");
+	}
+
+	private static void RequireDefinedEnum<TEnum>(TEnum value, string path)
+		where TEnum : struct, Enum
+	{
+		if (!Enum.IsDefined(typeof(TEnum), value))
 			throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{value}'.");
 	}
 
@@ -286,7 +288,7 @@ public sealed class CliDefaultsStore
 	private static bool IsLeafType(Type type)
 	{
 		type = Nullable.GetUnderlyingType(type) ?? type;
-		return type == typeof(string) || type == typeof(bool) || type == typeof(int) || type == typeof(List<string>);
+		return type == typeof(string) || type == typeof(bool) || type == typeof(int) || type == typeof(List<string>) || type.IsEnum;
 	}
 
 	private static void RequireEditableLeaf(CliDefaultsPathInfo info)
@@ -317,13 +319,6 @@ public sealed class CliDefaultsStore
 		}
 
 		ValidateValueType(path, value);
-		if (string.Equals(path.Path, "commands.screenshot.imageFormat", StringComparison.Ordinal)
-			|| string.Equals(path.Path, "commands.stream.imageFormat", StringComparison.Ordinal)
-			|| string.Equals(path.Path, "screenshotFormat", StringComparison.Ordinal))
-		{
-			value = JsonValue.Create(ScreenshotFileService.NormalizeFormat(value!.GetValue<string>()));
-		}
-
 		return value;
 	}
 
@@ -349,6 +344,9 @@ public sealed class CliDefaultsStore
 
 		if (type == typeof(string))
 			return JsonValue.Create(rawValue);
+
+		if (type.IsEnum)
+			return JsonValue.Create(ParseEnumText(path.ValueType, path.Path, rawValue));
 
 		if (type == typeof(List<string>))
 		{
@@ -377,6 +375,11 @@ public sealed class CliDefaultsStore
 			return;
 		if (type == typeof(string) && value is JsonValue stringValue && stringValue.TryGetValue<string>(out _))
 			return;
+		if (type.IsEnum && value is JsonValue enumValue && enumValue.TryGetValue<string>(out var enumText))
+		{
+			ParseEnumText(path.ValueType, path.Path, enumText);
+			return;
+		}
 		if (type == typeof(List<string>) && value is JsonArray array)
 		{
 			for (var index = 0; index < array.Count; index++)
@@ -389,6 +392,25 @@ public sealed class CliDefaultsStore
 		}
 
 		throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid value for config key '{path.Path}'.");
+	}
+
+	private static string ParseEnumText(Type enumType, string path, string rawValue)
+	{
+		try
+		{
+			if (enumType == typeof(ImageFormat))
+				return ImageFormatExtensions.ParseProtocolString(rawValue).ToProtocolString();
+			if (enumType == typeof(TreeShape))
+				return ProtocolValueMapper.FormatTreeShape(ProtocolValueMapper.ParseTreeShape(rawValue));
+			if (enumType == typeof(MouseButtonKind))
+				return ProtocolValueMapper.FormatMouseButton(ProtocolValueMapper.ParseMouseButton(rawValue));
+		}
+		catch (FormatException)
+		{
+			throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{rawValue}'.");
+		}
+
+		throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported config enum type '{enumType.Name}'.");
 	}
 
 	private static JsonNode? GetValue(JsonObject document, IReadOnlyList<string> parts)

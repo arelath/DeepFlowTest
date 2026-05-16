@@ -196,7 +196,7 @@ public sealed class ElementApiTests
 			new ScreenshotCommandResponse
 			{
 				TargetId = "new-target",
-				Format = "png",
+				Format = ImageFormat.Png,
 				Width = 10,
 				Height = 20,
 				ByteCount = 3,
@@ -258,7 +258,7 @@ public sealed class ElementApiTests
 			new ScreenshotCommandResponse
 			{
 				TargetId = "image-target",
-				Format = "png",
+				Format = ImageFormat.Png,
 				Width = 10,
 				Height = 20,
 				ByteCount = 3,
@@ -282,7 +282,7 @@ public sealed class ElementApiTests
 			new ScreenshotCommandResponse
 			{
 				TargetId = "button",
-				Format = "jpeg",
+				Format = ImageFormat.Jpeg,
 				Width = 1,
 				Height = 1,
 				ByteCount = 2,
@@ -291,7 +291,7 @@ public sealed class ElementApiTests
 			new ScreenshotCommandResponse
 			{
 				TargetId = "button",
-				Format = "jpeg",
+				Format = ImageFormat.Jpeg,
 				Width = 1,
 				Height = 1,
 				ByteCount = 2,
@@ -307,6 +307,78 @@ public sealed class ElementApiTests
 		Assert.That(element.HasProperty("Name"), Is.True);
 		Assert.That(element["Name"] == "submit", Is.True);
 		Assert.That(bytes, Is.EqualTo(new byte[] { 9, 10 }));
+	}
+
+	[Test]
+	public void FluentActionMethodsSendExpectedCommandRequests()
+	{
+		var sessionResponses = new object[] { FindMatch("button", "submit") }
+			.Concat(Enumerable.Range(0, 13).Select(_ => (object)StandardIpcResponse.Ok()))
+			.ToArray();
+		var session = new FakeSession(sessionResponses);
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(ElementSelector.ByName("submit"));
+
+		element.RightClick()
+			.Focus()
+			.Select()
+			.Expand()
+			.Collapse()
+			.Check()
+			.Uncheck()
+			.ScrollIntoView()
+			.AcceptDialog()
+			.CancelDialog()
+			.Type("abc", clearFirst: true)
+			.RaiseEvent("Click")
+			.SetProperty("Text", "updated");
+
+		var commands = session.SentCommands.Skip(1).ToArray();
+		Assert.That(commands.Select(static command => command.GetType()), Is.EqualTo(new[]
+		{
+			typeof(ClickCommandRequest),
+			typeof(FocusCommandRequest),
+			typeof(KnownOperationCommandRequest),
+			typeof(KnownOperationCommandRequest),
+			typeof(KnownOperationCommandRequest),
+			typeof(KnownOperationCommandRequest),
+			typeof(KnownOperationCommandRequest),
+			typeof(KnownOperationCommandRequest),
+			typeof(KnownOperationCommandRequest),
+			typeof(KnownOperationCommandRequest),
+			typeof(TypeTextCommandRequest),
+			typeof(RaiseEventCommandRequest),
+			typeof(SetPropertyCommandRequest),
+		}));
+
+		Assert.That(((ClickCommandRequest)commands[0]).MouseButton, Is.EqualTo(MouseButtonKind.Right));
+		Assert.That(commands.OfType<KnownOperationCommandRequest>().Select(static command => command.Operation), Is.EqualTo(new[]
+		{
+			"Select",
+			"Expand",
+			"Collapse",
+			"Check",
+			"Uncheck",
+			"BringIntoView",
+			"AcceptDialog",
+			"CancelDialog",
+		}));
+		var typeText = (TypeTextCommandRequest)commands[10];
+		Assert.That(typeText.Text, Is.EqualTo("abc"));
+		Assert.That(typeText.ClearFirst, Is.True);
+		Assert.That(((RaiseEventCommandRequest)commands[11]).EventName, Is.EqualTo("Click"));
+		var setProperty = (SetPropertyCommandRequest)commands[12];
+		Assert.That(setProperty.PropertyName, Is.EqualTo("Text"));
+		Assert.That(setProperty.PropertyValue, Is.EqualTo("updated"));
+		Assert.That(commands.Select(TargetIdOf), Is.All.EqualTo("button"));
+
+		static string? TargetIdOf(IpcCommand command) =>
+			command switch
+			{
+				TargetedIpcCommand targeted => targeted.TargetId,
+				TypeTextCommandRequest typeText => typeText.TargetId,
+				_ => null,
+			};
 	}
 
 	[Test]
@@ -408,9 +480,9 @@ public sealed class ElementApiTests
 		var stable = Convert.ToBase64String(new byte[] { 2 });
 		var session = new FakeSession(
 			FindMatch("image-target", "image"),
-			new ScreenshotCommandResponse { TargetId = "image-target", Format = "png", ByteCount = 1, BytesBase64 = first },
-			new ScreenshotCommandResponse { TargetId = "image-target", Format = "png", ByteCount = 1, BytesBase64 = stable },
-			new ScreenshotCommandResponse { TargetId = "image-target", Format = "png", ByteCount = 1, BytesBase64 = stable });
+			new ScreenshotCommandResponse { TargetId = "image-target", Format = ImageFormat.Png, ByteCount = 1, BytesBase64 = first },
+			new ScreenshotCommandResponse { TargetId = "image-target", Format = ImageFormat.Png, ByteCount = 1, BytesBase64 = stable },
+			new ScreenshotCommandResponse { TargetId = "image-target", Format = ImageFormat.Png, ByteCount = 1, BytesBase64 = stable });
 		var driver = CreateDriver(session);
 		var element = driver.GetElement(ElementSelector.ByName("image"));
 

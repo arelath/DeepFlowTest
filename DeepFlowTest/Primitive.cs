@@ -115,86 +115,73 @@ public sealed class Primitive : IEquatable<Primitive>, IEquatable<string>, IEqua
 
 	public static Primitive operator +(Primitive left, Primitive right)
 	{
-		dynamic leftValue = left.Value!;
-		dynamic rightValue = right.Value!;
-		return new Primitive(leftValue + rightValue);
+		if (left.Value is string || right.Value is string)
+			return new Primitive(ToInvariantString(left.Value) + ToInvariantString(right.Value));
+
+		return new Primitive(ToDecimal(left.Value) + ToDecimal(right.Value));
 	}
 
 	public static Primitive operator -(Primitive left, Primitive right)
 	{
-		dynamic leftValue = left.Value!;
-		dynamic rightValue = right.Value!;
-		return new Primitive(leftValue - rightValue);
+		return new Primitive(ToDecimal(left.Value) - ToDecimal(right.Value));
 	}
 
 	public static Primitive operator *(Primitive left, Primitive right)
 	{
-		dynamic leftValue = left.Value!;
-		dynamic rightValue = right.Value!;
-		return new Primitive(leftValue * rightValue);
+		return new Primitive(ToDecimal(left.Value) * ToDecimal(right.Value));
 	}
 
 	public static Primitive operator /(Primitive left, Primitive right)
 	{
-		dynamic leftValue = left.Value!;
-		dynamic rightValue = right.Value!;
-		return new Primitive(leftValue / rightValue);
+		return new Primitive(ToDecimal(left.Value) / ToDecimal(right.Value));
 	}
 
 	public static Primitive operator %(Primitive left, Primitive right)
 	{
-		dynamic leftValue = left.Value!;
-		dynamic rightValue = right.Value!;
-		return new Primitive(leftValue % rightValue);
+		return new Primitive(ToDecimal(left.Value) % ToDecimal(right.Value));
 	}
 
 	public static Primitive operator ^(Primitive left, Primitive right)
 	{
-		dynamic leftValue = left.Value!;
-		dynamic rightValue = right.Value!;
-		return new Primitive(leftValue ^ rightValue);
+		if (left.Value is bool leftBool && right.Value is bool rightBool)
+			return new Primitive(leftBool ^ rightBool);
+
+		return new Primitive(ToInt64(left.Value) ^ ToInt64(right.Value));
 	}
 
 	public static Primitive operator <<(Primitive left, int right)
 	{
-		dynamic leftValue = left.Value!;
-		return new Primitive(leftValue << right);
+		return new Primitive(ToInt64(left.Value) << right);
 	}
 
 	public static Primitive operator >>(Primitive left, int right)
 	{
-		dynamic leftValue = left.Value!;
-		return new Primitive(leftValue >> right);
+		return new Primitive(ToInt64(left.Value) >> right);
 	}
 
 	public static Primitive operator ~(Primitive primitive)
 	{
-		dynamic value = primitive.Value!;
-		return new Primitive(~value);
+		return new Primitive(~ToInt64(primitive.Value));
 	}
 
 	public static Primitive operator ++(Primitive primitive)
 	{
-		dynamic value = primitive.Value!;
-		return new Primitive(++value);
+		return new Primitive(ToDecimal(primitive.Value) + 1m);
 	}
 
 	public static Primitive operator --(Primitive primitive)
 	{
-		dynamic value = primitive.Value!;
-		return new Primitive(--value);
+		return new Primitive(ToDecimal(primitive.Value) - 1m);
 	}
 
 	public static Primitive operator +(Primitive primitive)
 	{
-		dynamic value = primitive.Value!;
-		return new Primitive(+value);
+		return new Primitive(ToDecimal(primitive.Value));
 	}
 
 	public static Primitive operator -(Primitive primitive)
 	{
-		dynamic value = primitive.Value!;
-		return new Primitive(-value);
+		return new Primitive(-ToDecimal(primitive.Value));
 	}
 
 	public static bool operator true(Primitive primitive) => primitive.As<bool>();
@@ -202,16 +189,18 @@ public sealed class Primitive : IEquatable<Primitive>, IEquatable<string>, IEqua
 	public static Primitive operator !(Primitive primitive) => new(!primitive.As<bool>());
 	public static Primitive operator &(Primitive left, Primitive right)
 	{
-		dynamic leftValue = left.Value!;
-		dynamic rightValue = right.Value!;
-		return new Primitive(leftValue & rightValue);
+		if (left.Value is bool leftBool && right.Value is bool rightBool)
+			return new Primitive(leftBool & rightBool);
+
+		return new Primitive(ToInt64(left.Value) & ToInt64(right.Value));
 	}
 
 	public static Primitive operator |(Primitive left, Primitive right)
 	{
-		dynamic leftValue = left.Value!;
-		dynamic rightValue = right.Value!;
-		return new Primitive(leftValue | rightValue);
+		if (left.Value is bool leftBool && right.Value is bool rightBool)
+			return new Primitive(leftBool | rightBool);
+
+		return new Primitive(ToInt64(left.Value) | ToInt64(right.Value));
 	}
 
 	private static bool ValuesEqual(object? left, object? right)
@@ -230,12 +219,26 @@ public sealed class Primitive : IEquatable<Primitive>, IEquatable<string>, IEqua
 
 	private static int Compare(object? left, object? right) => ToDecimal(left).CompareTo(ToDecimal(right));
 
+	private static string ToInvariantString(object? value) => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+
 	private static decimal ToDecimal(object? value)
 	{
 		if (TryToDecimal(value, out var number))
 			return number;
 
 		throw new InvalidOperationException($"Value '{value}' is not numeric.");
+	}
+
+	private static long ToInt64(object? value)
+	{
+		if (value is bool)
+			throw new InvalidOperationException($"Value '{value}' is not an integral number.");
+
+		var number = ToDecimal(value);
+		if (decimal.Truncate(number) != number || number < long.MinValue || number > long.MaxValue)
+			throw new InvalidOperationException($"Value '{value}' is not an integral number.");
+
+		return (long)number;
 	}
 
 	private static bool TryToDecimal(object? value, out decimal number)

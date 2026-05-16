@@ -46,7 +46,19 @@ public static class ExpressionPayloadSerializer
 		// type the payload can't load.
 		var closureInlined = (LambdaExpression)new ClosureMemberInliner().Visit(expression)!;
 		var serializableExpression = (LambdaExpression)new EnumConstantRewriter().Visit(closureInlined)!;
-		return Serializer.SerializeText(serializableExpression);
+		try
+		{
+			return Serializer.SerializeText(serializableExpression);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			throw new InvalidOperationException(
+				"Expression payload serialization failed after closure values were inlined. " +
+				"Captured primitive values, enums, strings, arrays, and member chains are supported; " +
+				"captured complex object instances, collection method receivers, and instance method calls may not serialize across the IPC boundary. " +
+				$"Expression: {FormatDiagnosticText(expression)}",
+				ex);
+		}
 	}
 
 	public static string FormatDiagnosticText(LambdaExpression expression)
@@ -68,7 +80,14 @@ public static class ExpressionPayloadSerializer
 		if (string.IsNullOrWhiteSpace(expressionJson))
 			throw new InvalidOperationException("Expression payload is empty.");
 
-		return (LambdaExpression)Serializer.DeserializeText(expressionJson);
+		try
+		{
+			return (LambdaExpression)Serializer.DeserializeText(expressionJson);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			throw new InvalidOperationException("Expression payload deserialization failed. The payload may be malformed or reference a type unavailable in this process.", ex);
+		}
 	}
 
 	private static string CreateCanonicalPayload(LambdaExpression expression, string expressionText, string expressionJson, Dictionary<string, object?> closureValues)
