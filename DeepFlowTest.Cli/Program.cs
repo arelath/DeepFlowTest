@@ -173,6 +173,8 @@ public static class Program
 				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.Screenshot)),
 			StreamEventLog = () => context.Execute("stream event-log", targetBound: true, () =>
 				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.EventLog)),
+			StreamBindingFailures = () => context.Execute("stream binding-failures", targetBound: true, () =>
+				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.BindingFailures)),
 			Click = () => context.Execute("click", targetBound: true, () =>
 				ExecuteClick(context.Args, context.Services, context.Defaults, context.CommonOptions)),
 			Focus = () => context.Execute("focus", targetBound: true, () =>
@@ -359,8 +361,8 @@ public static class Program
 		string streamKind)
 	{
 		var interval = CliArgumentReader.GetInt(args, "--interval-ms", defaults.StreamIntervalMs);
-		if (interval < 50)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Stream interval must be at least 50 ms.");
+		if (interval < TimeoutDefaults.StreamMinimumIntervalMs)
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Stream interval must be at least {TimeoutDefaults.StreamMinimumIntervalMs} ms.");
 
 		var duration = CliArgumentReader.GetInt(args, "--duration-ms", defaults.StreamDurationMs);
 		if (duration < 0)
@@ -382,10 +384,10 @@ public static class Program
 		};
 		using var stream = session.StartStream(request, commonOptions.TimeoutMs);
 		using var cancellation = CreateConsoleCancellationSource();
-		var envelopes = new List<CliResponseEnvelope>
-		{
+		List<CliResponseEnvelope> envelopes =
+		[
 			CliResponseFactory.Success($"stream {streamKind} start", stream.Start, Stopwatch.StartNew()),
-		};
+		];
 
 		var stopwatch = Stopwatch.StartNew();
 		try
@@ -412,9 +414,9 @@ public static class Program
 			new StopSendingCommandRequest
 			{
 				SubscriptionId = stream.Start.SubscriptionId,
-				TimeoutMs = Math.Min(commonOptions.TimeoutMs, 2000),
+				TimeoutMs = Math.Min(commonOptions.TimeoutMs, TimeoutDefaults.StreamStopTimeoutMs),
 			},
-			Math.Min(commonOptions.TimeoutMs, 2000));
+			Math.Min(commonOptions.TimeoutMs, TimeoutDefaults.StreamStopTimeoutMs));
 		envelopes.Add(CliResponseFactory.Success($"stream {streamKind} stop", stop, Stopwatch.StartNew()));
 
 		return new CliResponseSequence(envelopes);
@@ -452,12 +454,12 @@ public static class Program
 			: string.Equals(rawProperties, "default", StringComparison.OrdinalIgnoreCase)
 				? CliDefaults.CreateDefaultPropertyList()
 				: string.Equals(rawProperties, "none", StringComparison.OrdinalIgnoreCase)
-					? Array.Empty<string>()
+					? []
 					: CliArgumentReader.SplitCsv(rawProperties);
 
 		var requestProperties = outputProperties.ToList();
-		if (!includeHidden && !requestProperties.Contains("IsVisible", StringComparer.Ordinal))
-			requestProperties.Add("IsVisible");
+		if (!includeHidden && !requestProperties.Contains(KnownProperties.IsVisible, StringComparer.Ordinal))
+			requestProperties.Add(KnownProperties.IsVisible);
 
 		return new TreePropertySelection(
 			requestProperties.Distinct(StringComparer.Ordinal).ToArray(),
@@ -473,7 +475,7 @@ public static class Program
 
 		return defaults.Commands.Tree.TypeNames is { } configuredTypeNames
 			? configuredTypeNames
-			: Array.Empty<string>();
+			: [];
 	}
 
 	private static TreeShape GetTreeShapeOption(string[] args, TreeShape defaultValue)
@@ -628,7 +630,7 @@ public static class Program
 			ElementSelector.FromArgs(args),
 			targetId => new FocusCommandRequest { TargetId = targetId ?? string.Empty },
 			requireElementTarget: true,
-			afterProperties: new[] { "IsFocused", "IsKeyboardFocused", "IsKeyboardFocusWithin" });
+			afterProperties: new[] { KnownProperties.IsFocused, KnownProperties.IsKeyboardFocused, KnownProperties.IsKeyboardFocusWithin });
 	}
 
 	private static ActionCommandResult ExecuteType(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
@@ -655,7 +657,7 @@ public static class Program
 				ClearFirst = CliArgumentReader.HasOption(args, "--clear-first") || defaults.Commands.Type.ClearFirst,
 			},
 			requireElementTarget: false,
-			afterProperties: new[] { "Text", "Content" });
+			afterProperties: new[] { KnownProperties.Text, KnownProperties.Content });
 	}
 
 	private static ActionCommandResult ExecuteKey(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
@@ -683,7 +685,7 @@ public static class Program
 				EnsureForeground = CliArgumentReader.GetBool(args, "--foreground", defaults.Commands.Key.Foreground),
 			},
 			requireElementTarget: false,
-			afterProperties: new[] { "Text", "Content", "IsKeyboardFocused", "IsKeyboardFocusWithin" });
+			afterProperties: new[] { KnownProperties.Text, KnownProperties.Content, KnownProperties.IsKeyboardFocused, KnownProperties.IsKeyboardFocusWithin });
 	}
 
 	private static ActionCommandResult ExecuteSet(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
@@ -909,7 +911,7 @@ public static class Program
 
 	private static IReadOnlyList<string> GetConfigPositionals(string[] args)
 	{
-		var result = new List<string>();
+		List<string> result = [];
 		for (var i = 2; i < args.Length; i++)
 		{
 			var arg = args[i];
@@ -963,7 +965,7 @@ public sealed class StreamCommandResult
 {
 	public StartSendingCommandResponse Start { get; set; } = new();
 
-	public IReadOnlyList<StreamMessage> Frames { get; set; } = Array.Empty<StreamMessage>();
+	public IReadOnlyList<StreamMessage> Frames { get; set; } = [];
 
 	public StopSendingCommandResponse Stop { get; set; } = new();
 }

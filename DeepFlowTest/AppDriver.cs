@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq.Expressions;
+using System.Runtime.ExceptionServices;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
@@ -21,6 +22,8 @@ public sealed class AppDriver : IDisposable
 	private readonly MediaCaptureService mediaCaptureService;
 	private readonly ElementCommandExecutor elementCommandExecutor;
 	private readonly Keyboard keyboard;
+	private readonly BindingFailureMonitor bindingFailureMonitor;
+	private IDisposable? automaticBindingFailureCapture;
 	private bool disposed;
 
 	private AppDriver(
@@ -33,7 +36,12 @@ public sealed class AppDriver : IDisposable
 		Options = options ?? throw new ArgumentNullException(nameof(options));
 		Session = session ?? (sessionFactory ?? ((candidateConnection, candidateOptions) => new NamedPipeAppDriverCommandSession(candidateConnection, candidateOptions)))(connection, options);
 
-		commandClient = new DriverCommandClient(Session);
+		bindingFailureMonitor = new BindingFailureMonitor(Session, Options);
+		commandClient = new DriverCommandClient(Session, () =>
+		{
+			if (Options.FailOnBindingFailures)
+				bindingFailureMonitor.CheckpointAndThrowIfNeeded();
+		});
 		elementRegistry = new ElementRegistry();
 		elementFactory = new ElementFactory(this);
 		matcherPlanner = new ElementMatcherPlanner(elementFactory);
@@ -45,6 +53,8 @@ public sealed class AppDriver : IDisposable
 		mediaCaptureService = new MediaCaptureService(commandClient);
 		elementCommandExecutor = new ElementCommandExecutor(commandClient, elementRepairService);
 		keyboard = new Keyboard(this);
+		if (Options.FailOnBindingFailures)
+			automaticBindingFailureCapture = StartBindingFailureCapture();
 	}
 
 	public string ProductName => ProductInfo.Name;
@@ -61,6 +71,12 @@ public sealed class AppDriver : IDisposable
 	public IAppDriverCommandSession Session { get; }
 
 	public Keyboard Keyboard => keyboard;
+
+	public event EventHandler<BindingFailureEventArgs>? BindingFailureReceived
+	{
+		add => bindingFailureMonitor.FailureReceived += value;
+		remove => bindingFailureMonitor.FailureReceived -= value;
+	}
 
 	internal ElementCommandExecutor ElementCommandExecutor => elementCommandExecutor;
 
@@ -103,13 +119,13 @@ public sealed class AppDriver : IDisposable
 	public Element GetElement(Expression<Func<VisualTreeNodeDto, bool>> matcher) =>
 		queryService.GetElement(matcher);
 
-	public Element GetElement(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
+	public Element GetElement(Expression<Func<Element, bool?>> matcher, int timeoutMs = TimeoutDefaults.ElementQueryTimeoutMs) =>
 		GetElement(matcher, timeoutMs, propNames: null);
 
 	public Element GetElement(Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames) =>
 		queryService.GetElement(matcher, timeoutMs, propNames);
 
-	public TElement GetElement<TElement>(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000)
+	public TElement GetElement<TElement>(Expression<Func<Element, bool?>> matcher, int timeoutMs = TimeoutDefaults.ElementQueryTimeoutMs)
 		where TElement : Element =>
 		queryService.GetElement<TElement>(matcher, timeoutMs, propNames: null);
 
@@ -120,7 +136,7 @@ public sealed class AppDriver : IDisposable
 	public Element GetElement(
 		Expression<Func<Element, bool?>> rootMatcher,
 		Expression<Func<Element, bool?>> matcher,
-		int timeoutMs = 30_000) =>
+		int timeoutMs = TimeoutDefaults.ElementQueryTimeoutMs) =>
 		GetElement(rootMatcher, matcher, timeoutMs, propNames: null);
 
 	public Element GetElement(
@@ -130,7 +146,7 @@ public sealed class AppDriver : IDisposable
 		IReadOnlyList<string>? propNames) =>
 		queryService.GetElement(rootMatcher, matcher, timeoutMs, propNames);
 
-	public Element GetElement(Element root, Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
+	public Element GetElement(Element root, Expression<Func<Element, bool?>> matcher, int timeoutMs = TimeoutDefaults.ElementQueryTimeoutMs) =>
 		GetElement(root, matcher, timeoutMs, propNames: null);
 
 	public Element GetElement(Element root, Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames) =>
@@ -142,13 +158,13 @@ public sealed class AppDriver : IDisposable
 	public IReadOnlyList<Element> GetElements(Expression<Func<VisualTreeNodeDto, bool>> matcher, int maxMatches = 100) =>
 		queryService.GetElements(matcher, maxMatches);
 
-	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
+	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int timeoutMs = TimeoutDefaults.ElementQueryTimeoutMs) =>
 		GetElements(matcher, timeoutMs, propNames: null);
 
 	public IReadOnlyList<Element> GetElements(Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames) =>
 		queryService.GetElements(matcher, timeoutMs, propNames);
 
-	public IReadOnlyList<TElement> GetElements<TElement>(Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000)
+	public IReadOnlyList<TElement> GetElements<TElement>(Expression<Func<Element, bool?>> matcher, int timeoutMs = TimeoutDefaults.ElementQueryTimeoutMs)
 		where TElement : Element =>
 		queryService.GetElements<TElement>(matcher, timeoutMs, propNames: null);
 
@@ -159,7 +175,7 @@ public sealed class AppDriver : IDisposable
 	public IReadOnlyList<Element> GetElements(
 		Expression<Func<Element, bool?>> rootMatcher,
 		Expression<Func<Element, bool?>> matcher,
-		int timeoutMs = 30_000) =>
+		int timeoutMs = TimeoutDefaults.ElementQueryTimeoutMs) =>
 		GetElements(rootMatcher, matcher, timeoutMs, propNames: null);
 
 	public IReadOnlyList<Element> GetElements(
@@ -169,7 +185,7 @@ public sealed class AppDriver : IDisposable
 		IReadOnlyList<string>? propNames) =>
 		queryService.GetElements(rootMatcher, matcher, timeoutMs, propNames);
 
-	public IReadOnlyList<Element> GetElements(Element root, Expression<Func<Element, bool?>> matcher, int timeoutMs = 30_000) =>
+	public IReadOnlyList<Element> GetElements(Element root, Expression<Func<Element, bool?>> matcher, int timeoutMs = TimeoutDefaults.ElementQueryTimeoutMs) =>
 		GetElements(root, matcher, timeoutMs, propNames: null);
 
 	public IReadOnlyList<Element> GetElements(Element root, Expression<Func<Element, bool?>> matcher, int timeoutMs, IReadOnlyList<string>? propNames) =>
@@ -197,6 +213,18 @@ public sealed class AppDriver : IDisposable
 
 	public TResponse Send<TResponse>(IpcCommand command) =>
 		commandClient.Send<TResponse>(command);
+
+	public IDisposable StartBindingFailureCapture(BindingFailureOptions? options = null) =>
+		bindingFailureMonitor.Start(options ?? Options.BindingFailures);
+
+	public IReadOnlyList<BindingFailureDto> GetObservedBindingFailures() =>
+		bindingFailureMonitor.GetObservedFailures();
+
+	public void ClearObservedBindingFailures() =>
+		bindingFailureMonitor.Clear();
+
+	public void AssertNoBindingFailures(bool clear = true) =>
+		bindingFailureMonitor.AssertNoFailures(clear);
 
 	public ScreenshotCommandResponse CaptureScreenshot(string format = "png") =>
 		mediaCaptureService.CaptureScreenshot(format);
@@ -245,6 +273,24 @@ public sealed class AppDriver : IDisposable
 			return;
 
 		disposed = true;
-		Connection.Dispose();
+		Exception? pendingException = null;
+		try
+		{
+			if (Options.FailOnBindingFailures && Options.BindingFailures.AssertOnDispose)
+				bindingFailureMonitor.AssertNoFailures(clear: true);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			pendingException = ex;
+		}
+		finally
+		{
+			automaticBindingFailureCapture = null;
+			bindingFailureMonitor.Dispose();
+			Connection.Dispose();
+		}
+
+		if (pendingException is not null)
+			ExceptionDispatchInfo.Capture(pendingException).Throw();
 	}
 }

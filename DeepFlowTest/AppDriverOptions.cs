@@ -2,10 +2,11 @@ namespace DeepFlowTest;
 
 using System;
 using System.Diagnostics;
+using DeepFlowTest.Contracts;
 
 public class AppDriverOptions
 {
-	public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(10);
+	public TimeSpan Timeout { get; set; } = TimeoutDefaults.AppDriverTimeout;
 
 	public bool AllowInjection { get; set; } = true;
 
@@ -15,7 +16,11 @@ public class AppDriverOptions
 
 	public string InjectorLauncherPath { get; set; } = ResolveDefaultInjectorLauncherPath();
 
-	public int[] ElementPollBackoffMs { get; set; } = [25, 100, 500, 1000, 2000];
+	public int[] ElementPollBackoffMs { get; set; } = TimeoutDefaults.CreateElementPollBackoffMs();
+
+	public bool FailOnBindingFailures { get; set; }
+
+	public BindingFailureOptions BindingFailures { get; } = new();
 
 	private static string ResolveDefaultInjectorLauncherPath()
 	{

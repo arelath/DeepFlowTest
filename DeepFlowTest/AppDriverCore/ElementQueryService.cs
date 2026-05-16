@@ -6,30 +6,21 @@ using System.Linq;
 using System.Linq.Expressions;
 using DeepFlowTest.Interop;
 
-internal sealed class ElementQueryService
+internal sealed class ElementQueryService(
+	ElementFinder elementFinder,
+	ElementMatcherPlanner matcherPlanner,
+	ElementWaiter waiter,
+	VisualTreeClient visualTreeClient,
+	ElementFactory elementFactory)
 {
 	private const int NoMatchDiagnosticMaxNodeCount = 200;
 	private const int NoMatchDiagnosticMaxElements = 25;
 
-	private readonly ElementFinder elementFinder;
-	private readonly ElementMatcherPlanner matcherPlanner;
-	private readonly ElementWaiter waiter;
-	private readonly VisualTreeClient visualTreeClient;
-	private readonly ElementFactory elementFactory;
-
-	public ElementQueryService(
-		ElementFinder elementFinder,
-		ElementMatcherPlanner matcherPlanner,
-		ElementWaiter waiter,
-		VisualTreeClient visualTreeClient,
-		ElementFactory elementFactory)
-	{
-		this.elementFinder = elementFinder ?? throw new ArgumentNullException(nameof(elementFinder));
-		this.matcherPlanner = matcherPlanner ?? throw new ArgumentNullException(nameof(matcherPlanner));
-		this.waiter = waiter ?? throw new ArgumentNullException(nameof(waiter));
-		this.visualTreeClient = visualTreeClient ?? throw new ArgumentNullException(nameof(visualTreeClient));
-		this.elementFactory = elementFactory ?? throw new ArgumentNullException(nameof(elementFactory));
-	}
+	private readonly ElementFinder elementFinder = elementFinder ?? throw new ArgumentNullException(nameof(elementFinder));
+	private readonly ElementMatcherPlanner matcherPlanner = matcherPlanner ?? throw new ArgumentNullException(nameof(matcherPlanner));
+	private readonly ElementWaiter waiter = waiter ?? throw new ArgumentNullException(nameof(waiter));
+	private readonly VisualTreeClient visualTreeClient = visualTreeClient ?? throw new ArgumentNullException(nameof(visualTreeClient));
+	private readonly ElementFactory elementFactory = elementFactory ?? throw new ArgumentNullException(nameof(elementFactory));
 
 	public Element GetElement(ElementSelector selector)
 	{

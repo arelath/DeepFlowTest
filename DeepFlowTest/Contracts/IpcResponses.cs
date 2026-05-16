@@ -192,7 +192,7 @@ public sealed record class FindElementCommandResponse
 		get => Matches.Select(MatchToNode).ToArray();
 		set
 		{
-			Matches = (value ?? Array.Empty<Dictionary<string, object?>>())
+			Matches = (value ?? [])
 				.Select(NodeToMatch)
 				.ToList();
 			MatchCount = Matches.Count;
@@ -250,6 +250,35 @@ public sealed record class FindElementMatchResponse
 	public Dictionary<string, object?> Properties { get; set; } = [];
 
 	public List<ElementPathSegmentResponse> Path { get; set; } = [];
+}
+
+public sealed record class BindingFailureDto
+{
+	public long SequenceNumber { get; set; }
+
+	public DateTimeOffset TimestampUtc { get; set; }
+
+	[JsonConverter(typeof(ProtocolBindingFailureSeverityJsonConverter))]
+	public BindingFailureSeverity Severity { get; set; } = BindingFailureSeverity.Warning;
+
+	public string Message { get; set; } = string.Empty;
+
+	public string RawMessage { get; set; } = string.Empty;
+
+	public string Source { get; set; } = string.Empty;
+
+	public int? EventId { get; set; }
+
+	public int ManagedThreadId { get; set; }
+}
+
+public sealed record class BindingFailureBatchDto
+{
+	public long LastSequenceNumber { get; set; }
+
+	public int DroppedCount { get; set; }
+
+	public IReadOnlyList<BindingFailureDto> Failures { get; set; } = [];
 }
 
 public sealed record class ElementPathSegmentResponse

@@ -7,24 +7,16 @@ using System.Linq.Expressions;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
-internal sealed class ElementFinder
+internal sealed class ElementFinder(
+	DriverCommandClient commandClient,
+	VisualTreeClient visualTreeClient,
+	ElementFactory elementFactory,
+	ElementMatcherPlanner matcherPlanner)
 {
-	private readonly DriverCommandClient commandClient;
-	private readonly VisualTreeClient visualTreeClient;
-	private readonly ElementFactory elementFactory;
-	private readonly ElementMatcherPlanner matcherPlanner;
-
-	public ElementFinder(
-		DriverCommandClient commandClient,
-		VisualTreeClient visualTreeClient,
-		ElementFactory elementFactory,
-		ElementMatcherPlanner matcherPlanner)
-	{
-		this.commandClient = commandClient ?? throw new ArgumentNullException(nameof(commandClient));
-		this.visualTreeClient = visualTreeClient ?? throw new ArgumentNullException(nameof(visualTreeClient));
-		this.elementFactory = elementFactory ?? throw new ArgumentNullException(nameof(elementFactory));
-		this.matcherPlanner = matcherPlanner ?? throw new ArgumentNullException(nameof(matcherPlanner));
-	}
+	private readonly DriverCommandClient commandClient = commandClient ?? throw new ArgumentNullException(nameof(commandClient));
+	private readonly VisualTreeClient visualTreeClient = visualTreeClient ?? throw new ArgumentNullException(nameof(visualTreeClient));
+	private readonly ElementFactory elementFactory = elementFactory ?? throw new ArgumentNullException(nameof(elementFactory));
+	private readonly ElementMatcherPlanner matcherPlanner = matcherPlanner ?? throw new ArgumentNullException(nameof(matcherPlanner));
 
 	public IReadOnlyList<Element> FindBySelector(ElementSelector selector, int maxMatches)
 	{

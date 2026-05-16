@@ -4,6 +4,7 @@ using System;
 using System.Linq.Expressions;
 using System.Threading;
 using DeepFlowTest.Assert.TestFrameworks;
+using DeepFlowTest.Contracts;
 
 public sealed class Assertable
 {
@@ -19,7 +20,7 @@ public sealed class Assertable
 
 	public Element Value { get; }
 
-	public Assertable IsTrue(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs = 5_000)
+	public Assertable IsTrue(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs = TimeoutDefaults.AssertionTimeoutMs)
 	{
 		_ = predicateExpression ?? throw new ArgumentNullException(nameof(predicateExpression));
 
@@ -39,7 +40,7 @@ public sealed class Assertable
 			}
 
 			if (DateTime.UtcNow < deadline)
-				Thread.Sleep(Math.Min(100, Math.Max(1, timeoutMs)));
+				Thread.Sleep(Math.Min(TimeoutDefaults.AssertionPollDelayMs, Math.Max(1, timeoutMs)));
 		}
 		while (DateTime.UtcNow < deadline);
 

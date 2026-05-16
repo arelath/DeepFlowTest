@@ -54,8 +54,8 @@ public sealed class VisualTreeResponseReader
 			if (!duplicateCheck.Add(node.TargetId))
 				throw new CliException(CliErrorCodes.ProtocolError, $"Visual tree response contained duplicate target ID '{node.TargetId}'.");
 
-			node.ChildIds ??= new List<string>();
-			node.Properties ??= new Dictionary<string, object?>();
+			node.ChildIds ??= [];
+			node.Properties ??= [];
 		}
 
 		var byParent = snapshot.Nodes

@@ -13,9 +13,9 @@ public sealed class CliDefaultsTests
 	{
 		var defaults = new CliDefaults();
 
-		Assert.That(defaults.TimeoutMs, Is.EqualTo(10_000));
+		Assert.That(defaults.TimeoutMs, Is.EqualTo(TimeoutDefaults.CliCommandTimeoutMs));
 		Assert.That(defaults.SchemaVersion, Is.EqualTo(1));
-		Assert.That(defaults.Common.TimeoutMs, Is.EqualTo(10_000));
+		Assert.That(defaults.Common.TimeoutMs, Is.EqualTo(TimeoutDefaults.CliCommandTimeoutMs));
 		Assert.That(defaults.Commands.Tree.Shape, Is.EqualTo(TreeShape.Flat));
 		Assert.That(defaults.OutputFormat, Is.EqualTo("json"));
 		Assert.That(defaults.HideEmpty, Is.True);
@@ -24,22 +24,13 @@ public sealed class CliDefaultsTests
 		Assert.That(defaults.TreeShape, Is.EqualTo("flat"));
 		Assert.That(defaults.TreeMaxDepth, Is.EqualTo(-1));
 		Assert.That(defaults.TreeLimit, Is.EqualTo(1000));
-		Assert.That(defaults.PropertyNames, Is.EquivalentTo(new[]
-		{
-			"Name",
-			"AutomationProperties.Name",
-			"AutomationProperties.AutomationId",
-			"Text",
-			"Content",
-			"IsVisible",
-			"IsEnabled",
-		}));
+		Assert.That(defaults.PropertyNames, Is.EquivalentTo(KnownProperties.DefaultVisualTreePropertyNames));
 		Assert.That(defaults.FindLimit, Is.EqualTo(50));
-		Assert.That(defaults.WaitIntervalMs, Is.EqualTo(250));
+		Assert.That(defaults.WaitIntervalMs, Is.EqualTo(TimeoutDefaults.CliWaitIntervalMs));
 		Assert.That(defaults.WaitMatchCount, Is.EqualTo(1));
-		Assert.That(defaults.StreamIntervalMs, Is.EqualTo(1000));
+		Assert.That(defaults.StreamIntervalMs, Is.EqualTo(TimeoutDefaults.StreamIntervalMs));
 		Assert.That(defaults.ScreenshotFormat, Is.EqualTo("png"));
-		Assert.That(defaults.KeyDelayMs, Is.EqualTo(50));
+		Assert.That(defaults.KeyDelayMs, Is.EqualTo(TimeoutDefaults.KeyboardDelayMs));
 		Assert.That(defaults.EnsureForeground, Is.True);
 	}
 
@@ -103,7 +94,7 @@ public sealed class CliDefaultsTests
 		Assert.That(clear.ExitCode, Is.EqualTo(0));
 		Assert.That(reset.ExitCode, Is.EqualTo(0));
 		Assert.That(File.Exists(path), Is.True);
-		Assert.That(store.Load().TimeoutMs, Is.EqualTo(10_000));
+		Assert.That(store.Load().TimeoutMs, Is.EqualTo(TimeoutDefaults.CliCommandTimeoutMs));
 	}
 
 	[Test]
@@ -143,7 +134,7 @@ public sealed class CliDefaultsTests
 		var result = CliTestHost.Run(new[] { "config", "set", "commands.stream.props", "[\"Name\",\"Text\"]", "--json" }, services);
 
 		Assert.That(result.ExitCode, Is.EqualTo(0));
-		Assert.That(store.Load().Commands.Stream.Props, Is.EqualTo(new[] { "Name", "Text" }));
+		Assert.That(store.Load().Commands.Stream.Props, Is.EqualTo(new[] { KnownProperties.Name, KnownProperties.Text }));
 		Assert.That(File.ReadAllText(path), Does.Contain("\"commands\""));
 		Assert.That(File.ReadAllText(path), Does.Contain("\"stream\""));
 	}

@@ -2,6 +2,7 @@ namespace DeepFlowTest.Cli;
 
 using System;
 using System.Collections.Generic;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
 public sealed class SelectorSuggestionService
@@ -16,11 +17,11 @@ public sealed class SelectorSuggestionService
 
 	public SelectorSuggestionData Suggest(VisualTreeNodeDto node, bool useShortIds)
 	{
-		var suggestions = new List<SelectorSuggestion>();
-		AddPropertySuggestion(suggestions, node, "AutomationProperties.AutomationId", "--automation-id", 0.98, "Automation ID is usually the most stable selector.");
-		AddPropertySuggestion(suggestions, node, "AutomationProperties.Name", "--name", 0.90, "Automation name is intended for UI automation.");
-		AddPropertySuggestion(suggestions, node, "Name", "--name", 0.85, "WPF Name is useful when automation ID is absent.");
-		AddPropertySuggestion(suggestions, node, "Uid", "--property", 0.80, "WPF Uid can be stable in localized apps.");
+		List<SelectorSuggestion> suggestions = [];
+		AddPropertySuggestion(suggestions, node, KnownProperties.AutomationId, "--automation-id", 0.98, "Automation ID is usually the most stable selector.");
+		AddPropertySuggestion(suggestions, node, KnownProperties.AutomationName, "--name", 0.90, "Automation name is intended for UI automation.");
+		AddPropertySuggestion(suggestions, node, KnownProperties.Name, "--name", 0.85, "WPF Name is useful when automation ID is absent.");
+		AddPropertySuggestion(suggestions, node, KnownProperties.Uid, "--property", 0.80, "WPF Uid can be stable in localized apps.");
 		AddFirstTextSuggestion(suggestions, node);
 
 		suggestions.Add(new SelectorSuggestion
@@ -78,7 +79,7 @@ public sealed class SelectorSuggestionService
 
 	private static void AddFirstTextSuggestion(List<SelectorSuggestion> suggestions, VisualTreeNodeDto node)
 	{
-		foreach (var property in new[] { "Text", "Content", "Header", "Title" })
+		foreach (var property in KnownProperties.TextualIdentityPropertyNames)
 		{
 			if (!node.Properties.TryGetValue(property, out var value) || value is null)
 				continue;
@@ -108,7 +109,7 @@ public sealed class SelectorSuggestionData
 
 	public string? ShortId { get; set; }
 
-	public IReadOnlyList<SelectorSuggestion> Suggestions { get; set; } = Array.Empty<SelectorSuggestion>();
+	public IReadOnlyList<SelectorSuggestion> Suggestions { get; set; } = [];
 }
 
 public sealed class SelectorSuggestion

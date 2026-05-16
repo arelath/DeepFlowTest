@@ -3,17 +3,19 @@ namespace DeepFlowTest;
 using System;
 using DeepFlowTest.Contracts;
 
-internal sealed class DriverCommandClient
+internal sealed class DriverCommandClient(IAppDriverCommandSession session, Action? afterSuccessfulCommand = null)
 {
-	private readonly IAppDriverCommandSession session;
+	private readonly IAppDriverCommandSession session = session ?? throw new ArgumentNullException(nameof(session));
+	private readonly Action? afterSuccessfulCommand = afterSuccessfulCommand;
 
-	public DriverCommandClient(IAppDriverCommandSession session)
+	public TResponse Send<TResponse>(IpcCommand command)
 	{
-		this.session = session ?? throw new ArgumentNullException(nameof(session));
-	}
+		var response = session.Send<TResponse>(command);
+		if (!IsFailure(response, out _, out _))
+			afterSuccessfulCommand?.Invoke();
 
-	public TResponse Send<TResponse>(IpcCommand command) =>
-		session.Send<TResponse>(command);
+		return response;
+	}
 
 	public static bool IsFailure<TResponse>(TResponse response, string errorCode) =>
 		IsFailure(response, out var actualErrorCode, out _) &&

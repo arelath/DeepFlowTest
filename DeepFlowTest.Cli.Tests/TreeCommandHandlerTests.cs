@@ -18,7 +18,7 @@ public sealed class TreeCommandHandlerTests
 		Assert.That(result.ExitCode, Is.EqualTo(0));
 		Assert.That(result.Stdout, Does.Contain("\"shape\":\"flat\""));
 		Assert.That(result.Stdout, Does.Contain("SubmitButton"));
-		Assert.That(session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().PropNames, Does.Contain("IsVisible"));
+		Assert.That(session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().PropNames, Does.Contain(KnownProperties.IsVisible));
 	}
 
 	[Test]
@@ -60,6 +60,6 @@ public sealed class TreeCommandHandlerTests
 		Assert.That(result.Stdout, Does.Not.Contain("root-0001"));
 		Assert.That(result.Stdout, Does.Contain("\"typeName\":\"Button\""));
 		Assert.That(result.Stdout, Does.Not.Contain("SubmitButton"));
-		Assert.That(session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().PropNames, Is.EqualTo(new[] { "IsVisible" }));
+		Assert.That(session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().PropNames, Is.EqualTo(new[] { KnownProperties.IsVisible }));
 	}
 }

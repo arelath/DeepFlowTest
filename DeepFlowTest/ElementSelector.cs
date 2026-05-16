@@ -57,7 +57,7 @@ public sealed class ElementSelector
 
 	public ElementSelector WithRequestedProperties(params string[] propertyNames)
 	{
-		RequestedPropertyNames = propertyNames ?? Array.Empty<string>();
+		RequestedPropertyNames = propertyNames ?? [];
 		return this;
 	}
 

@@ -114,7 +114,7 @@ internal sealed class RuntimeEvidence
 	public int Priority { get; }
 }
 
-internal sealed class ModuleEvidence
+internal sealed record class ModuleEvidence
 {
 	public ModuleEvidence(string moduleName, string filePath = "", string productVersion = "")
 	{

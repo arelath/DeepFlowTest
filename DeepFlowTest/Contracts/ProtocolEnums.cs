@@ -16,6 +16,14 @@ public enum MouseButtonKind
 	Middle,
 }
 
+public enum BindingFailureSeverity
+{
+	Verbose,
+	Information,
+	Warning,
+	Error,
+}
+
 public static class ProtocolValueMapper
 {
 	public static string FormatImageFormat(ImageFormat format) =>
@@ -133,8 +141,52 @@ public static class ProtocolValueMapper
 			ImageFormat imageFormat => FormatImageFormat(imageFormat),
 			MouseButtonKind mouseButton => FormatMouseButton(mouseButton),
 			TreeShape treeShape => FormatTreeShape(treeShape),
+			BindingFailureSeverity severity => FormatBindingFailureSeverity(severity),
 			_ => value,
 		};
+
+	public static string FormatBindingFailureSeverity(BindingFailureSeverity severity) =>
+		severity switch
+		{
+			BindingFailureSeverity.Verbose => "verbose",
+			BindingFailureSeverity.Information => "information",
+			BindingFailureSeverity.Warning => "warning",
+			BindingFailureSeverity.Error => "error",
+			_ => throw new FormatException($"Unsupported binding failure severity '{severity}'."),
+		};
+
+	public static BindingFailureSeverity ParseBindingFailureSeverity(string? severity)
+	{
+		if (TryParseBindingFailureSeverity(severity, out var bindingFailureSeverity))
+			return bindingFailureSeverity;
+
+		throw new FormatException($"Unsupported binding failure severity '{severity}'.");
+	}
+
+	public static bool TryParseBindingFailureSeverity(string? severity, out BindingFailureSeverity bindingFailureSeverity)
+	{
+		switch ((severity ?? "warning").Trim().ToLowerInvariant())
+		{
+			case "verbose":
+				bindingFailureSeverity = BindingFailureSeverity.Verbose;
+				return true;
+			case "info":
+			case "information":
+				bindingFailureSeverity = BindingFailureSeverity.Information;
+				return true;
+			case "warn":
+			case "warning":
+				bindingFailureSeverity = BindingFailureSeverity.Warning;
+				return true;
+			case "err":
+			case "error":
+				bindingFailureSeverity = BindingFailureSeverity.Error;
+				return true;
+			default:
+				bindingFailureSeverity = default;
+				return false;
+		}
+	}
 }
 
 public sealed class ProtocolImageFormatJsonConverter : JsonConverter
@@ -188,5 +240,32 @@ public sealed class ProtocolMouseButtonJsonConverter : JsonConverter
 		}
 
 		writer.WriteValue(ProtocolValueMapper.FormatMouseButton((MouseButtonKind)value));
+	}
+}
+
+public sealed class ProtocolBindingFailureSeverityJsonConverter : JsonConverter
+{
+	public override bool CanConvert(Type objectType) =>
+		(Nullable.GetUnderlyingType(objectType) ?? objectType) == typeof(BindingFailureSeverity);
+
+	public override object? ReadJson(JsonReader reader, Type objectType, object? existingValue, JsonSerializer serializer)
+	{
+		if (reader.TokenType == JsonToken.Null && Nullable.GetUnderlyingType(objectType) is not null)
+			return null;
+		if (reader.TokenType == JsonToken.String)
+			return ProtocolValueMapper.ParseBindingFailureSeverity((string?)reader.Value);
+
+		throw new JsonSerializationException("Binding failure severity must be a protocol string.");
+	}
+
+	public override void WriteJson(JsonWriter writer, object? value, JsonSerializer serializer)
+	{
+		if (value is null)
+		{
+			writer.WriteNull();
+			return;
+		}
+
+		writer.WriteValue(ProtocolValueMapper.FormatBindingFailureSeverity((BindingFailureSeverity)value));
 	}
 }

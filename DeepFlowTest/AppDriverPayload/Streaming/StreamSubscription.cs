@@ -8,16 +8,18 @@ using DeepFlowTest.Contracts;
 public abstract class StreamSubscription : IDisposable
 {
 	private readonly CancellationTokenSource cancellation = new();
+	private readonly IDisposable? lifetime;
 	private long sequenceNumber;
 	private bool disposed;
 
-	protected StreamSubscription(string subscriptionId, string streamKind, string? connectionId, int intervalMs, Func<object, bool> send)
+	protected StreamSubscription(string subscriptionId, string streamKind, string? connectionId, int intervalMs, Func<object, bool> send, IDisposable? lifetime = null)
 	{
 		SubscriptionId = string.IsNullOrWhiteSpace(subscriptionId) ? Guid.NewGuid().ToString("N") : subscriptionId;
 		StreamKind = streamKind ?? throw new ArgumentNullException(nameof(streamKind));
 		ConnectionId = connectionId;
-		IntervalMs = Math.Max(50, intervalMs);
+		IntervalMs = Math.Max(TimeoutDefaults.StreamMinimumIntervalMs, intervalMs);
 		Send = send ?? throw new ArgumentNullException(nameof(send));
+		this.lifetime = lifetime;
 	}
 
 	public string SubscriptionId { get; }
@@ -51,6 +53,7 @@ public abstract class StreamSubscription : IDisposable
 
 		disposed = true;
 		cancellation.Cancel();
+		lifetime?.Dispose();
 		cancellation.Dispose();
 	}
 
@@ -107,8 +110,9 @@ public sealed class DelegateStreamSubscription : StreamSubscription
 		string? connectionId,
 		int intervalMs,
 		Func<object, bool> send,
-		Func<long, object> capture)
-		: base(subscriptionId, streamKind, connectionId, intervalMs, send)
+		Func<long, object> capture,
+		IDisposable? lifetime = null)
+		: base(subscriptionId, streamKind, connectionId, intervalMs, send, lifetime)
 	{
 		this.capture = capture ?? throw new ArgumentNullException(nameof(capture));
 	}

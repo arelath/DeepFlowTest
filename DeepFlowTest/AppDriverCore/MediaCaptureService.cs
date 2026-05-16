@@ -8,16 +8,11 @@ using System.Reflection;
 using System.Threading;
 using DeepFlowTest.Contracts;
 
-internal sealed class MediaCaptureService
+internal sealed class MediaCaptureService(DriverCommandClient commandClient)
 {
 	private static readonly object RecordingSync = new();
 	private static IDisposable? activeRecording;
-	private readonly DriverCommandClient commandClient;
-
-	public MediaCaptureService(DriverCommandClient commandClient)
-	{
-		this.commandClient = commandClient ?? throw new ArgumentNullException(nameof(commandClient));
-	}
+	private readonly DriverCommandClient commandClient = commandClient ?? throw new ArgumentNullException(nameof(commandClient));
 
 	public static Func<ProcessStartInfo, IRecordingProcess> RecordingProcessFactory { get; set; } = ProcessRecordingProcess.Start;
 
@@ -96,7 +91,7 @@ internal sealed class MediaCaptureService
 		ScreenshotCommandResponse? previous = null;
 		ScreenshotCommandResponse? current = null;
 
-		while (stopwatch.ElapsedMilliseconds < 5_000)
+		while (stopwatch.ElapsedMilliseconds < TimeoutDefaults.ScreenshotStableTimeoutMs)
 		{
 			current = capture();
 			ThrowIfScreenshotFailed(current, caller);
@@ -104,7 +99,7 @@ internal sealed class MediaCaptureService
 				return current;
 
 			previous = current;
-			Thread.Sleep(500);
+			Thread.Sleep(TimeoutDefaults.ScreenshotStablePollDelayMs);
 		}
 
 		current ??= capture();

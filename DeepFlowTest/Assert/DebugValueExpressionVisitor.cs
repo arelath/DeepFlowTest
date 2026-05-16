@@ -15,11 +15,11 @@ internal sealed class DebugValueExpressionVisitor : ExpressionStringBuilder
 	public static (string Body, IReadOnlyCollection<(string Name, object? Value)> Values) GetDiagnosticString(Expression body, Element element)
 	{
 		var propertyNames = ElementPropertyAccessCollector.Collect(body);
-		var values = new List<(string Name, object? Value)>
-		{
+		List<(string Name, object? Value)> values =
+		[
 			(nameof(Element.TargetId), element.TargetId),
 			(nameof(Element.TypeName), element.TypeName),
-		};
+		];
 
 		if (propertyNames.Count == 0)
 		{

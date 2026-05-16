@@ -152,7 +152,7 @@ public static class AppHooks
 
 	private static IReadOnlyList<MethodInfo> GetCandidateMethods(Type type, string methodName, BindingFlags bindingFlags, object?[] args)
 	{
-		var methods = new List<MethodInfo>();
+		List<MethodInfo> methods = [];
 		foreach (var method in type.GetMethods(bindingFlags))
 		{
 			if (method.Name != methodName || !ParametersMatch(method.GetParameters(), args))
@@ -243,10 +243,13 @@ public static class AppHooks
 	[HarmonyPatch(typeof(ButtonBase), "UpdateIsPressed")]
 	public static class PatchButtonUpdateIsPressed
 	{
+		private static readonly PropertyInfo? IsPressedProperty = typeof(ButtonBase).GetProperty("IsPressed", InvokeAllBindings);
+		private static readonly MethodInfo? SetIsPressedMethod = GetBestMatchingMethod(typeof(ButtonBase), "SetIsPressed", false);
+
 		public static bool Prefix(ButtonBase __instance)
 		{
-			var isPressed = (bool)(typeof(ButtonBase).GetProperty("IsPressed", InvokeAllBindings)?.GetValue(__instance) ?? false);
-			InvokeBestMatch(typeof(ButtonBase), __instance, "SetIsPressed", !isPressed);
+			var isPressed = (bool)(IsPressedProperty?.GetValue(__instance) ?? false);
+			SetIsPressedMethod?.Invoke(__instance, new object[] { !isPressed });
 			return false;
 		}
 	}
@@ -264,13 +267,16 @@ public static class AppHooks
 	[HarmonyPatch(typeof(MenuItem), "HandleMouseDown")]
 	public static class PatchMenuItemHandleMouseDown
 	{
+		private static readonly PropertyInfo? RoleProperty = typeof(MenuItem).GetProperty("Role", InvokeAllBindings);
+		private static readonly MethodInfo? ClickHeaderMethod = GetBestMatchingMethod(typeof(MenuItem), "ClickHeader");
+
 		public static bool Prefix(MenuItem __instance, object[] __args)
 		{
 			if (__args.Length > 0 && __args[0] is MouseButtonEventArgs args)
 			{
-				var role = (MenuItemRole)(typeof(MenuItem).GetProperty("Role", InvokeAllBindings)?.GetValue(__instance) ?? MenuItemRole.TopLevelItem);
+				var role = (MenuItemRole)(RoleProperty?.GetValue(__instance) ?? MenuItemRole.TopLevelItem);
 				if (role is MenuItemRole.TopLevelHeader or MenuItemRole.SubmenuHeader)
-					InvokeBestMatch(typeof(MenuItem), __instance, "ClickHeader");
+					ClickHeaderMethod?.Invoke(__instance, []);
 
 				args.Handled = true;
 			}
@@ -282,13 +288,16 @@ public static class AppHooks
 	[HarmonyPatch(typeof(MenuItem), "HandleMouseUp")]
 	public static class PatchMenuItemHandleMouseUp
 	{
+		private static readonly PropertyInfo? RoleProperty = typeof(MenuItem).GetProperty("Role", InvokeAllBindings);
+		private static readonly MethodInfo? ClickItemMethod = GetBestMatchingMethod(typeof(MenuItem), "ClickItem", true);
+
 		public static bool Prefix(MenuItem __instance, object[] __args)
 		{
 			if (__args.Length > 0 && __args[0] is MouseButtonEventArgs args)
 			{
-				var role = (MenuItemRole)(typeof(MenuItem).GetProperty("Role", InvokeAllBindings)?.GetValue(__instance) ?? MenuItemRole.TopLevelItem);
+				var role = (MenuItemRole)(RoleProperty?.GetValue(__instance) ?? MenuItemRole.TopLevelItem);
 				if (role is MenuItemRole.TopLevelItem or MenuItemRole.SubmenuItem)
-					InvokeBestMatch(typeof(MenuItem), __instance, "ClickItem", true);
+					ClickItemMethod?.Invoke(__instance, new object[] { true });
 
 				if (args.ChangedButton != MouseButton.Right)
 					args.Handled = true;
@@ -301,16 +310,20 @@ public static class AppHooks
 	[HarmonyPatch(typeof(MenuItem), "UpdateIsPressed")]
 	public static class PatchMenuItemUpdateIsPressed
 	{
+		private static readonly PropertyInfo? IsPressedProperty = typeof(MenuItem).GetProperty("IsPressed", InvokeAllBindings);
+		private static readonly FieldInfo? IsPressedPropertyKeyField = typeof(MenuItem).GetField("IsPressedPropertyKey", BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+		private static readonly MethodInfo? ClearValueMethod = typeof(MenuItem).GetMethod("ClearValue", InvokeAllBindings, null, new[] { typeof(DependencyPropertyKey) }, null);
+
 		public static bool Prefix(MenuItem __instance)
 		{
 			if (Mouse.LeftButton == MouseButtonState.Pressed)
 			{
-				typeof(MenuItem).GetProperty("IsPressed", InvokeAllBindings)?.SetValue(__instance, true);
+				IsPressedProperty?.SetValue(__instance, true);
 				return false;
 			}
 
-			if (typeof(MenuItem).GetField("IsPressedPropertyKey", BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy)?.GetValue(null) is DependencyPropertyKey propertyKey)
-				InvokeBestMatch(typeof(MenuItem), __instance, "ClearValue", propertyKey);
+			if (IsPressedPropertyKeyField?.GetValue(null) is DependencyPropertyKey propertyKey)
+				ClearValueMethod?.Invoke(__instance, new object[] { propertyKey });
 
 			return false;
 		}
@@ -319,9 +332,11 @@ public static class AppHooks
 	[HarmonyPatch(typeof(RibbonMenuItem), "UpdateIsPressed")]
 	public static class PatchRibbonMenuItemUpdateIsPressed
 	{
+		private static readonly PropertyInfo? IsPressedProperty = typeof(RibbonMenuItem).GetProperty("IsPressed", InvokeAllBindings);
+
 		public static bool Prefix(RibbonMenuItem __instance)
 		{
-			typeof(RibbonMenuItem).GetProperty("IsPressed", InvokeAllBindings)?.SetValue(__instance, Mouse.LeftButton == MouseButtonState.Pressed);
+			IsPressedProperty?.SetValue(__instance, Mouse.LeftButton == MouseButtonState.Pressed);
 			return false;
 		}
 	}
@@ -379,4 +394,10 @@ public static class AppHooks
 	}
 
 	private const BindingFlags InvokeAllBindings = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;
+
+	private static MethodInfo? GetBestMatchingMethod(Type type, string methodName, params object?[] args)
+	{
+		var methods = GetCandidateMethods(type, methodName, InvokeAllBindings, args);
+		return methods.Count == 0 ? null : methods[0];
+	}
 }

@@ -14,7 +14,7 @@ public sealed class CliResponseEnvelope
 
 	public CliError? Error { get; set; }
 
-	public Dictionary<string, object?> Diagnostics { get; set; } = new();
+	public Dictionary<string, object?> Diagnostics { get; set; } = [];
 
 	public long DurationMs { get; set; }
 }
@@ -40,7 +40,7 @@ public static class CliResponseFactory
 			Ok = true,
 			Command = command,
 			Data = data,
-			Diagnostics = diagnostics ?? new Dictionary<string, object?>(),
+			Diagnostics = diagnostics ?? [],
 			DurationMs = stopwatch.ElapsedMilliseconds,
 		};
 
@@ -61,7 +61,7 @@ public static class CliResponseFactory
 				Message = message,
 				Details = details,
 			},
-			Diagnostics = diagnostics ?? new Dictionary<string, object?>(),
+			Diagnostics = diagnostics ?? [],
 			DurationMs = stopwatch.ElapsedMilliseconds,
 		};
 }

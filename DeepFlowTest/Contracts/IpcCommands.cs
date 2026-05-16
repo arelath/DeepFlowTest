@@ -88,6 +88,26 @@ public sealed record class GetVisualTreeCommandRequest : IpcCommand
 	public int? MaxNodeCount { get; set; }
 }
 
+public sealed record class GetBindingFailuresCommandRequest : IpcCommand
+{
+	public GetBindingFailuresCommandRequest()
+		: base(ProtocolConstants.Commands.GetBindingFailures)
+	{
+	}
+
+	public GetBindingFailuresCommandRequest(long? afterSequenceNumber, int maxCount = 1000, int? timeoutMs = null)
+		: this()
+	{
+		AfterSequenceNumber = afterSequenceNumber;
+		MaxCount = maxCount;
+		TimeoutMs = timeoutMs;
+	}
+
+	public long? AfterSequenceNumber { get; set; }
+
+	public int MaxCount { get; set; } = 1000;
+}
+
 public sealed record class FindElementCommandRequest : IpcCommand
 {
 	public FindElementCommandRequest()
@@ -251,7 +271,7 @@ public sealed record class KeyPressCommandRequest : IpcCommand
 	{
 	}
 
-	public KeyPressCommandRequest(object? keys, int delayMs = 50, int? timeoutMs = null)
+	public KeyPressCommandRequest(object? keys, int delayMs = TimeoutDefaults.KeyboardDelayMs, int? timeoutMs = null)
 		: this()
 	{
 		Keys = keys;
@@ -263,7 +283,7 @@ public sealed record class KeyPressCommandRequest : IpcCommand
 
 	public string? TargetId { get; set; }
 
-	public int DelayMs { get; set; } = 50;
+	public int DelayMs { get; set; } = TimeoutDefaults.KeyboardDelayMs;
 
 	public bool EnsureForeground { get; set; } = true;
 }
@@ -365,7 +385,7 @@ public sealed record class StartSendingCommandRequest : IpcCommand
 
 	public StartSendingCommandRequest(
 		string streamKind,
-		int intervalMs = 1000,
+		int intervalMs = TimeoutDefaults.StreamIntervalMs,
 		IReadOnlyList<string>? propNames = null,
 		string format = "png",
 		string? targetId = null,
@@ -393,7 +413,7 @@ public sealed record class StartSendingCommandRequest : IpcCommand
 
 	public string StreamKind { get; set; } = ProtocolConstants.StreamKinds.VisualTree;
 
-	public int IntervalMs { get; set; } = 1000;
+	public int IntervalMs { get; set; } = TimeoutDefaults.StreamIntervalMs;
 
 	public IReadOnlyList<string>? PropNames { get; set; }
 

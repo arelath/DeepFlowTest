@@ -48,6 +48,8 @@ internal sealed class CliCommandActions
 
 	public Func<int> StreamEventLog { get; init; } = NoAction;
 
+	public Func<int> StreamBindingFailures { get; init; } = NoAction;
+
 	public Func<int> Click { get; init; } = NoAction;
 
 	public Func<int> Focus { get; init; } = NoAction;

@@ -85,7 +85,7 @@ internal static class FindElementCommand
 		IReadOnlyDictionary<string, string?>? parentIdsByTargetId,
 		int maxMatches)
 	{
-		var matches = new List<FindElementMatchResponse>();
+		List<FindElementMatchResponse> matches = [];
 		var seenTargetIds = new HashSet<string>(StringComparer.Ordinal);
 		var rootIdSet = rootIds as ISet<string> ?? new HashSet<string>(rootIds, StringComparer.Ordinal);
 		foreach (var node in initialSnapshot.Nodes)
@@ -160,7 +160,7 @@ internal static class FindElementCommand
 	private static List<ElementPathSegmentResponse> BuildPath(VisualTreeNodeDto node, VisualTreeSnapshot snapshot)
 	{
 		var byId = BuildNodeLookup(snapshot.Nodes);
-		var path = new List<ElementPathSegmentResponse>();
+		List<ElementPathSegmentResponse> path = [];
 		var seenTargetIds = new HashSet<string>(StringComparer.Ordinal);
 		var current = node;
 		while (true)
@@ -261,13 +261,13 @@ internal static class FindElementCommand
 		if (request.Selector is not null)
 		{
 			if (!string.IsNullOrWhiteSpace(request.Selector.Name))
-				names.Add("Name");
+				names.Add(KnownProperties.Name);
 			if (!string.IsNullOrWhiteSpace(request.Selector.AutomationId))
-				names.Add("AutomationProperties.AutomationId");
+				names.Add(KnownProperties.AutomationId);
 			if (!string.IsNullOrWhiteSpace(request.Selector.Text))
-				names.Add("Text");
+				names.Add(KnownProperties.Text);
 			if (!string.IsNullOrWhiteSpace(request.Selector.Content))
-				names.Add("Content");
+				names.Add(KnownProperties.Content);
 
 			foreach (var propertyName in request.Selector.Properties.Keys)
 				names.Add(propertyName);
@@ -285,20 +285,20 @@ internal static class FindElementCommand
 		if (!string.IsNullOrWhiteSpace(typeName) && !MatchesType(node, typeName!))
 			return false;
 
-		if (!string.IsNullOrWhiteSpace(selector.Name) && !PropertyEquals(node, "Name", selector.Name))
+		if (!string.IsNullOrWhiteSpace(selector.Name) && !PropertyEquals(node, KnownProperties.Name, selector.Name))
 			return false;
 
 		if (!string.IsNullOrWhiteSpace(selector.AutomationId)
-			&& !PropertyEquals(node, "AutomationProperties.AutomationId", selector.AutomationId)
-			&& !PropertyEquals(node, "AutomationId", selector.AutomationId))
+			&& !PropertyEquals(node, KnownProperties.AutomationId, selector.AutomationId)
+			&& !PropertyEquals(node, KnownProperties.AutomationIdAlias, selector.AutomationId))
 		{
 			return false;
 		}
 
-		if (!string.IsNullOrWhiteSpace(selector.Text) && !PropertyEquals(node, "Text", selector.Text))
+		if (!string.IsNullOrWhiteSpace(selector.Text) && !PropertyEquals(node, KnownProperties.Text, selector.Text))
 			return false;
 
-		if (!string.IsNullOrWhiteSpace(selector.Content) && !PropertyEquals(node, "Content", selector.Content))
+		if (!string.IsNullOrWhiteSpace(selector.Content) && !PropertyEquals(node, KnownProperties.Content, selector.Content))
 			return false;
 
 		foreach (var property in selector.Properties)

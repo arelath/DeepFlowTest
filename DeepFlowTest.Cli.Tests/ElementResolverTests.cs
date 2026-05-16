@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Cli.Tests;
 
 using System.Collections.Generic;
+using DeepFlowTest.Contracts;
 using NUnit.Framework;
 
 [TestFixture]
@@ -26,7 +27,7 @@ public sealed class ElementResolverTests
 		Assert.That(resolver.Resolve(snapshot, new ElementSelector { Name = "button-0002" }).TargetId, Is.EqualTo("button-0002"));
 		Assert.That(resolver.Resolve(snapshot, new ElementSelector { AutomationId = "SubmitButton" }).TargetId, Is.EqualTo("button-0002"));
 		Assert.That(resolver.Resolve(snapshot, new ElementSelector { Text = "Submit" }).TargetId, Is.EqualTo("button-0002"));
-		Assert.That(resolver.Resolve(snapshot, new ElementSelector { PropertyContains = new KeyValuePair<string, string>("Text", "Sub") }).TargetId, Is.EqualTo("button-0002"));
+		Assert.That(resolver.Resolve(snapshot, new ElementSelector { PropertyContains = new KeyValuePair<string, string>(KnownProperties.Text, "Sub") }).TargetId, Is.EqualTo("button-0002"));
 	}
 
 	[Test]
@@ -55,7 +56,7 @@ public sealed class ElementResolverTests
 			() => resolver.Resolve(CliReadServiceTests.Snapshot(CliReadServiceTests.Node("a", isRoot: true, type: "Button"), CliReadServiceTests.Node("b", isRoot: true, type: "Button")), new ElementSelector { TypeName = "Button" }),
 			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.AmbiguousTarget));
 		Assert.That(
-			() => resolver.Resolve(snapshot, new ElementSelector { PropertyRegex = new KeyValuePair<string, string>("Text", "[") }),
+			() => resolver.Resolve(snapshot, new ElementSelector { PropertyRegex = new KeyValuePair<string, string>(KnownProperties.Text, "[") }),
 			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
 	}
 

@@ -53,7 +53,7 @@ public sealed partial class TreeService
 	private VisualTreeSnapshot CaptureSnapshotCore(TreeSnapshotOptions options)
 	{
 		var roots = ResolveRoots(options);
-		var nodes = new List<VisualTreeNodeDto>();
+		List<VisualTreeNodeDto> nodes = [];
 		var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
 		var requestedProperties = options.RequestedPropertyNames ?? VisualTreePropertyExtractor.DefaultPropertyNames;
 		var isTruncated = false;
@@ -103,7 +103,7 @@ public sealed partial class TreeService
 		if (rootProvider is not null)
 			return rootProvider();
 
-		var roots = new List<object>();
+		List<object> roots = [];
 		var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
 
 		void AddRoot(object? root)
@@ -380,7 +380,7 @@ public sealed partial class TreeService
 		if (hwnd == IntPtr.Zero)
 			yield break;
 
-		var children = new List<IntPtr>();
+		List<IntPtr> children = [];
 		NativeMethods.EnumChildWindows(hwnd, (child, _) =>
 		{
 			children.Add(child);
@@ -394,7 +394,7 @@ public sealed partial class TreeService
 	private static IEnumerable<IntPtr> EnumerateProcessTopLevelWindows()
 	{
 		var processId = Process.GetCurrentProcess().Id;
-		var windows = new List<IntPtr>();
+		List<IntPtr> windows = [];
 		NativeMethods.EnumWindows((hwnd, _) =>
 		{
 			NativeMethods.GetWindowThreadProcessId(hwnd, out var windowProcessId);

@@ -2,7 +2,7 @@ namespace DeepFlowTest.Interop;
 
 using System.Collections.Generic;
 
-public sealed class VisualTreeNodeDto
+public sealed record class VisualTreeNodeDto
 {
 	public string TargetId { get; set; } = string.Empty;
 

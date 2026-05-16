@@ -10,6 +10,7 @@ public static class ProtocolConstants
 	{
 		public const string Click = "ClickCommand";
 		public const string FindElement = "FindElementCommand";
+		public const string GetBindingFailures = "GetBindingFailuresCommand";
 		public const string Focus = "FocusCommand";
 		public const string GetVisualTree = "GetVisualTreeCommand";
 		public const string Hello = "HelloCommand";
@@ -90,6 +91,7 @@ public static class ProtocolConstants
 
 	public static class StreamKinds
 	{
+		public const string BindingFailures = "binding-failures";
 		public const string EventLog = "event-log";
 		public const string Screenshot = "screenshot";
 		public const string VisualTree = "visual-tree";

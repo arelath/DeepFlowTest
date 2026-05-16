@@ -12,9 +12,6 @@ using Newtonsoft.Json.Linq;
 
 internal static class AppDriverCommandDispatcher
 {
-	private const int DefaultCommandTimeoutMs = 1000;
-	private const int LargeCommandTimeoutMs = 5000;
-
 	private static readonly TreeService TreeService = new();
 	private static readonly ExpressionCache ExpressionCache = new();
 	private static readonly CommandHandlerRegistry HandlerRegistry = CommandHandlerRegistry.CreateDefault();
@@ -144,7 +141,7 @@ internal static class AppDriverCommandDispatcher
 	internal static async Task<UiThreadRunResult> WaitForShowDialogAsync(int timeoutMs, CancellationToken token)
 	{
 		var start = DateTime.UtcNow;
-		var nativeDialogGraceMs = Math.Min(timeoutMs, 250);
+		var nativeDialogGraceMs = Math.Min(timeoutMs, TimeoutDefaults.PayloadNativeDialogGraceMs);
 		while (!AppHooks.ShowDialogCalled && (DateTime.UtcNow - start).TotalMilliseconds < timeoutMs)
 		{
 			if (token.IsCancellationRequested)
@@ -156,7 +153,7 @@ internal static class AppDriverCommandDispatcher
 				return UiThreadRunResult.Pending;
 			}
 
-			await Task.Delay(50, token).ConfigureAwait(false);
+			await Task.Delay(TimeoutDefaults.PayloadModalPollDelayMs, token).ConfigureAwait(false);
 		}
 
 		return AppHooks.ShowDialogCalled ? UiThreadRunResult.Pending : UiThreadRunResult.Finished;
@@ -227,8 +224,8 @@ internal static class AppDriverCommandDispatcher
 			return timeout.Value;
 
 		return kind == ProtocolConstants.Commands.GetVisualTree || kind == ProtocolConstants.Commands.Screenshot
-			? LargeCommandTimeoutMs
-			: DefaultCommandTimeoutMs;
+			? TimeoutDefaults.PayloadLargeCommandTimeoutMs
+			: TimeoutDefaults.PayloadCommandTimeoutMs;
 	}
 
 	private static int? TryGetIntProperty(object command, string propertyName)

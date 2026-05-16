@@ -30,7 +30,7 @@ public sealed class GetVisualTreeCommandTests
 			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = ["Name", "Content", "Title"],
+				PropNames = [KnownProperties.Name, KnownProperties.Content, KnownProperties.Title],
 				MaxNodeCount = 200,
 			})!;
 
@@ -61,13 +61,13 @@ public sealed class GetVisualTreeCommandTests
 			var response = CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = false,
-				PropNames = ["Name", "Content"],
+				PropNames = [KnownProperties.Name, KnownProperties.Content],
 				MaxNodeCount = 200,
 			});
 
 			Assert.That(response, Is.TypeOf<System.Collections.Generic.List<VisualTreeNodeDto>>());
 			Assert.That(((System.Collections.Generic.List<VisualTreeNodeDto>)response!).Any(node =>
-				node.Properties.TryGetValue("Name", out var name) && Equals(name, "legacyButton")), Is.True);
+				node.Properties.TryGetValue(KnownProperties.Name, out var name) && Equals(name, "legacyButton")), Is.True);
 		}
 		finally
 		{
@@ -88,7 +88,7 @@ public sealed class GetVisualTreeCommandTests
 			var fullSnapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = ["Name", "Content", "Title"],
+				PropNames = [KnownProperties.Name, KnownProperties.Content, KnownProperties.Title],
 				MaxNodeCount = 200,
 			})!;
 			var panelNode = FindByName(fullSnapshot, "limitedRoot")!;
@@ -97,7 +97,7 @@ public sealed class GetVisualTreeCommandTests
 			{
 				AsSnapshot = true,
 				RootTargetId = panelNode.TargetId,
-				PropNames = ["Name", "Content", "Title"],
+				PropNames = [KnownProperties.Name, KnownProperties.Content, KnownProperties.Title],
 				MaxNodeCount = 200,
 			})!;
 
@@ -125,14 +125,14 @@ public sealed class GetVisualTreeCommandTests
 			var depthLimited = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = ["Name"],
+				PropNames = [KnownProperties.Name],
 				MaxDepth = 0,
 				MaxNodeCount = 200,
 			})!;
 			var countLimited = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = ["Name"],
+				PropNames = [KnownProperties.Name],
 				MaxNodeCount = 1,
 			})!;
 
@@ -153,6 +153,6 @@ public sealed class GetVisualTreeCommandTests
 	private static VisualTreeNodeDto? FindByName(VisualTreeSnapshot snapshot, string name)
 	{
 		return snapshot.Nodes.SingleOrDefault(node =>
-			node.Properties.TryGetValue("Name", out var value) && Equals(value, name));
+			node.Properties.TryGetValue(KnownProperties.Name, out var value) && Equals(value, name));
 	}
 }

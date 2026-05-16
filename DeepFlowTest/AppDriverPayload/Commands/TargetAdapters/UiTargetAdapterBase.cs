@@ -46,23 +46,23 @@ internal abstract class UiTargetAdapterBase : IUiTargetAdapter
 					return ActionResult.Ok();
 				break;
 			case "Select":
-				if (TrySetBooleanProperty(target, ["IsSelected"], true) || TryInvokeNoArg(target, "Select"))
+				if (TrySetBooleanProperty(target, [KnownProperties.IsSelected], true) || TryInvokeNoArg(target, "Select"))
 					return ActionResult.Ok();
 				break;
 			case "Expand":
-				if (TrySetBooleanProperty(target, ["IsExpanded"], true) || TryInvokeNoArg(target, "Expand"))
+				if (TrySetBooleanProperty(target, [KnownProperties.IsExpanded], true) || TryInvokeNoArg(target, "Expand"))
 					return ActionResult.Ok();
 				break;
 			case "Collapse":
-				if (TrySetBooleanProperty(target, ["IsExpanded"], false) || TryInvokeNoArg(target, "Collapse"))
+				if (TrySetBooleanProperty(target, [KnownProperties.IsExpanded], false) || TryInvokeNoArg(target, "Collapse"))
 					return ActionResult.Ok();
 				break;
 			case "Check":
-				if (TrySetBooleanProperty(target, ["IsChecked", "Checked"], true) || TryInvokeNoArg(target, "Check"))
+				if (TrySetBooleanProperty(target, [KnownProperties.IsChecked, KnownProperties.Checked], true) || TryInvokeNoArg(target, "Check"))
 					return ActionResult.Ok();
 				break;
 			case "Uncheck":
-				if (TrySetBooleanProperty(target, ["IsChecked", "Checked"], false) || TryInvokeNoArg(target, "Uncheck"))
+				if (TrySetBooleanProperty(target, [KnownProperties.IsChecked, KnownProperties.Checked], false) || TryInvokeNoArg(target, "Uncheck"))
 					return ActionResult.Ok();
 				break;
 		}

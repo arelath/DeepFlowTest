@@ -20,25 +20,20 @@ public sealed class TreeSnapshotOptions
 
 	public bool IncludeTypeNames { get; set; }
 
-	public IReadOnlyList<string> TypeNames { get; set; } = Array.Empty<string>();
+	public IReadOnlyList<string> TypeNames { get; set; } = [];
 
 	public bool IncludePath { get; set; }
 
 	public bool UseShortIds { get; set; } = true;
 
-	public IReadOnlyList<string> Properties { get; set; } = Array.Empty<string>();
+	public IReadOnlyList<string> Properties { get; set; } = [];
 
 	public bool SuppressProperties { get; set; }
 }
 
-public sealed class TreeSnapshotService
+public sealed class TreeSnapshotService(CliTargetIdService? targetIds = null)
 {
-	private readonly CliTargetIdService targetIds;
-
-	public TreeSnapshotService(CliTargetIdService? targetIds = null)
-	{
-		this.targetIds = targetIds ?? new CliTargetIdService();
-	}
+	private readonly CliTargetIdService targetIds = targetIds ?? new CliTargetIdService();
 
 	public TreeSnapshotData Shape(VisualTreeSnapshot snapshot, TreeSnapshotOptions options)
 	{
@@ -86,7 +81,7 @@ public sealed class TreeSnapshotService
 			Roots = shape == TreeShape.Nested
 				? BuildNested(nodeOutputs)
 				: nodeOutputs.Where(static node => node.ParentId is null).ToList(),
-			Nodes = shape == TreeShape.Flat ? nodeOutputs : Array.Empty<TreeNodeData>(),
+			Nodes = shape == TreeShape.Flat ? nodeOutputs : [],
 		};
 	}
 
@@ -109,7 +104,7 @@ public sealed class TreeSnapshotService
 
 	private static List<TreeNodeTraversalItem> Flatten(VisualTreeSnapshot snapshot, SnapshotRelationships relationships, IReadOnlyList<string> rootIds)
 	{
-		var result = new List<TreeNodeTraversalItem>();
+		List<TreeNodeTraversalItem> result = [];
 		foreach (var rootId in rootIds)
 			Visit(rootId, 0);
 
@@ -138,7 +133,7 @@ public sealed class TreeSnapshotService
 			TargetId = node.TargetId,
 			ShortId = options.UseShortIds ? targetIds.GetShortId(node.TargetId) : null,
 			ParentId = relationships.ParentIds.TryGetValue(node.TargetId, out var parentId) ? parentId : null,
-			ChildIds = relationships.ChildIds.TryGetValue(node.TargetId, out var childIds) ? childIds : Array.Empty<string>(),
+			ChildIds = relationships.ChildIds.TryGetValue(node.TargetId, out var childIds) ? childIds : [],
 			Depth = depth,
 			SiblingIndex = relationships.SourceRelationships.SiblingIndexOf(node.TargetId),
 			Path = options.IncludePath ? relationships.SourceRelationships.PathOf(node.TargetId) : null,
@@ -224,7 +219,7 @@ public sealed class TreeSnapshotService
 
 	private static bool IsVisible(VisualTreeNodeDto node)
 	{
-		if (!node.Properties.TryGetValue("IsVisible", out var value) || value is null)
+		if (!node.Properties.TryGetValue(KnownProperties.IsVisible, out var value) || value is null)
 			return true;
 
 		if (value is bool visible)
@@ -253,11 +248,11 @@ public sealed class TreeSnapshotData
 
 	public string? TruncationReason { get; set; }
 
-	public IReadOnlyList<string> RequestedProperties { get; set; } = Array.Empty<string>();
+	public IReadOnlyList<string> RequestedProperties { get; set; } = [];
 
-	public IReadOnlyList<TreeNodeData> Roots { get; set; } = Array.Empty<TreeNodeData>();
+	public IReadOnlyList<TreeNodeData> Roots { get; set; } = [];
 
-	public IReadOnlyList<TreeNodeData> Nodes { get; set; } = Array.Empty<TreeNodeData>();
+	public IReadOnlyList<TreeNodeData> Nodes { get; set; } = [];
 }
 
 public sealed class TreeNodeData
@@ -268,7 +263,7 @@ public sealed class TreeNodeData
 
 	public string? ParentId { get; set; }
 
-	public IReadOnlyList<string> ChildIds { get; set; } = Array.Empty<string>();
+	public IReadOnlyList<string> ChildIds { get; set; } = [];
 
 	public int Depth { get; set; }
 
@@ -282,7 +277,7 @@ public sealed class TreeNodeData
 
 	public Dictionary<string, object?> Properties { get; set; } = new(StringComparer.Ordinal);
 
-	public IReadOnlyList<TreeNodeData> Children { get; set; } = Array.Empty<TreeNodeData>();
+	public IReadOnlyList<TreeNodeData> Children { get; set; } = [];
 }
 
 internal sealed class SnapshotRelationships

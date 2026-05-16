@@ -13,19 +13,11 @@ using System.Windows.Data;
 using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using DeepFlowTest.Contracts;
 
 public sealed class VisualTreePropertyExtractor
 {
-	public static readonly IReadOnlyList<string> DefaultPropertyNames = new[]
-	{
-		"Name",
-		"AutomationProperties.Name",
-		"AutomationProperties.AutomationId",
-		"Text",
-		"Content",
-		"IsVisible",
-		"IsEnabled",
-	};
+	public static readonly IReadOnlyList<string> DefaultPropertyNames = KnownProperties.DefaultVisualTreePropertyNames;
 
 	public Dictionary<string, object?> Extract(object target, IEnumerable<string>? requestedPropertyNames = null)
 	{
@@ -108,7 +100,7 @@ public sealed class VisualTreePropertyExtractor
 
 		switch (propertyName)
 		{
-			case "Xaml":
+			case KnownProperties.Xaml:
 				if (target is DependencyObject)
 				{
 					value = XamlWriter.Save(target);
@@ -116,7 +108,7 @@ public sealed class VisualTreePropertyExtractor
 				}
 
 				return false;
-			case "ResourceKeys":
+			case KnownProperties.ResourceKeys:
 				if (target is ResourceDictionary resourceDictionary)
 				{
 					value = resourceDictionary.Keys.Cast<object?>()
@@ -126,7 +118,7 @@ public sealed class VisualTreePropertyExtractor
 				}
 
 				return false;
-			case "Source":
+			case KnownProperties.Source:
 				if (target is ResourceDictionary sourceDictionary)
 				{
 					value = sourceDictionary.Source?.ToString();
@@ -134,7 +126,7 @@ public sealed class VisualTreePropertyExtractor
 				}
 
 				return false;
-			case "MergedDictionaryCount":
+			case KnownProperties.MergedDictionaryCount:
 				if (target is ResourceDictionary mergedDictionary)
 				{
 					value = mergedDictionary.MergedDictionaries.Count;
@@ -142,7 +134,7 @@ public sealed class VisualTreePropertyExtractor
 				}
 
 				return false;
-			case "ResourceOrigin":
+			case KnownProperties.ResourceOrigin:
 				if (target is ResourceDictionary originDictionary)
 				{
 					value = originDictionary.Source is null ? "local" : "merged";
@@ -156,12 +148,12 @@ public sealed class VisualTreePropertyExtractor
 				}
 
 				return false;
-			case "ImageMetadata":
+			case KnownProperties.ImageMetadata:
 				if (TryReadImageMetadata(target, out value))
 					return true;
 
 				return false;
-			case "Bindings":
+			case KnownProperties.Bindings:
 				if (target is DependencyObject dependencyObject)
 				{
 					value = ReadBindings(dependencyObject);
@@ -178,16 +170,23 @@ public sealed class VisualTreePropertyExtractor
 	{
 		value = propertyName switch
 		{
-			"ClassName" => NativeDialogService.GetClassName(hwnd),
-			"Text" or "Name" or "Title" => NativeDialogService.GetWindowText(hwnd),
-			"IsVisible" => NativeDialogService.IsVisible(hwnd),
-			"IsEnabled" => NativeDialogService.IsEnabled(hwnd),
-			"ControlId" => NativeDialogService.GetControlId(hwnd),
-			"Hwnd" => hwnd.ToInt64(),
+			KnownProperties.ClassName => NativeDialogService.GetClassName(hwnd),
+			KnownProperties.Text or KnownProperties.Name or KnownProperties.Title => NativeDialogService.GetWindowText(hwnd),
+			KnownProperties.IsVisible => NativeDialogService.IsVisible(hwnd),
+			KnownProperties.IsEnabled => NativeDialogService.IsEnabled(hwnd),
+			KnownProperties.ControlId => NativeDialogService.GetControlId(hwnd),
+			KnownProperties.Hwnd => hwnd.ToInt64(),
 			_ => null,
 		};
 
-		return propertyName is "ClassName" or "Text" or "Name" or "Title" or "IsVisible" or "IsEnabled" or "ControlId" or "Hwnd";
+		return propertyName is KnownProperties.ClassName
+			or KnownProperties.Text
+			or KnownProperties.Name
+			or KnownProperties.Title
+			or KnownProperties.IsVisible
+			or KnownProperties.IsEnabled
+			or KnownProperties.ControlId
+			or KnownProperties.Hwnd;
 	}
 
 	private static bool TryReadImageMetadata(object target, out object? value)
@@ -251,12 +250,12 @@ public sealed class VisualTreePropertyExtractor
 
 		switch (propertyName)
 		{
-			case "AutomationProperties.Name":
-			case "AutomationName":
+			case KnownProperties.AutomationName:
+			case KnownProperties.AutomationNameAlias:
 				value = AutomationProperties.GetName(dependencyObject);
 				return true;
-			case "AutomationProperties.AutomationId":
-			case "AutomationId":
+			case KnownProperties.AutomationId:
+			case KnownProperties.AutomationIdAlias:
 				value = AutomationProperties.GetAutomationId(dependencyObject);
 				return true;
 			default:

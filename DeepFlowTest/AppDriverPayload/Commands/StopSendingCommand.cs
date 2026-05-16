@@ -22,7 +22,7 @@ internal static class StopSendingCommand
 				PayloadLog.CurrentCorrelationId);
 		}
 
-		var stopped = reusableSession.StopSubscription(request.SubscriptionId, request.TimeoutMs ?? 2000);
+		var stopped = reusableSession.StopSubscription(request.SubscriptionId, request.TimeoutMs ?? TimeoutDefaults.StreamStopTimeoutMs);
 		return new StopSendingCommandResponse
 		{
 			SubscriptionId = request.SubscriptionId,

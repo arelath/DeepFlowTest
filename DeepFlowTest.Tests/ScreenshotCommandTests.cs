@@ -56,11 +56,11 @@ public sealed class ScreenshotCommandTests
 			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
 			{
 				AsSnapshot = true,
-				PropNames = ["Name", "Content"],
+				PropNames = [KnownProperties.Name, KnownProperties.Content],
 				MaxNodeCount = 200,
 			})!;
 			var buttonNode = snapshot.Nodes.Single(node =>
-				node.Properties.TryGetValue("Name", out var value) && Equals(value, "elementButton"));
+				node.Properties.TryGetValue(KnownProperties.Name, out var value) && Equals(value, "elementButton"));
 
 			var response = (ScreenshotCommandResponse)CaptureResponse(new ScreenshotCommandRequest
 			{

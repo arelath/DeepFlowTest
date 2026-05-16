@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Automation.Peers;
 using DeepFlowTest.AppDriverPayload;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.Utility;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
@@ -33,7 +34,7 @@ public sealed class TreeServiceTests
 
 			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
 			{
-				RequestedPropertyNames = new[] { "Name", "Content", "Title" },
+				RequestedPropertyNames = new[] { KnownProperties.Name, KnownProperties.Content, KnownProperties.Title },
 				MaxNodeCount = 200,
 			});
 
@@ -43,10 +44,10 @@ public sealed class TreeServiceTests
 			Assert.That(snapshot.Nodes.Any(static node => node.TypeName == "Window"), Is.True);
 
 			var buttonNode = snapshot.Nodes.SingleOrDefault(node =>
-				node.Properties.TryGetValue("Name", out var name) && Equals(name, "helloButton"));
+				node.Properties.TryGetValue(KnownProperties.Name, out var name) && Equals(name, "helloButton"));
 			Assert.That(buttonNode, Is.Not.Null);
 			Assert.That(buttonNode!.ParentId, Is.Not.Null);
-			Assert.That(buttonNode.Properties["Content"], Is.EqualTo("Hello"));
+			Assert.That(buttonNode.Properties[KnownProperties.Content], Is.EqualTo("Hello"));
 		}
 		finally
 		{
@@ -77,7 +78,7 @@ public sealed class TreeServiceTests
 
 			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
 			{
-				RequestedPropertyNames = new[] { "Name", "Text", "Title" },
+				RequestedPropertyNames = new[] { KnownProperties.Name, KnownProperties.Text, KnownProperties.Title },
 				MaxNodeCount = 300,
 			});
 
@@ -107,7 +108,7 @@ public sealed class TreeServiceTests
 
 			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
 			{
-				RequestedPropertyNames = new[] { "Name", "Content" },
+				RequestedPropertyNames = new[] { KnownProperties.Name, KnownProperties.Content },
 				MaxNodeCount = 200,
 			});
 
@@ -144,7 +145,7 @@ public sealed class TreeServiceTests
 
 			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
 			{
-				RequestedPropertyNames = new[] { "Name", "Width", "Height", "Count", "ResourceKeys", "ImageMetadata", "Xaml", "ResourceOrigin" },
+				RequestedPropertyNames = new[] { KnownProperties.Name, "Width", "Height", "Count", KnownProperties.ResourceKeys, KnownProperties.ImageMetadata, KnownProperties.Xaml, KnownProperties.ResourceOrigin },
 				MaxNodeCount = 500,
 			});
 
@@ -155,12 +156,12 @@ public sealed class TreeServiceTests
 			Assert.That(snapshot.Nodes.Any(node => node.TargetKind == TargetObjectKind.SystemResource.ToString()), Is.True);
 			Assert.That(snapshot.Nodes.Any(node => node.TargetKind == TargetObjectKind.Image.ToString()), Is.True);
 			Assert.That(snapshot.Nodes.Any(node => node.RuntimeFamily == "image"), Is.True);
-			var imageNode = snapshot.Nodes.Single(node => node.Properties.TryGetValue("Name", out var name) && Equals(name, "treeImage"));
+			var imageNode = snapshot.Nodes.Single(node => node.Properties.TryGetValue(KnownProperties.Name, out var name) && Equals(name, "treeImage"));
 			Assert.That(imageNode.CanReceiveActions, Is.True);
-			Assert.That(imageNode.Properties["ImageMetadata"], Is.Not.Null);
+			Assert.That(imageNode.Properties[KnownProperties.ImageMetadata], Is.Not.Null);
 			Assert.That(snapshot.Nodes.Any(node =>
 				node.TargetKind == TargetObjectKind.Resource.ToString()
-				&& node.Properties.TryGetValue("ResourceKeys", out var keys)
+				&& node.Properties.TryGetValue(KnownProperties.ResourceKeys, out var keys)
 				&& keys is System.Collections.IEnumerable resourceKeys
 				&& resourceKeys.Cast<object?>().Any(key => Equals(key, "resourceImage"))), Is.True);
 
@@ -169,7 +170,7 @@ public sealed class TreeServiceTests
 			var peerSnapshot = new TreeService(targetIds).CaptureSnapshot(new TreeSnapshotOptions
 			{
 				RootTargetId = peerId,
-				RequestedPropertyNames = new[] { "ClassName" },
+				RequestedPropertyNames = new[] { KnownProperties.ClassName },
 				MaxNodeCount = 10,
 			});
 
@@ -201,14 +202,14 @@ public sealed class TreeServiceTests
 
 			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
 			{
-				RequestedPropertyNames = new[] { "Name", "ResourceKeys", "MergedDictionaryCount", "ResourceOrigin" },
+				RequestedPropertyNames = new[] { KnownProperties.Name, KnownProperties.ResourceKeys, KnownProperties.MergedDictionaryCount, KnownProperties.ResourceOrigin },
 				MaxNodeCount = 500,
 			});
 
 			var dictionaries = snapshot.Nodes.Where(node => node.TargetKind == TargetObjectKind.Resource.ToString()).ToArray();
-			Assert.That(dictionaries.Any(node => Equals(node.Properties["MergedDictionaryCount"], 1)), Is.True);
+			Assert.That(dictionaries.Any(node => Equals(node.Properties[KnownProperties.MergedDictionaryCount], 1)), Is.True);
 			Assert.That(dictionaries.Any(node =>
-				node.Properties.TryGetValue("ResourceKeys", out var keys)
+				node.Properties.TryGetValue(KnownProperties.ResourceKeys, out var keys)
 				&& keys is System.Collections.IEnumerable resourceKeys
 				&& resourceKeys.Cast<object?>().Any(key => Equals(key, "mergedBrush"))), Is.True);
 			Assert.That(snapshot.Nodes.Any(node => node.TargetKind == TargetObjectKind.SystemResource.ToString()), Is.True);
@@ -233,15 +234,15 @@ public sealed class TreeServiceTests
 
 			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
 			{
-				RequestedPropertyNames = new[] { "Name", "Text", "Bindings", "Xaml" },
+				RequestedPropertyNames = new[] { KnownProperties.Name, KnownProperties.Text, KnownProperties.Bindings, KnownProperties.Xaml },
 				MaxNodeCount = 200,
 			});
 
-			var textNode = snapshot.Nodes.Single(node => node.Properties.TryGetValue("Name", out var name) && Equals(name, "boundText"));
-			Assert.That(textNode.Properties["Text"], Is.EqualTo("Bound value"));
-			Assert.That(textNode.Properties["Xaml"]?.ToString(), Does.Contain("TextBlock"));
-			var bindings = (IReadOnlyDictionary<string, object?>)textNode.Properties["Bindings"]!;
-			Assert.That(bindings.ContainsKey("Text"), Is.True);
+			var textNode = snapshot.Nodes.Single(node => node.Properties.TryGetValue(KnownProperties.Name, out var name) && Equals(name, "boundText"));
+			Assert.That(textNode.Properties[KnownProperties.Text], Is.EqualTo("Bound value"));
+			Assert.That(textNode.Properties[KnownProperties.Xaml]?.ToString(), Does.Contain("TextBlock"));
+			var bindings = (IReadOnlyDictionary<string, object?>)textNode.Properties[KnownProperties.Bindings]!;
+			Assert.That(bindings.ContainsKey(KnownProperties.Text), Is.True);
 		}
 		finally
 		{
@@ -252,7 +253,7 @@ public sealed class TreeServiceTests
 	private static bool HasNodeNamed(DeepFlowTest.Interop.VisualTreeSnapshot snapshot, string name)
 	{
 		return snapshot.Nodes.Any(node =>
-			node.Properties.TryGetValue("Name", out var value) && Equals(value, name));
+			node.Properties.TryGetValue(KnownProperties.Name, out var value) && Equals(value, name));
 	}
 
 	private sealed class BindingSource

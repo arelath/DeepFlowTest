@@ -112,10 +112,10 @@ internal sealed class FakeCliAppSession : ICliAppSession
 			ChildIds = new List<string> { "button-0002" },
 			Properties = new Dictionary<string, object?>
 			{
-				["Name"] = "Main",
-				["AutomationProperties.Name"] = "Main Window",
-				["IsVisible"] = true,
-				["IsEnabled"] = true,
+				[KnownProperties.Name] = "Main",
+				[KnownProperties.AutomationName] = "Main Window",
+				[KnownProperties.IsVisible] = true,
+				[KnownProperties.IsEnabled] = true,
 			},
 		},
 		new VisualTreeNodeDto
@@ -126,12 +126,12 @@ internal sealed class FakeCliAppSession : ICliAppSession
 			FrameworkTypeName = "System.Windows.Controls.Button",
 			Properties = new Dictionary<string, object?>
 			{
-				["Name"] = "SubmitButton",
-				["AutomationProperties.Name"] = "Submit",
-				["AutomationProperties.AutomationId"] = "SubmitButton",
-				["Text"] = "Submit",
-				["IsVisible"] = true,
-				["IsEnabled"] = true,
+				[KnownProperties.Name] = "SubmitButton",
+				[KnownProperties.AutomationName] = "Submit",
+				[KnownProperties.AutomationId] = "SubmitButton",
+				[KnownProperties.Text] = "Submit",
+				[KnownProperties.IsVisible] = true,
+				[KnownProperties.IsEnabled] = true,
 			},
 		},
 	});
@@ -251,6 +251,21 @@ internal sealed class FakeCliStreamSession : ICliStreamSession
 					ByteCount = 4,
 					BytesBase64 = "AQIDBA==",
 				}
+				: Start.StreamKind == ProtocolConstants.StreamKinds.BindingFailures
+					? new BindingFailureBatchDto
+					{
+						LastSequenceNumber = sequence,
+						Failures = new[]
+						{
+							new BindingFailureDto
+							{
+								SequenceNumber = sequence,
+								TimestampUtc = DateTimeOffset.UtcNow,
+								Severity = BindingFailureSeverity.Error,
+								Message = "System.Windows.Data Error: fake",
+							},
+						},
+					}
 				: new { status = "fake" },
 		};
 	}

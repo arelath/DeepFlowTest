@@ -74,7 +74,7 @@ public sealed class DefaultAppDriverBackend : IAppDriverBackend
 		try
 		{
 			using var pipe = new NamedPipeClientStream(".", connection.PipeName, PipeDirection.InOut);
-			pipe.Connect(100);
+			pipe.Connect(TimeoutDefaults.PipeProbeConnectTimeoutMs);
 			return true;
 		}
 		catch (TimeoutException)

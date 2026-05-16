@@ -13,6 +13,7 @@ public sealed class StreamCommandHandlerTests
 	[TestCase(ProtocolConstants.StreamKinds.VisualTreeDelta, "visual-tree-delta")]
 	[TestCase(ProtocolConstants.StreamKinds.Screenshot, "screenshot")]
 	[TestCase(ProtocolConstants.StreamKinds.EventLog, "event-log")]
+	[TestCase(ProtocolConstants.StreamKinds.BindingFailures, "binding-failures")]
 	public void StreamKindCommandStartsFramesAndStops(string streamKind, string commandName)
 	{
 		var session = new FakeAppSessionService();
@@ -83,6 +84,7 @@ public sealed class StreamCommandHandlerTests
 			ProtocolConstants.StreamKinds.VisualTreeDelta,
 			ProtocolConstants.StreamKinds.Screenshot,
 			ProtocolConstants.StreamKinds.EventLog,
+			ProtocolConstants.StreamKinds.BindingFailures,
 		})
 		{
 			var request = new StartSendingCommandRequest
@@ -90,12 +92,12 @@ public sealed class StreamCommandHandlerTests
 				StreamKind = kind,
 				IntervalMs = 100,
 				TargetId = "target",
-				PropNames = new[] { "Name" },
+				PropNames = new[] { KnownProperties.Name },
 				Format = ImageFormat.Png,
 			};
 			var unpacked = MessagePacker.ConvertTo<StartSendingCommandRequest>(MessagePacker.Unpack(MessagePacker.Pack(request)));
 			Assert.That(unpacked.StreamKind, Is.EqualTo(kind));
-			Assert.That(unpacked.PropNames, Is.EqualTo(new[] { "Name" }));
+			Assert.That(unpacked.PropNames, Is.EqualTo(new[] { KnownProperties.Name }));
 		}
 
 		var message = new StreamMessage

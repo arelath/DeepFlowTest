@@ -64,16 +64,7 @@ public sealed class CliDefaults
 	public bool EnsureForeground { get => Commands.Key.Foreground; set => Commands.Key.Foreground = value; }
 
 	public static List<string> CreateDefaultPropertyList() =>
-		new()
-		{
-			"Name",
-			"AutomationProperties.Name",
-			"AutomationProperties.AutomationId",
-			"Text",
-			"Content",
-			"IsVisible",
-			"IsEnabled",
-		};
+		new(KnownProperties.DefaultVisualTreePropertyNames);
 }
 
 public sealed class CliCommonDefaults
@@ -81,7 +72,7 @@ public sealed class CliCommonDefaults
 	public int? Pid { get; set; }
 	public string? Process { get; set; }
 	public string? WindowTitle { get; set; }
-	public int TimeoutMs { get; set; } = 10_000;
+	public int TimeoutMs { get; set; } = TimeoutDefaults.CliCommandTimeoutMs;
 	public string Format { get; set; } = "json";
 	public bool Pretty { get; set; }
 	public bool HideEmpty { get; set; } = true;
@@ -147,7 +138,7 @@ public sealed class CliFindDefaults
 	public bool Enabled { get; set; }
 	public bool CaseSensitive { get; set; }
 	public int Limit { get; set; } = 50;
-	public List<string> Include { get; set; } = new() { "path", "properties" };
+	public List<string> Include { get; set; } = ["path", "properties"];
 	public bool RequireMatch { get; set; }
 }
 
@@ -193,7 +184,7 @@ public sealed class CliWaitDefaults
 	public bool Visible { get; set; }
 	public bool Enabled { get; set; }
 	public bool CaseSensitive { get; set; }
-	public int IntervalMs { get; set; } = 250;
+	public int IntervalMs { get; set; } = TimeoutDefaults.CliWaitIntervalMs;
 	public int MatchCount { get; set; } = 1;
 	public bool RequireMatch { get; set; }
 }
@@ -201,7 +192,7 @@ public sealed class CliWaitDefaults
 public sealed class CliStreamDefaults
 {
 	public int DurationMs { get; set; }
-	public int IntervalMs { get; set; } = 1_000;
+	public int IntervalMs { get; set; } = TimeoutDefaults.StreamIntervalMs;
 	public List<string> Props { get; set; } = CliDefaults.CreateDefaultPropertyList();
 	public string? TargetId { get; set; }
 	public ImageFormat ImageFormat { get; set; } = ImageFormat.Png;
@@ -265,7 +256,7 @@ public sealed class CliKeyDefaults
 {
 	public string? Keys { get; set; }
 	public bool Foreground { get; set; } = true;
-	public int DelayMs { get; set; } = 50;
+	public int DelayMs { get; set; } = TimeoutDefaults.KeyboardDelayMs;
 }
 
 public sealed class CliSetDefaults

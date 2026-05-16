@@ -84,7 +84,8 @@ public sealed class ReusablePipeSession
 		int intervalMs,
 		Func<object, bool> send,
 		Func<long, object> capture,
-		bool deferStart = false)
+		bool deferStart = false,
+		IDisposable? lifetime = null)
 	{
 		var subscriptionId = Guid.NewGuid().ToString("N");
 		var subscription = new DelegateStreamSubscription(
@@ -93,7 +94,8 @@ public sealed class ReusablePipeSession
 			connectionId,
 			intervalMs,
 			send,
-			capture);
+			capture,
+			lifetime);
 		var state = new ActiveSubscriptionState(subscription);
 
 		lock (subscriptions)
@@ -105,7 +107,7 @@ public sealed class ReusablePipeSession
 		return state.ToResponse();
 	}
 
-	public ActiveSubscriptionResponse StartSubscription(string kind, string? connectionId, int intervalMs = 1000) =>
+	public ActiveSubscriptionResponse StartSubscription(string kind, string? connectionId, int intervalMs = TimeoutDefaults.StreamIntervalMs) =>
 		StartSubscription(kind, connectionId, intervalMs, _ => false, _ => new { status = "test" }, deferStart: true);
 
 	public bool StartStoredSubscription(string subscriptionId)
@@ -121,7 +123,7 @@ public sealed class ReusablePipeSession
 		return true;
 	}
 
-	public bool StopSubscription(string subscriptionId, int timeoutMs = 2000)
+	public bool StopSubscription(string subscriptionId, int timeoutMs = TimeoutDefaults.StreamStopTimeoutMs)
 	{
 		if (string.IsNullOrEmpty(subscriptionId))
 			return false;
@@ -159,7 +161,7 @@ public sealed class ReusablePipeSession
 		}
 
 		foreach (var subscription in removed)
-			StopAndDispose(subscription, timeoutMs: 500);
+			StopAndDispose(subscription, timeoutMs: TimeoutDefaults.StreamCleanupTimeoutMs);
 	}
 
 	private void StopAllSubscriptions()
@@ -172,7 +174,7 @@ public sealed class ReusablePipeSession
 		}
 
 		foreach (var subscription in removed)
-			StopAndDispose(subscription, timeoutMs: 500);
+			StopAndDispose(subscription, timeoutMs: TimeoutDefaults.StreamCleanupTimeoutMs);
 	}
 
 	public PipeStatusCommandResponse CreateStatusResponse()

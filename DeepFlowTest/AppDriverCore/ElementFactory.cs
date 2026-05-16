@@ -5,14 +5,9 @@ using System.Reflection;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
-internal sealed class ElementFactory
+internal sealed class ElementFactory(AppDriver driver)
 {
-	private readonly AppDriver driver;
-
-	public ElementFactory(AppDriver driver)
-	{
-		this.driver = driver ?? throw new ArgumentNullException(nameof(driver));
-	}
+	private readonly AppDriver driver = driver ?? throw new ArgumentNullException(nameof(driver));
 
 	public Element FromMatch(
 		FindElementMatchResponse match,

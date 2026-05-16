@@ -23,18 +23,18 @@ public sealed class HelloWorldHarnessParityTests
 {
 	private static readonly IReadOnlyList<string> CommonProps =
 	[
-		"Name",
-		"AutomationProperties.Name",
-		"AutomationProperties.AutomationId",
-		"Text",
-		"Content",
-		"Header",
-		"IsChecked",
-		"IsEnabled",
-		"IsExpanded",
-		"IsOpen",
-		"IsVisible",
-		"Visibility",
+		KnownProperties.Name,
+		KnownProperties.AutomationName,
+		KnownProperties.AutomationId,
+		KnownProperties.Text,
+		KnownProperties.Content,
+		KnownProperties.Header,
+		KnownProperties.IsChecked,
+		KnownProperties.IsEnabled,
+		KnownProperties.IsExpanded,
+		KnownProperties.IsOpen,
+		KnownProperties.IsVisible,
+		KnownProperties.Visibility,
 	];
 
 	[Test]
@@ -97,10 +97,10 @@ public sealed class HelloWorldHarnessParityTests
 		AssertOk(Send(new KnownOperationCommandRequest { TargetId = TargetIdByName("MainCheckbox"), Operation = "Check" }));
 		AssertEventText("MainCheckbox_Checked event triggered.");
 
-		AssertOk(Send(new SetPropertyCommandRequest { TargetId = TargetIdByName("TextBox1"), PropertyName = "Text", PropertyValue = string.Empty }));
+		AssertOk(Send(new SetPropertyCommandRequest { TargetId = TargetIdByName("TextBox1"), PropertyName = KnownProperties.Text, PropertyValue = string.Empty }));
 		AssertOk(Send(new FocusCommandRequest { TargetId = TargetIdByName("TextBox1") }));
 		AssertOk(Send(new TypeTextCommandRequest { TargetId = TargetIdByName("TextBox1"), Text = "Hello World!", ClearFirst = true }));
-		Assert.That(Property<string>(FindByName("TextBox1"), "Text"), Is.EqualTo("Hello World!"));
+		Assert.That(Property<string>(FindByName("TextBox1"), KnownProperties.Text), Is.EqualTo("Hello World!"));
 		AssertOk(Send(new SetPropertyCommandRequest { TargetId = TargetIdByName("TextBox1"), PropertyName = "SelectionStart", PropertyValue = 0 }));
 		AssertOk(Send(new SetPropertyCommandRequest { TargetId = TargetIdByName("TextBox1"), PropertyName = "SelectionLength", PropertyValue = 5 }));
 		AssertEventText("TextBox1_SelectionChanged event triggered.");
@@ -114,14 +114,14 @@ public sealed class HelloWorldHarnessParityTests
 		AssertEventText("ExpanderControl_Collapsed event triggered.");
 
 		AssertOk(Send(new KnownOperationCommandRequest { TargetId = TargetIdByName("MenuItemOne"), Operation = "Check" }));
-		Assert.That(Property<bool>(FindByName("MenuItemOne"), "IsChecked"), Is.True);
+		Assert.That(Property<bool>(FindByName("MenuItemOne"), KnownProperties.IsChecked), Is.True);
 
 		AssertOk(Send(new KnownOperationCommandRequest { TargetId = TargetIdByName("TogglePopupButton"), Operation = "Check" }));
-		Assert.That(Property<bool>(FindByName("myPopup"), "IsOpen"), Is.True);
-		Assert.That(Property<string>(FindByName("myPopupText"), "Text"), Is.EqualTo("Popup Text"));
+		Assert.That(Property<bool>(FindByName("myPopup"), KnownProperties.IsOpen), Is.True);
+		Assert.That(Property<string>(FindByName("myPopupText"), KnownProperties.Text), Is.EqualTo("Popup Text"));
 
 		AssertOk(Send(new ClickCommandRequest { TargetId = TargetIdByName("DelayedRevealButton") }));
-		Assert.That(WaitUntil(() => Property<string>(FindByName("DelayedReadyText"), "Visibility") == "Visible"), Is.True);
+		Assert.That(WaitUntil(() => Property<string>(FindByName("DelayedReadyText"), KnownProperties.Visibility) == "Visible"), Is.True);
 		AssertEventText("DelayedReadyText revealed.");
 
 		AssertSecondaryWindowCanOpenAndClose();
@@ -195,7 +195,7 @@ public sealed class HelloWorldHarnessParityTests
 
 	private static void AssertHostedWinFormsControlsCanBeDriven()
 	{
-		AssertOk(Send(new SetPropertyCommandRequest { TargetId = TargetIdByName("HostedWinFormsContainer"), PropertyName = "Visibility", PropertyValue = "Visible" }));
+		AssertOk(Send(new SetPropertyCommandRequest { TargetId = TargetIdByName("HostedWinFormsContainer"), PropertyName = KnownProperties.Visibility, PropertyValue = "Visible" }));
 		DoEvents();
 
 		Assert.That(FindByName("WinFormsHostIsland").TypeName, Is.EqualTo("WindowsFormsHost"));
@@ -205,7 +205,7 @@ public sealed class HelloWorldHarnessParityTests
 		AssertEventText("HostedWinFormsButton_Click event triggered.");
 
 		AssertOk(Send(new TypeTextCommandRequest { TargetId = TargetIdByName("HostedWinFormsTextBox"), Text = "hosted text", ClearFirst = true }));
-		Assert.That(Property<string>(FindByName("HostedWinFormsTextBox"), "Text"), Is.EqualTo("hosted text"));
+		Assert.That(Property<string>(FindByName("HostedWinFormsTextBox"), KnownProperties.Text), Is.EqualTo("hosted text"));
 		AssertEventText("HostedWinFormsTextBox_TextChanged: hosted text");
 
 		AssertOk(Send(new KnownOperationCommandRequest { TargetId = TargetIdByName("HostedWinFormsCheckBox"), Operation = "Check" }));
@@ -258,7 +258,7 @@ public sealed class HelloWorldHarnessParityTests
 		var rawResponse = Send(new GetVisualTreeCommandRequest
 		{
 			AsSnapshot = true,
-			PropNames = ["Name", "AutomationProperties.AutomationId", "Text", "Content", "Title"],
+			PropNames = [KnownProperties.Name, KnownProperties.AutomationId, KnownProperties.Text, KnownProperties.Content, KnownProperties.Title],
 			MaxNodeCount = 80,
 			TimeoutMs = 10_000,
 		});
@@ -269,10 +269,10 @@ public sealed class HelloWorldHarnessParityTests
 			.Take(20)
 			.Select(static node =>
 			{
-				var name = node.Properties.TryGetValue("Name", out var nameValue) ? nameValue : null;
-				var automationId = node.Properties.TryGetValue("AutomationProperties.AutomationId", out var automationIdValue) ? automationIdValue : null;
-				var text = node.Properties.TryGetValue("Text", out var textValue) ? textValue : null;
-				var content = node.Properties.TryGetValue("Content", out var contentValue) ? contentValue : null;
+				var name = node.Properties.TryGetValue(KnownProperties.Name, out var nameValue) ? nameValue : null;
+				var automationId = node.Properties.TryGetValue(KnownProperties.AutomationId, out var automationIdValue) ? automationIdValue : null;
+				var text = node.Properties.TryGetValue(KnownProperties.Text, out var textValue) ? textValue : null;
+				var content = node.Properties.TryGetValue(KnownProperties.Content, out var contentValue) ? contentValue : null;
 				var title = node.Properties.TryGetValue("Title", out var titleValue) ? titleValue : null;
 				return $"{node.TypeName}: Name={name}; AutomationId={automationId}; Text={text}; Content={content}; Title={title}";
 			});
@@ -303,7 +303,7 @@ public sealed class HelloWorldHarnessParityTests
 
 	private static void AssertEventText(string expected)
 	{
-		Assert.That(Property<string>(FindByName("EventDisplay"), "Text"), Is.EqualTo(expected));
+		Assert.That(Property<string>(FindByName("EventDisplay"), KnownProperties.Text), Is.EqualTo(expected));
 	}
 
 	private static void AssertOk(object? response)

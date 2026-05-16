@@ -4,15 +4,11 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using DeepFlowTest.Contracts;
 
-internal sealed class ElementWaiter
+internal sealed class ElementWaiter(AppDriverOptions options)
 {
-	private readonly AppDriverOptions options;
-
-	public ElementWaiter(AppDriverOptions options)
-	{
-		this.options = options ?? throw new ArgumentNullException(nameof(options));
-	}
+	private readonly AppDriverOptions options = options ?? throw new ArgumentNullException(nameof(options));
 
 	public Element PollForElement(
 		Func<IReadOnlyList<Element>> find,
@@ -78,6 +74,6 @@ internal sealed class ElementWaiter
 		if (index >= 0 && index < backoff.Length)
 			return Math.Max(0, backoff[index]);
 
-		return 1000;
+		return TimeoutDefaults.ElementPollFallbackDelayMs;
 	}
 }

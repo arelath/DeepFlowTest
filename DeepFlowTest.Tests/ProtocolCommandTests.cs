@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Commands;
+using DeepFlowTest.AppDriverPayload.Diagnostics;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
@@ -82,6 +83,27 @@ public sealed class ProtocolCommandTests
 		Assert.That(screenshot.Format, Is.EqualTo(ImageFormat.Jpeg));
 		Assert.That(click.ToDictionary()["MouseButton"], Is.EqualTo("right"));
 		Assert.That(screenshot.ToDictionary()["Format"], Is.EqualTo("jpeg"));
+	}
+
+	[Test]
+	public void BindingFailureDtosRoundTripWithProtocolSeverityStrings()
+	{
+		var failure = new BindingFailureDto
+		{
+			SequenceNumber = 5,
+			TimestampUtc = DateTimeOffset.UtcNow,
+			Severity = BindingFailureSeverity.Error,
+			Message = "System.Windows.Data Error: 40",
+			RawMessage = "System.Windows.Data Error: 40",
+			Source = "System.Windows.Data",
+			EventId = 40,
+			ManagedThreadId = Environment.CurrentManagedThreadId,
+		};
+
+		var unpacked = MessagePacker.ConvertTo<BindingFailureDto>(MessagePacker.Unpack(MessagePacker.Pack(failure)));
+
+		Assert.That(unpacked.Severity, Is.EqualTo(BindingFailureSeverity.Error));
+		Assert.That(ProtocolValueMapper.FormatBindingFailureSeverity(unpacked.Severity), Is.EqualTo("error"));
 	}
 
 	[Test]
@@ -184,6 +206,58 @@ public sealed class ProtocolCommandTests
 		Assert.That(stop.Status, Is.EqualTo(ProtocolConstants.Statuses.Stopped));
 		Assert.That(statusAfterStop.IsSending, Is.False);
 		Assert.That(statusAfterStop.ActiveSubscriptionCount, Is.EqualTo(0));
+	}
+
+	[Test]
+	public void BindingFailureCommandReturnsRecordedBatch()
+	{
+		BindingFailureCaptureService.Instance.ResetForTests();
+		using var _ = BindingFailureCaptureService.Instance.Start(new BindingFailureCaptureSettings());
+		BindingFailureCaptureService.Instance.Record(BindingFailureSeverity.Error, "System.Windows.Data Error: missing property", "test", 40);
+
+		var response = CaptureResponse(new GetBindingFailuresCommandRequest(0));
+
+		Assert.That(response, Is.TypeOf<BindingFailureBatchDto>());
+		var batch = (BindingFailureBatchDto)response!;
+		Assert.That(batch.Failures.Single().Message, Does.Contain("missing property"));
+		Assert.That(batch.LastSequenceNumber, Is.EqualTo(1));
+	}
+
+	[Test]
+	public void BindingFailureStreamStartsWithoutDispatcherAndStopsCaptureRegistration()
+	{
+		BindingFailureCaptureService.Instance.ResetForTests();
+		var session = new ReusablePipeSession("test-pipe", _ => { });
+
+		var start = (StartSendingCommandResponse)CaptureResponse(
+			new StartSendingCommandRequest { StreamKind = ProtocolConstants.StreamKinds.BindingFailures, IntervalMs = 50 },
+			session)!;
+
+		Assert.That(start.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.BindingFailures));
+		Assert.That(BindingFailureCaptureService.Instance.ActiveRegistrationCount, Is.EqualTo(1));
+
+		var stop = (StopSendingCommandResponse)CaptureResponse(new StopSendingCommandRequest { SubscriptionId = start.SubscriptionId }, session)!;
+
+		Assert.That(stop.Status, Is.EqualTo(ProtocolConstants.Statuses.Stopped));
+		Assert.That(BindingFailureCaptureService.Instance.ActiveRegistrationCount, Is.EqualTo(0));
+	}
+
+	[Test]
+	public void BindingFailureStreamRejectsTargetId()
+	{
+		var session = new ReusablePipeSession("test-pipe", _ => { });
+
+		var response = CaptureResponse(
+			new StartSendingCommandRequest
+			{
+				StreamKind = ProtocolConstants.StreamKinds.BindingFailures,
+				IntervalMs = 50,
+				TargetId = "button",
+			},
+			session);
+
+		Assert.That(response, Is.TypeOf<StandardIpcResponse>());
+		Assert.That(((StandardIpcResponse)response!).ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.InvalidArguments));
 	}
 
 	[Test]
@@ -299,6 +373,7 @@ public sealed class ProtocolCommandTests
 			new HelloCommandRequest(),
 			new PingCommandRequest(),
 			new PipeStatusCommandRequest(),
+			new GetBindingFailuresCommandRequest(),
 			new StartSendingCommandRequest { StreamKind = ProtocolConstants.StreamKinds.VisualTree },
 			new StopSendingCommandRequest { SubscriptionId = "missing" },
 			new GetVisualTreeCommandRequest(),

@@ -21,8 +21,8 @@ public sealed class NamedPipeClient : IDisposable
 		Func<int?>? getTargetExitCode = null,
 		Func<string?>? readTargetCrashLog = null,
 		Action? requestReinjection = null,
-		int connectTimeoutMs = 5_000,
-		int connectRetryCount = 2)
+		int connectTimeoutMs = TimeoutDefaults.NamedPipeConnectTimeoutMs,
+		int connectRetryCount = TimeoutDefaults.NamedPipeConnectRetryCount)
 	{
 		PipeName = pipeName ?? throw new ArgumentNullException(nameof(pipeName));
 		this.getTargetExitCode = getTargetExitCode ?? (() => null);
@@ -40,12 +40,12 @@ public sealed class NamedPipeClient : IDisposable
 		pipe.Dispose();
 	}
 
-	public object Send(object command, int responseTimeoutMs = 10_000)
+	public object Send(object command, int responseTimeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
 		return SendAsync(command, responseTimeoutMs).ConfigureAwait(false).GetAwaiter().GetResult();
 	}
 
-	public async Task<object> SendAsync(object command, int responseTimeoutMs = 10_000, CancellationToken cancellationToken = default)
+	public async Task<object> SendAsync(object command, int responseTimeoutMs = TimeoutDefaults.CommandTimeoutMs, CancellationToken cancellationToken = default)
 	{
 		_ = command ?? throw new ArgumentNullException(nameof(command));
 

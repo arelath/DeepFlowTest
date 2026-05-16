@@ -1,10 +1,11 @@
 namespace DeepFlowTest;
 
 using System;
+using DeepFlowTest.Contracts;
 
 public static class SystemDialogExtensions
 {
-	public static AppDriver HandleFileDialog(this AppDriver driver, string filePath, int timeoutMs = 10_000)
+	public static AppDriver HandleFileDialog(this AppDriver driver, string filePath, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
 		_ = driver ?? throw new ArgumentNullException(nameof(driver));
 		if (string.IsNullOrWhiteSpace(filePath))
@@ -15,14 +16,14 @@ public static class SystemDialogExtensions
 		return driver;
 	}
 
-	public static AppDriver AcceptDialog(this AppDriver driver, int timeoutMs = 10_000)
+	public static AppDriver AcceptDialog(this AppDriver driver, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
 		_ = driver ?? throw new ArgumentNullException(nameof(driver));
 		driver.GetElement(x => x.TypeName == "Dialog", timeoutMs).AcceptDialog();
 		return driver;
 	}
 
-	public static AppDriver CancelDialog(this AppDriver driver, int timeoutMs = 10_000)
+	public static AppDriver CancelDialog(this AppDriver driver, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
 		_ = driver ?? throw new ArgumentNullException(nameof(driver));
 		driver.GetElement(x => x.TypeName == "Dialog", timeoutMs).CancelDialog();

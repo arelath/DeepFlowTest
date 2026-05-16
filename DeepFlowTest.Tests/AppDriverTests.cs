@@ -198,7 +198,7 @@ public sealed class AppDriverTests
 	{
 		var options = new AppDriverAttachOptions();
 
-		Assert.That(options.ElementPollBackoffMs, Is.EqualTo(new[] { 25, 100, 500, 1000, 2000 }));
+		Assert.That(options.ElementPollBackoffMs, Is.EqualTo(TimeoutDefaults.CreateElementPollBackoffMs()));
 		options.Timeout = TimeSpan.FromMilliseconds(1234);
 		Assert.That(options.Timeout, Is.EqualTo(TimeSpan.FromMilliseconds(1234)));
 	}
@@ -887,14 +887,14 @@ public sealed class AppDriverTests
 
 	private static readonly IReadOnlyList<string> MatcherPropertyNames =
 	[
-		"Name",
-		"AutomationProperties.Name",
-		"AutomationProperties.AutomationId",
-		"Text",
-		"Content",
-		"Header",
-		"IsEnabled",
-		"IsVisible",
+		KnownProperties.Name,
+		KnownProperties.AutomationName,
+		KnownProperties.AutomationId,
+		KnownProperties.Text,
+		KnownProperties.Content,
+		KnownProperties.Header,
+		KnownProperties.IsEnabled,
+		KnownProperties.IsVisible,
 	];
 
 	private static string NormalizeMenuHeader(string header) =>
@@ -923,7 +923,7 @@ public sealed class AppDriverTests
 
 	private static bool ElementTextMatches(Element element, string normalizedExpected)
 	{
-		foreach (var propertyName in new[] { "Header", "Text", "Content", "AutomationProperties.Name", "Name" })
+		foreach (var propertyName in new[] { KnownProperties.Header, KnownProperties.Text, KnownProperties.Content, KnownProperties.AutomationName, KnownProperties.Name })
 		{
 			if (element.Properties.TryGetValue(propertyName, out var value)
 				&& NormalizeMenuHeader(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty) == normalizedExpected)

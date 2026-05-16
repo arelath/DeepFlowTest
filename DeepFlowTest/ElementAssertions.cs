@@ -3,6 +3,7 @@ namespace DeepFlowTest;
 using System;
 using System.Linq;
 using DeepFlowTest.Assert;
+using DeepFlowTest.Contracts;
 using Newtonsoft.Json;
 
 public static class ElementAssertions
@@ -22,7 +23,7 @@ public static class ElementAssertions
 	public static void ShouldBeVisible(this Element element)
 	{
 		_ = element ?? throw new ArgumentNullException(nameof(element));
-		element.ShouldHaveProperty("IsVisible", true);
+		element.ShouldHaveProperty(KnownProperties.IsVisible, true);
 	}
 
 	private static string FormatProperties(Element element)

@@ -16,26 +16,26 @@ internal static class ElementDiagnosticFormatter
 	private const int ElementPathMaxLength = 1_200;
 	private static readonly IReadOnlyList<string> SummaryPropertyNames =
 	[
-		"AutomationProperties.AutomationId",
-		"AutomationId",
-		"Name",
-		"AutomationProperties.Name",
-		"Header",
-		"Text",
-		"Content",
-		"IsVisible",
-		"IsEnabled",
+		KnownProperties.AutomationId,
+		KnownProperties.AutomationIdAlias,
+		KnownProperties.Name,
+		KnownProperties.AutomationName,
+		KnownProperties.Header,
+		KnownProperties.Text,
+		KnownProperties.Content,
+		KnownProperties.IsVisible,
+		KnownProperties.IsEnabled,
 	];
 
 	private static readonly IReadOnlyList<string> PathIdentityPropertyNames =
 	[
-		"AutomationProperties.AutomationId",
-		"AutomationId",
-		"Name",
-		"AutomationProperties.Name",
-		"Header",
-		"Text",
-		"Content",
+		KnownProperties.AutomationId,
+		KnownProperties.AutomationIdAlias,
+		KnownProperties.Name,
+		KnownProperties.AutomationName,
+		KnownProperties.Header,
+		KnownProperties.Text,
+		KnownProperties.Content,
 	];
 
 	public static string BuildNoMatchElementMessage(string selectorDescription, Func<string?>? diagnosticProvider)
@@ -127,11 +127,11 @@ internal static class ElementDiagnosticFormatter
 
 	private static string FormatElementSummary(Element element)
 	{
-		var parts = new List<string>
-		{
+		List<string> parts =
+		[
 			$"TargetId={FormatDiagnosticValue(element.TargetId)}",
 			$"TypeName={FormatDiagnosticValue(element.TypeName)}",
-		};
+		];
 
 		if (!string.IsNullOrWhiteSpace(element.FrameworkTypeName)
 			&& !string.Equals(element.FrameworkTypeName, element.TypeName, StringComparison.Ordinal))
@@ -183,7 +183,7 @@ internal static class ElementDiagnosticFormatter
 				byId[candidate.TargetId] = candidate;
 		}
 
-		var path = new List<ElementPathSegmentResponse>();
+		List<ElementPathSegmentResponse> path = [];
 		var seenTargetIds = new HashSet<string>(StringComparer.Ordinal);
 		var current = element.SnapshotNode;
 		while (true)

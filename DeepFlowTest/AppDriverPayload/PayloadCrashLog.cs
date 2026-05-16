@@ -7,13 +7,13 @@ using System.Linq;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.Utility;
 using WinForms = System.Windows.Forms;
 
 public static class PayloadCrashLog
 {
 	private const int DefaultMaxCharacters = 8192;
-	private const int DefaultWaitMs = 250;
 	private static readonly object Sync = new();
 	private static readonly List<CrashLogRegistration> Registrations = new();
 
@@ -69,7 +69,7 @@ public static class PayloadCrashLog
 		WriteText(pipeName, exception.ToString());
 	}
 
-	public static bool TryRead(string pipeName, out string crashLog, int maxCharacters = DefaultMaxCharacters, int waitMs = DefaultWaitMs)
+	public static bool TryRead(string pipeName, out string crashLog, int maxCharacters = DefaultMaxCharacters, int waitMs = TimeoutDefaults.PayloadCrashLogWaitMs)
 	{
 		crashLog = string.Empty;
 		if (string.IsNullOrWhiteSpace(pipeName))
@@ -97,7 +97,7 @@ public static class PayloadCrashLog
 			if (waitMs <= 0 || DateTime.UtcNow >= deadline)
 				break;
 
-			Thread.Sleep(25);
+			Thread.Sleep(TimeoutDefaults.PayloadCrashLogPollDelayMs);
 		}
 		while (true);
 

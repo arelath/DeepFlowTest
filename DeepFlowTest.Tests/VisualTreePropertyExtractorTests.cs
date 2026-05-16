@@ -6,6 +6,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
 
@@ -27,13 +28,14 @@ public sealed class VisualTreePropertyExtractorTests
 
 		var properties = new VisualTreePropertyExtractor().Extract(button);
 
+		Assert.That(VisualTreePropertyExtractor.DefaultPropertyNames, Is.EqualTo(KnownProperties.DefaultVisualTreePropertyNames));
 		Assert.That(properties.Keys, Is.EqualTo(VisualTreePropertyExtractor.DefaultPropertyNames));
-		Assert.That(properties["Name"], Is.EqualTo("submitButton"));
-		Assert.That(properties["AutomationProperties.Name"], Is.EqualTo("Submit order"));
-		Assert.That(properties["AutomationProperties.AutomationId"], Is.EqualTo("submit-order"));
-		Assert.That(properties["Content"], Is.EqualTo("Submit"));
-		Assert.That(properties["IsEnabled"], Is.False);
-		Assert.That(properties["Text"], Is.TypeOf<PropertyExtractionError>());
+		Assert.That(properties[KnownProperties.Name], Is.EqualTo("submitButton"));
+		Assert.That(properties[KnownProperties.AutomationName], Is.EqualTo("Submit order"));
+		Assert.That(properties[KnownProperties.AutomationId], Is.EqualTo("submit-order"));
+		Assert.That(properties[KnownProperties.Content], Is.EqualTo("Submit"));
+		Assert.That(properties[KnownProperties.IsEnabled], Is.False);
+		Assert.That(properties[KnownProperties.Text], Is.TypeOf<PropertyExtractionError>());
 	}
 
 	[Test]
@@ -41,10 +43,10 @@ public sealed class VisualTreePropertyExtractorTests
 	{
 		var target = new ClrTarget { Name = "ignored", Text = "visible" };
 
-		var properties = new VisualTreePropertyExtractor().Extract(target, new[] { "Text" });
+		var properties = new VisualTreePropertyExtractor().Extract(target, new[] { KnownProperties.Text });
 
-		Assert.That(properties.Keys, Is.EqualTo(new[] { "Text" }));
-		Assert.That(properties["Text"], Is.EqualTo("visible"));
+		Assert.That(properties.Keys, Is.EqualTo(new[] { KnownProperties.Text }));
+		Assert.That(properties[KnownProperties.Text], Is.EqualTo("visible"));
 	}
 
 	[Test]

@@ -1,6 +1,7 @@
 namespace DeepFlowTest.AppDriverPayload;
 
 using System;
+using DeepFlowTest.AppDriverPayload.Diagnostics;
 using DeepFlowTest.Contracts;
 
 public static class AppDriverPayload
@@ -75,5 +76,6 @@ public static class AppDriverPayload
 		PayloadCrashLog.ResetForTests();
 		ReusablePipeSessionRegistry.ClearForTests();
 		AppHooks.ResetForTests();
+		BindingFailureCaptureService.Instance.ResetForTests();
 	}
 }

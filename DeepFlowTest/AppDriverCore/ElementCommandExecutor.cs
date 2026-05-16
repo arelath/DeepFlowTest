@@ -5,16 +5,10 @@ using System.Globalization;
 using System.Runtime.Serialization;
 using DeepFlowTest.Contracts;
 
-internal sealed class ElementCommandExecutor
+internal sealed class ElementCommandExecutor(DriverCommandClient commandClient, ElementRepairService repairService)
 {
-	private readonly DriverCommandClient commandClient;
-	private readonly ElementRepairService repairService;
-
-	public ElementCommandExecutor(DriverCommandClient commandClient, ElementRepairService repairService)
-	{
-		this.commandClient = commandClient ?? throw new ArgumentNullException(nameof(commandClient));
-		this.repairService = repairService ?? throw new ArgumentNullException(nameof(repairService));
-	}
+	private readonly DriverCommandClient commandClient = commandClient ?? throw new ArgumentNullException(nameof(commandClient));
+	private readonly ElementRepairService repairService = repairService ?? throw new ArgumentNullException(nameof(repairService));
 
 	public Element SendTargetedWithRepair(Element element, Func<IpcCommand> commandFactory)
 	{

@@ -12,7 +12,7 @@ using DeepFlowTest.Interop;
 
 public sealed class CliAttachOptions
 {
-	public int TimeoutMs { get; set; } = 10_000;
+	public int TimeoutMs { get; set; } = TimeoutDefaults.CliAttachTimeoutMs;
 
 	public bool Debug { get; set; }
 
@@ -117,7 +117,7 @@ public sealed class CliAppSessionService : ICliAppSessionService
 			if (error is not null && error.ErrorCode == CliErrorCodes.ProtocolError)
 				break;
 
-			Thread.Sleep(Math.Min(100, Math.Max(1, options.TimeoutMs)));
+			Thread.Sleep(Math.Min(TimeoutDefaults.CliAttachRetrySleepMs, Math.Max(1, options.TimeoutMs)));
 		}
 		while (DateTimeOffset.UtcNow < deadline);
 
@@ -199,7 +199,7 @@ public sealed class NamedPipeCliAppSession : ICliAppSession
 			using var client = new NamedPipeClient(
 				connection.PipeName,
 				getTargetExitCode: () => connection.TargetProcess.HasExited ? 0 : null,
-				connectTimeoutMs: Math.Min(500, Math.Max(1, timeoutMs)),
+				connectTimeoutMs: Math.Min(TimeoutDefaults.CliOneShotConnectTimeoutCapMs, Math.Max(1, timeoutMs)),
 				connectRetryCount: 1);
 			var response = client.Send(command, Math.Max(1, timeoutMs));
 			return MessagePacker.ConvertTo<TResponse>(response);

@@ -36,6 +36,7 @@ public static class CliOutput
 			new CliImageFormatJsonConverter(),
 			new CliTreeShapeJsonConverter(),
 			new CliMouseButtonJsonConverter(),
+			new CliBindingFailureSeverityJsonConverter(),
 		},
 	};
 
@@ -229,7 +230,7 @@ public static class CliOutput
 	{
 		if (node is JsonObject obj)
 		{
-			var removals = new List<string>();
+			List<string> removals = [];
 			foreach (var property in obj.ToArray())
 			{
 				PruneEmpty(property.Value);

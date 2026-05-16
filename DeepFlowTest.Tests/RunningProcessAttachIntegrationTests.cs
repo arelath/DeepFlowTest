@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Windows.Controls;
+using DeepFlowTest.Contracts;
 using NUnit.Framework;
 
 [TestFixture]
@@ -17,16 +18,16 @@ public sealed class RunningProcessAttachIntegrationTests
 {
 	private static readonly IReadOnlyList<string> MatcherPropertyNames =
 	[
-		"Name",
-		"AutomationProperties.Name",
-		"AutomationProperties.AutomationId",
-		"Text",
-		"Content",
-		"Header",
-		"IsChecked",
-		"IsEnabled",
-		"IsSubmenuOpen",
-		"IsVisible",
+		KnownProperties.Name,
+		KnownProperties.AutomationName,
+		KnownProperties.AutomationId,
+		KnownProperties.Text,
+		KnownProperties.Content,
+		KnownProperties.Header,
+		KnownProperties.IsChecked,
+		KnownProperties.IsEnabled,
+		KnownProperties.IsSubmenuOpen,
+		KnownProperties.IsVisible,
 	];
 
 	[Test]
@@ -57,8 +58,8 @@ public sealed class RunningProcessAttachIntegrationTests
 		var button = driver.GetElement(
 			element =>
 				element.TypeName == buttonCriteria.TypeName
-				&& element["AutomationProperties.AutomationId"] == buttonCriteria.AutomationId
-				&& element["Content"] == buttonCriteria.Content,
+				&& element[KnownProperties.AutomationId] == buttonCriteria.AutomationId
+				&& element[KnownProperties.Content] == buttonCriteria.Content,
 			timeoutMs: 30_000);
 
 		Assert.That(button.TargetId, Is.Not.Empty);
@@ -66,8 +67,8 @@ public sealed class RunningProcessAttachIntegrationTests
 
 		Func<Element, bool> capturedButtonPredicate = element =>
 			element.TypeName == "Button"
-			&& element["AutomationProperties.AutomationId"] == buttonCriteria.AutomationId
-			&& element["Content"] == buttonCriteria.Content;
+			&& element[KnownProperties.AutomationId] == buttonCriteria.AutomationId
+			&& element[KnownProperties.Content] == buttonCriteria.Content;
 		var buttonFoundWithCapturedPredicate = driver.GetElement(
 			element => capturedButtonPredicate(element),
 			timeoutMs: 30_000);
@@ -76,16 +77,16 @@ public sealed class RunningProcessAttachIntegrationTests
 
 		var inputAutomationId = "HelloWorldInput";
 		var input = driver.GetElement(
-			element => element.TypeName == "TextBox" && element["AutomationProperties.AutomationId"] == inputAutomationId,
+			element => element.TypeName == "TextBox" && element[KnownProperties.AutomationId] == inputAutomationId,
 			timeoutMs: 30_000);
 		var updatedText = $"captured-linq-{Guid.NewGuid():N}";
 
-		input.SetProperty<TextBox, string>("Text", _ => updatedText);
+		input.SetProperty<TextBox, string>(KnownProperties.Text, _ => updatedText);
 
 		var refreshedInput = driver.GetElement(
-			element => element.TypeName == "TextBox" && element["AutomationProperties.AutomationId"] == inputAutomationId,
+			element => element.TypeName == "TextBox" && element[KnownProperties.AutomationId] == inputAutomationId,
 			timeoutMs: 30_000);
-		Assert.That(refreshedInput.GetProperty<string>("Text"), Is.EqualTo(updatedText));
+		Assert.That(refreshedInput.GetProperty<string>(KnownProperties.Text), Is.EqualTo(updatedText));
 	}
 
 	[Test]
@@ -101,22 +102,22 @@ public sealed class RunningProcessAttachIntegrationTests
 		var buttonContent = "Click here";
 		Func<Element, bool> buttonPredicate = element =>
 			element.TypeName == "Button"
-			&& element["Content"] == buttonContent
-			&& element["IsEnabled"];
+			&& element[KnownProperties.Content] == buttonContent
+			&& element[KnownProperties.IsEnabled];
 
 		var buttons = driver.GetElements(element => buttonPredicate(element), timeoutMs: 30_000);
 
-		Assert.That(buttons.Select(static element => element["AutomationProperties.AutomationId"].ToString()), Does.Contain("HelloWorldButton"));
+		Assert.That(buttons.Select(static element => element[KnownProperties.AutomationId].ToString()), Does.Contain("HelloWorldButton"));
 
 		var groupHeader = "Buttons";
 		Func<Element, bool> headerPredicate = element =>
 			element.TypeName == "GroupBox"
-			&& element["Header"] == groupHeader
-			&& element["IsEnabled"];
+			&& element[KnownProperties.Header] == groupHeader
+			&& element[KnownProperties.IsEnabled];
 
 		var group = driver.GetElement(element => headerPredicate(element), timeoutMs: 30_000);
 
-		Assert.That(group["AutomationProperties.AutomationId"].ToString(), Is.EqualTo("ButtonControls"));
+		Assert.That(group[KnownProperties.AutomationId].ToString(), Is.EqualTo("ButtonControls"));
 	}
 
 	[Test]
@@ -136,8 +137,8 @@ public sealed class RunningProcessAttachIntegrationTests
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);
 
-		Assert.That(menuItem["AutomationProperties.AutomationId"].ToString(), Is.EqualTo("MenuItemOne"));
-		Assert.That(menuItem["Header"].ToString(), Is.EqualTo("MenuItemOne"));
+		Assert.That(menuItem[KnownProperties.AutomationId].ToString(), Is.EqualTo("MenuItemOne"));
+		Assert.That(menuItem[KnownProperties.Header].ToString(), Is.EqualTo("MenuItemOne"));
 	}
 
 	[Test]
@@ -155,7 +156,7 @@ public sealed class RunningProcessAttachIntegrationTests
 		header.Click();
 
 		var openedHeader = WaitForMenuHeaderOpen(driver);
-		Assert.That(openedHeader.GetProperty<bool>("IsSubmenuOpen"), Is.True);
+		Assert.That(openedHeader.GetProperty<bool>(KnownProperties.IsSubmenuOpen), Is.True);
 	}
 
 	[Test]
@@ -175,10 +176,10 @@ public sealed class RunningProcessAttachIntegrationTests
 
 		WaitForElementText(driver, "HelloWorldInput", "MenuItemOne_Click event triggered.");
 		var checkedItem = driver.GetElement(
-			element => element["AutomationProperties.AutomationId"] == "MenuItemOne" && element["IsChecked"] == true,
+			element => element[KnownProperties.AutomationId] == "MenuItemOne" && element[KnownProperties.IsChecked] == true,
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);
-		Assert.That(checkedItem.GetProperty<bool>("IsChecked"), Is.True);
+		Assert.That(checkedItem.GetProperty<bool>(KnownProperties.IsChecked), Is.True);
 	}
 
 	[Test]
@@ -222,20 +223,20 @@ public sealed class RunningProcessAttachIntegrationTests
 		});
 
 		var buttonGroup = driver.GetElement(
-			element => element.TypeName == "GroupBox" && element["Header"] == "Buttons",
+			element => element.TypeName == "GroupBox" && element[KnownProperties.Header] == "Buttons",
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);
 
 		var button = driver.GetElement(
 			buttonGroup,
 			element => element.TypeName == "Button"
-				&& element["AutomationProperties.AutomationId"] == "OpenFileDialogButton"
-				&& element["Content"] == "Open file dialog",
+				&& element[KnownProperties.AutomationId] == "OpenFileDialogButton"
+				&& element[KnownProperties.Content] == "Open file dialog",
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);
 
 		Assert.That(button.TargetId, Is.Not.Empty);
-		Assert.That(button["AutomationProperties.AutomationId"].ToString(), Is.EqualTo("OpenFileDialogButton"));
+		Assert.That(button[KnownProperties.AutomationId].ToString(), Is.EqualTo("OpenFileDialogButton"));
 	}
 
 	[Test]
@@ -249,15 +250,15 @@ public sealed class RunningProcessAttachIntegrationTests
 		});
 
 		var button = driver.GetElement(
-			root => root["AutomationProperties.AutomationId"] == "ButtonControls",
+			root => root[KnownProperties.AutomationId] == "ButtonControls",
 			element => element.TypeName == "Button"
-				&& element["AutomationProperties.AutomationId"] == "OpenFileDialogButton"
-				&& element["Content"] == "Open file dialog",
+				&& element[KnownProperties.AutomationId] == "OpenFileDialogButton"
+				&& element[KnownProperties.Content] == "Open file dialog",
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);
 
 		Assert.That(button.TargetId, Is.Not.Empty);
-		Assert.That(button["AutomationProperties.AutomationId"].ToString(), Is.EqualTo("OpenFileDialogButton"));
+		Assert.That(button[KnownProperties.AutomationId].ToString(), Is.EqualTo("OpenFileDialogButton"));
 	}
 
 	[Test]
@@ -300,19 +301,19 @@ public sealed class RunningProcessAttachIntegrationTests
 
 	private static Element FindByAutomationId(AppDriver driver, string automationId) =>
 		driver.GetElement(
-			element => element["AutomationProperties.AutomationId"] == automationId,
+			element => element[KnownProperties.AutomationId] == automationId,
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);
 
 	private static Element WaitForElementText(AppDriver driver, string automationId, string expectedText) =>
 		driver.GetElement(
-			element => element["AutomationProperties.AutomationId"] == automationId && element["Text"] == expectedText,
+			element => element[KnownProperties.AutomationId] == automationId && element[KnownProperties.Text] == expectedText,
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);
 
 	private static Element WaitForMenuHeaderOpen(AppDriver driver) =>
 		driver.GetElement(
-			element => element["AutomationProperties.AutomationId"] == "MenuHeader" && element["IsSubmenuOpen"] == true,
+			element => element[KnownProperties.AutomationId] == "MenuHeader" && element[KnownProperties.IsSubmenuOpen] == true,
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);
 
@@ -344,7 +345,7 @@ public sealed class RunningProcessAttachIntegrationTests
 
 	private static bool ElementTextMatches(Element element, string normalizedExpected)
 	{
-		foreach (var propertyName in new[] { "Header", "Text", "Content", "AutomationProperties.Name", "Name" })
+		foreach (var propertyName in new[] { KnownProperties.Header, KnownProperties.Text, KnownProperties.Content, KnownProperties.AutomationName, KnownProperties.Name })
 		{
 			if (element.Properties.TryGetValue(propertyName, out var value)
 				&& NormalizeMenuHeader(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty) == normalizedExpected)

@@ -19,7 +19,7 @@ public sealed class Keyboard
 		this.driver = driver ?? throw new ArgumentNullException(nameof(driver));
 	}
 
-	public int DelayMs { get; set; } = 50;
+	public int DelayMs { get; set; } = TimeoutDefaults.KeyboardDelayMs;
 
 	public bool EnsureForeground { get; set; } = true;
 
@@ -28,7 +28,7 @@ public sealed class Keyboard
 		if (keys is null || keys.Length == 0)
 			throw new ArgumentException("At least one key is required.", nameof(keys));
 
-		var heldModifiers = new List<WpfKey>();
+		List<WpfKey> heldModifiers = [];
 		try
 		{
 			foreach (var key in keys)
@@ -85,7 +85,7 @@ public sealed class Keyboard
 			}
 
 			if (DelayMs > 0)
-				Thread.Sleep(Math.Min(DelayMs, 50));
+				Thread.Sleep(Math.Min(DelayMs, TimeoutDefaults.KeyboardPhysicalDelayCapMs));
 		}
 
 		driver.RefreshAfterPhysicalInput();

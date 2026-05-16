@@ -538,7 +538,7 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 
 	private static IReadOnlyList<UIElement> GetAscendingVisualTree(DependencyObject element)
 	{
-		var targets = new List<DependencyObject>();
+		List<DependencyObject> targets = [];
 		DependencyObject? current = element;
 		while (current is not null)
 		{

@@ -89,7 +89,7 @@ internal static class CliArgumentReader
 	public static IReadOnlyList<string> SplitCsv(string? value)
 	{
 		if (string.IsNullOrWhiteSpace(value))
-			return Array.Empty<string>();
+			return [];
 
 		return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
 			.Distinct(StringComparer.Ordinal)

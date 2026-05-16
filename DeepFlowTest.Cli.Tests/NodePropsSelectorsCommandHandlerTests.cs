@@ -1,5 +1,6 @@
 namespace DeepFlowTest.Cli.Tests;
 
+using DeepFlowTest.Contracts;
 using NUnit.Framework;
 
 [TestFixture]
@@ -61,7 +62,7 @@ public sealed class NodePropsSelectorsCommandHandlerTests
 		{
 			TargetId = "other-0002",
 			IsRoot = true,
-			Properties = new System.Collections.Generic.Dictionary<string, object?> { ["IsVisible"] = true },
+			Properties = new System.Collections.Generic.Dictionary<string, object?> { [KnownProperties.IsVisible] = true },
 		});
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
 
@@ -110,15 +111,15 @@ public sealed class NodePropsSelectorsCommandHandlerTests
 			IsRoot = true,
 			Properties = new System.Collections.Generic.Dictionary<string, object?>
 			{
-				["Text"] = "Only \"Text\" \\ Value",
-				["IsVisible"] = true,
+				[KnownProperties.Text] = "Only \"Text\" \\ Value",
+				[KnownProperties.IsVisible] = true,
 			},
 		});
 		session.Session.Snapshot.Nodes.Add(new DeepFlowTest.Interop.VisualTreeNodeDto
 		{
 			TargetId = "other-0002",
 			IsRoot = true,
-			Properties = new System.Collections.Generic.Dictionary<string, object?> { ["IsVisible"] = true },
+			Properties = new System.Collections.Generic.Dictionary<string, object?> { [KnownProperties.IsVisible] = true },
 		});
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
 

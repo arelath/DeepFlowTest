@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
 public sealed class FindSnapshotOptions
@@ -42,17 +43,12 @@ public sealed class FindSnapshotOptions
 
 	public bool UseShortIds { get; set; } = true;
 
-	public IReadOnlyList<string> Properties { get; set; } = Array.Empty<string>();
+	public IReadOnlyList<string> Properties { get; set; } = [];
 }
 
-public sealed class FindSnapshotService
+public sealed class FindSnapshotService(TreeSnapshotService? treeService = null)
 {
-	private readonly TreeSnapshotService treeService;
-
-	public FindSnapshotService(TreeSnapshotService? treeService = null)
-	{
-		this.treeService = treeService ?? new TreeSnapshotService();
-	}
+	private readonly TreeSnapshotService treeService = treeService ?? new TreeSnapshotService();
 
 	public FindResultData Find(VisualTreeSnapshot snapshot, FindSnapshotOptions options)
 	{
@@ -82,17 +78,17 @@ public sealed class FindSnapshotService
 			IncludePath = options.IncludePath,
 			IncludeTypeNames = true,
 			UseShortIds = options.UseShortIds,
-			Properties = options.IncludeProperties ? options.Properties : Array.Empty<string>(),
+			Properties = options.IncludeProperties ? options.Properties : [],
 		};
 		return new FindMatchData
 		{
 			Node = treeService.ShapeOne(node, snapshot, nodeOptions),
 			Ancestors = options.IncludeAncestors
 				? relationships.AncestorsOf(node.TargetId).Select(ancestor => treeService.ShapeOne(ancestor, snapshot, nodeOptions)).ToList()
-				: Array.Empty<TreeNodeData>(),
+				: [],
 			Children = options.IncludeChildren
 				? relationships.ChildrenOf(node.TargetId).Select(child => treeService.ShapeOne(child, snapshot, nodeOptions)).ToList()
-				: Array.Empty<TreeNodeData>(),
+				: [],
 		};
 	}
 
@@ -108,15 +104,15 @@ public sealed class FindSnapshotService
 			return false;
 
 		if (!string.IsNullOrWhiteSpace(options.Name)
-			&& !PropertyEqualsAny(node, options.Name!, comparison, "Name", "AutomationProperties.Name"))
+			&& !PropertyEqualsAny(node, options.Name!, comparison, KnownProperties.Name, KnownProperties.AutomationName))
 			return false;
 
 		if (!string.IsNullOrWhiteSpace(options.AutomationId)
-			&& !PropertyEqualsAny(node, options.AutomationId!, comparison, "AutomationProperties.AutomationId", "AutomationId", "Id"))
+			&& !PropertyEqualsAny(node, options.AutomationId!, comparison, KnownProperties.AutomationId, KnownProperties.AutomationIdAlias, KnownProperties.Id))
 			return false;
 
 		if (!string.IsNullOrWhiteSpace(options.Text)
-			&& !PropertyEqualsAny(node, options.Text!, comparison, "Text", "Content", "Header", "Title"))
+			&& !PropertyEqualsAny(node, options.Text!, comparison, KnownProperties.Text, KnownProperties.Content, KnownProperties.Header, KnownProperties.Title))
 			return false;
 
 		if (options.PropertyEquals is { } equals
@@ -131,10 +127,10 @@ public sealed class FindSnapshotService
 			&& !PropertyRegexAny(node, regexPair.Key, propertyRegex!))
 			return false;
 
-		if (options.Visible.HasValue && !PropertyBoolEquals(node, "IsVisible", options.Visible.Value))
+		if (options.Visible.HasValue && !PropertyBoolEquals(node, KnownProperties.IsVisible, options.Visible.Value))
 			return false;
 
-		if (options.Enabled.HasValue && !PropertyBoolEquals(node, "IsEnabled", options.Enabled.Value))
+		if (options.Enabled.HasValue && !PropertyBoolEquals(node, KnownProperties.IsEnabled, options.Enabled.Value))
 			return false;
 
 		return true;
@@ -201,14 +197,14 @@ public sealed class FindResultData
 
 	public int MaxMatches { get; set; }
 
-	public IReadOnlyList<FindMatchData> Matches { get; set; } = Array.Empty<FindMatchData>();
+	public IReadOnlyList<FindMatchData> Matches { get; set; } = [];
 }
 
 public sealed class FindMatchData
 {
 	public TreeNodeData Node { get; set; } = new();
 
-	public IReadOnlyList<TreeNodeData> Ancestors { get; set; } = Array.Empty<TreeNodeData>();
+	public IReadOnlyList<TreeNodeData> Ancestors { get; set; } = [];
 
-	public IReadOnlyList<TreeNodeData> Children { get; set; } = Array.Empty<TreeNodeData>();
+	public IReadOnlyList<TreeNodeData> Children { get; set; } = [];
 }

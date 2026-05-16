@@ -14,6 +14,12 @@ internal sealed class PipeStatusCommandHandler : ICommandHandler<PipeStatusComma
 		PipeStatusCommand.Process(request, context.Options, context.ReusableSession);
 }
 
+internal sealed class GetBindingFailuresCommandHandler : ICommandHandler<GetBindingFailuresCommandRequest, object>, IImmediateCommandHandler
+{
+	public object Handle(GetBindingFailuresCommandRequest request, CommandContext context) =>
+		GetBindingFailuresCommand.Process(request);
+}
+
 internal sealed class StartSendingCommandHandler : ICommandHandler<StartSendingCommandRequest, object>, IImmediateCommandHandler
 {
 	public object Handle(StartSendingCommandRequest request, CommandContext context) =>

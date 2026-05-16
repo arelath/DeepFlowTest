@@ -2,6 +2,7 @@ namespace DeepFlowTest.Cli;
 
 using System;
 using System.Linq;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
 public sealed class ElementResolver
@@ -70,10 +71,10 @@ public sealed class ElementResolver
 				match.Node.TargetId,
 				match.Node.ShortId,
 				match.Node.TypeName,
-				Name = match.Node.Properties.TryGetValue("Name", out var name) ? name : null,
-				AutomationName = match.Node.Properties.TryGetValue("AutomationProperties.Name", out var automationName) ? automationName : null,
-				Text = match.Node.Properties.TryGetValue("Text", out var text) ? text : null,
-				Content = match.Node.Properties.TryGetValue("Content", out var content) ? content : null,
+				Name = match.Node.Properties.TryGetValue(KnownProperties.Name, out var name) ? name : null,
+				AutomationName = match.Node.Properties.TryGetValue(KnownProperties.AutomationName, out var automationName) ? automationName : null,
+				Text = match.Node.Properties.TryGetValue(KnownProperties.Text, out var text) ? text : null,
+				Content = match.Node.Properties.TryGetValue(KnownProperties.Content, out var content) ? content : null,
 				match.Node.Path,
 			}).ToArray();
 			throw new CliException(CliErrorCodes.AmbiguousTarget, "Multiple elements matched the selector.", candidates);

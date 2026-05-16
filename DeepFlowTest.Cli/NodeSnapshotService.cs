@@ -21,7 +21,7 @@ public sealed class NodeSnapshotOptions
 
 	public bool UseShortIds { get; set; } = true;
 
-	public IReadOnlyList<string> Properties { get; set; } = Array.Empty<string>();
+	public IReadOnlyList<string> Properties { get; set; } = [];
 }
 
 public sealed class NodeSnapshotService
@@ -53,13 +53,13 @@ public sealed class NodeSnapshotService
 			Node = treeService.ShapeOne(node, snapshot, treeOptions),
 			Ancestors = options.IncludeAncestors
 				? relationships.AncestorsOf(fullId).Select(ancestor => treeService.ShapeOne(ancestor, snapshot, treeOptions)).ToList()
-				: Array.Empty<TreeNodeData>(),
+				: [],
 			Children = options.IncludeChildren
 				? relationships.ChildrenOf(fullId).Select(child => treeService.ShapeOne(child, snapshot, treeOptions)).ToList()
-				: Array.Empty<TreeNodeData>(),
+				: [],
 			Subtree = options.IncludeSubtree
 				? relationships.SubtreeOf(fullId, options.SubtreeDepth).Select(descendant => treeService.ShapeOne(descendant, snapshot, treeOptions)).ToList()
-				: Array.Empty<TreeNodeData>(),
+				: [],
 		};
 	}
 
@@ -81,11 +81,11 @@ public sealed class NodeResultData
 {
 	public TreeNodeData Node { get; set; } = new();
 
-	public IReadOnlyList<TreeNodeData> Ancestors { get; set; } = Array.Empty<TreeNodeData>();
+	public IReadOnlyList<TreeNodeData> Ancestors { get; set; } = [];
 
-	public IReadOnlyList<TreeNodeData> Children { get; set; } = Array.Empty<TreeNodeData>();
+	public IReadOnlyList<TreeNodeData> Children { get; set; } = [];
 
-	public IReadOnlyList<TreeNodeData> Subtree { get; set; } = Array.Empty<TreeNodeData>();
+	public IReadOnlyList<TreeNodeData> Subtree { get; set; } = [];
 }
 
 public sealed class PropsResultData

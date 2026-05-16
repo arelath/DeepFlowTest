@@ -7,7 +7,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 
-public sealed class VisualTreeSnapshot
+public sealed record class VisualTreeSnapshot
 {
 	public long SequenceNumber { get; set; }
 

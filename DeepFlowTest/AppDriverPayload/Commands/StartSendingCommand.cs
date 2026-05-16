@@ -1,6 +1,7 @@
 namespace DeepFlowTest.AppDriverPayload.Commands;
 
 using System;
+using DeepFlowTest.AppDriverPayload.Diagnostics;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
@@ -30,13 +31,15 @@ internal static class StartSendingCommand
 		if (targetValidation is not null)
 			return targetValidation;
 
+		var capture = CreateCapture(request, treeService);
 		var subscription = reusableSession.StartSubscription(
 			request.StreamKind,
 			command.ConnectionId,
 			request.IntervalMs,
 			command.TrySend ?? (_ => false),
-			CreateCapture(request, treeService),
-			deferStart: true);
+			capture.Capture,
+			deferStart: true,
+			lifetime: capture.Lifetime);
 		var response = new StartSendingCommandResponse
 		{
 			SubscriptionId = subscription.SubscriptionId,
@@ -59,16 +62,20 @@ internal static class StartSendingCommand
 		if (request.StreamKind is not (ProtocolConstants.StreamKinds.VisualTree
 			or ProtocolConstants.StreamKinds.VisualTreeDelta
 			or ProtocolConstants.StreamKinds.Screenshot
-			or ProtocolConstants.StreamKinds.EventLog))
+			or ProtocolConstants.StreamKinds.EventLog
+			or ProtocolConstants.StreamKinds.BindingFailures))
 		{
 			return StandardIpcResponse.FromError($"Unsupported stream kind '{request.StreamKind}'.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
 		}
 
-		if (request.IntervalMs < 50)
-			return StandardIpcResponse.FromError("Stream interval must be at least 50 ms.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
+		if (request.IntervalMs < TimeoutDefaults.StreamMinimumIntervalMs)
+			return StandardIpcResponse.FromError($"Stream interval must be at least {TimeoutDefaults.StreamMinimumIntervalMs} ms.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
 
 		if (!Enum.IsDefined(typeof(DeepFlowTest.ImageFormat), request.Format))
 			return StandardIpcResponse.FromError($"Unsupported stream image format '{request.Format}'.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
+
+		if (request.StreamKind == ProtocolConstants.StreamKinds.BindingFailures && !string.IsNullOrWhiteSpace(request.TargetId))
+			return StandardIpcResponse.FromError("Binding failure streams do not support target IDs.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
 
 		if (request.PropNames is not null)
 		{
@@ -95,14 +102,19 @@ internal static class StartSendingCommand
 		return StandardIpcResponse.FromError($"Target '{request.TargetId}' resolved as {resolution.Status}.", errorCode, PayloadLog.CurrentCorrelationId);
 	}
 
-	private static Func<long, object> CreateCapture(StartSendingCommandRequest request, TreeService treeService)
+	private static StreamCapturePlan CreateCapture(StartSendingCommandRequest request, TreeService treeService)
 	{
 		VisualTreeSnapshot? previous = null;
 		var imageFormat = request.Format;
 		if (request.StreamKind == ProtocolConstants.StreamKinds.EventLog)
-			return _ => CaptureEventLog(treeService);
+			return new StreamCapturePlan(_ => CaptureEventLog(treeService));
+		if (request.StreamKind == ProtocolConstants.StreamKinds.BindingFailures)
+		{
+			var bindingFailures = new BindingFailureStreamCapture();
+			return new StreamCapturePlan(bindingFailures.Capture, bindingFailures);
+		}
 
-		return _ =>
+		return new StreamCapturePlan(_ =>
 		{
 			object? captured = null;
 			var runResult = ThreadUtility.RunOnUIThreadAsync(() =>
@@ -130,7 +142,7 @@ internal static class StartSendingCommand
 			return runResult == UiThreadRunResult.Finished
 				? captured ?? StandardIpcResponse.Ok()
 				: StandardIpcResponse.FromError("No supported UI thread is available for streaming.", ProtocolConstants.ErrorCodes.UnsupportedTarget, PayloadLog.CurrentCorrelationId);
-		};
+		});
 	}
 
 	private static object CaptureSnapshot(StartSendingCommandRequest request, TreeService treeService) =>
@@ -160,7 +172,7 @@ internal static class StartSendingCommand
 	{
 		var snapshot = treeService.CaptureSnapshot(new TreeSnapshotOptions
 		{
-			RequestedPropertyNames = ["Name", "AutomationProperties.Name"],
+			RequestedPropertyNames = [KnownProperties.Name, KnownProperties.AutomationName],
 			IncludeHidden = true,
 			MaxNodeCount = 50,
 		});
@@ -172,6 +184,50 @@ internal static class StartSendingCommand
 			roots = snapshot.RootIds,
 			generatedUtc = DateTimeOffset.UtcNow,
 		};
+	}
+
+	private sealed class BindingFailureStreamCapture : IDisposable
+	{
+		private readonly IDisposable registration;
+		private long? lastSequenceNumber;
+		private bool disposed;
+
+		public BindingFailureStreamCapture()
+		{
+			lastSequenceNumber = BindingFailureCaptureService.Instance
+				.ReadSince(afterSequenceNumber: null, maxCount: 0)
+				.LastSequenceNumber;
+			registration = BindingFailureCaptureService.Instance.Start(new BindingFailureCaptureSettings());
+		}
+
+		public object Capture(long _)
+		{
+			var batch = BindingFailureCaptureService.Instance.ReadSince(lastSequenceNumber, maxCount: 1000);
+			lastSequenceNumber = batch.LastSequenceNumber;
+			return batch;
+		}
+
+		public void Dispose()
+		{
+			if (disposed)
+				return;
+
+			disposed = true;
+			registration.Dispose();
+		}
+	}
+
+	private sealed class StreamCapturePlan
+	{
+		public StreamCapturePlan(Func<long, object> capture, IDisposable? lifetime = null)
+		{
+			Capture = capture ?? throw new ArgumentNullException(nameof(capture));
+			Lifetime = lifetime;
+		}
+
+		public Func<long, object> Capture { get; }
+
+		public IDisposable? Lifetime { get; }
 	}
 
 }

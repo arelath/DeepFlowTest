@@ -7,10 +7,11 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 
-internal sealed class ElementMatcherPlanner
+internal sealed class ElementMatcherPlanner(ElementFactory elementFactory)
 {
 	public const int ClientSideMatcherMaxNodeCount = 50_000;
 
@@ -20,17 +21,17 @@ internal sealed class ElementMatcherPlanner
 		"ActualWidth",
 		"AllowDrop",
 		"AutomationProperties.Id",
-		"AutomationProperties.Name",
-		"AutomationProperties.AutomationId",
-		"AutomationId",
+		KnownProperties.AutomationName,
+		KnownProperties.AutomationId,
+		KnownProperties.AutomationIdAlias,
 		"Background",
 		"BorderBrush",
 		"BorderThickness",
 		"BoundarySize",
 		"Child",
-		"ClassName",
+		KnownProperties.ClassName,
 		"Command",
-		"Content",
+		KnownProperties.Content,
 		"CornerRadius",
 		"Cursor",
 		"DesiredSize",
@@ -41,19 +42,19 @@ internal sealed class ElementMatcherPlanner
 		"FontWeight",
 		"Foreground",
 		"HasContent",
-		"Header",
+		KnownProperties.Header,
 		"Height",
 		"HorizontalAlignment",
 		"InputGestureText",
-		"IsChecked",
-		"IsEnabled",
-		"IsExpanded",
-		"IsKeyboardFocused",
+		KnownProperties.IsChecked,
+		KnownProperties.IsEnabled,
+		KnownProperties.IsExpanded,
+		KnownProperties.IsKeyboardFocused,
 		"IsMouseCaptured",
 		"IsMouseDirectlyOver",
 		"IsMouseOver",
 		"IsOpen",
-		"IsVisible",
+		KnownProperties.IsVisible,
 		"KeyboardNavigation.ControlTabNavigation",
 		"KeyboardNavigation.DirectionalNavigation",
 		"KeyboardNavigation.TabNavigation",
@@ -64,7 +65,7 @@ internal sealed class ElementMatcherPlanner
 		"MaxWidth",
 		"MinHeight",
 		"MinWidth",
-		"Name",
+		KnownProperties.Name,
 		"Opacity",
 		"Orientation",
 		"Padding",
@@ -75,14 +76,14 @@ internal sealed class ElementMatcherPlanner
 		"ScrollViewer.PanningMode",
 		"ScrollViewer.VerticalScrollBarVisibility",
 		"TabIndex",
-		"Text",
+		KnownProperties.Text,
 		"TextElement.Background",
 		"TextElement.FontFamily",
 		"TextElement.FontSize",
 		"TextElement.FontWeight",
 		"TextElement.Foreground",
 		"TextTrimming",
-		"Title",
+		KnownProperties.Title,
 		"ToolTip",
 		"Top",
 		"Uid",
@@ -92,12 +93,7 @@ internal sealed class ElementMatcherPlanner
 		"WindowState",
 	];
 
-	private readonly ElementFactory elementFactory;
-
-	public ElementMatcherPlanner(ElementFactory elementFactory)
-	{
-		this.elementFactory = elementFactory ?? throw new ArgumentNullException(nameof(elementFactory));
-	}
+	private readonly ElementFactory elementFactory = elementFactory ?? throw new ArgumentNullException(nameof(elementFactory));
 
 	public static TimeSpan TimeoutFromMilliseconds(int timeoutMs) =>
 		TimeSpan.FromMilliseconds(Math.Max(1, timeoutMs));

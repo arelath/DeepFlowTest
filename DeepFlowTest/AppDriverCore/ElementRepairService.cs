@@ -6,21 +6,14 @@ using System.Linq;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
-internal sealed class ElementRepairService
+internal sealed class ElementRepairService(
+	ElementFinder elementFinder,
+	VisualTreeClient visualTreeClient,
+	ElementFactory elementFactory)
 {
-	private readonly ElementFinder elementFinder;
-	private readonly VisualTreeClient visualTreeClient;
-	private readonly ElementFactory elementFactory;
-
-	public ElementRepairService(
-		ElementFinder elementFinder,
-		VisualTreeClient visualTreeClient,
-		ElementFactory elementFactory)
-	{
-		this.elementFinder = elementFinder ?? throw new ArgumentNullException(nameof(elementFinder));
-		this.visualTreeClient = visualTreeClient ?? throw new ArgumentNullException(nameof(visualTreeClient));
-		this.elementFactory = elementFactory ?? throw new ArgumentNullException(nameof(elementFactory));
-	}
+	private readonly ElementFinder elementFinder = elementFinder ?? throw new ArgumentNullException(nameof(elementFinder));
+	private readonly VisualTreeClient visualTreeClient = visualTreeClient ?? throw new ArgumentNullException(nameof(visualTreeClient));
+	private readonly ElementFactory elementFactory = elementFactory ?? throw new ArgumentNullException(nameof(elementFactory));
 
 	public Element Repair(Element element)
 	{
@@ -84,17 +77,17 @@ internal sealed class ElementRepairService
 		if (string.Equals(staleElement.TypeName, candidate.TypeName, StringComparison.Ordinal))
 			score += 10;
 
-		if (PropertyEquals(staleElement, candidate, "AutomationProperties.AutomationId")
-			|| PropertyEquals(staleElement, candidate, "AutomationId"))
+		if (PropertyEquals(staleElement, candidate, KnownProperties.AutomationId)
+			|| PropertyEquals(staleElement, candidate, KnownProperties.AutomationIdAlias))
 		{
 			score += 100;
 		}
 
-		if (PropertyEquals(staleElement, candidate, "AutomationProperties.Name"))
+		if (PropertyEquals(staleElement, candidate, KnownProperties.AutomationName))
 			score += 100;
-		if (PropertyEquals(staleElement, candidate, "Name"))
+		if (PropertyEquals(staleElement, candidate, KnownProperties.Name))
 			score += 50;
-		if (PropertyEquals(staleElement, candidate, "Title"))
+		if (PropertyEquals(staleElement, candidate, KnownProperties.Title))
 			score += 5;
 		if (PropertyEquals(staleElement, candidate, "ActualWidth"))
 			score += 50;

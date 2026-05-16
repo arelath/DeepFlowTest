@@ -70,7 +70,7 @@ public static class CliRootCommand
 
 	public static string GetCommandPath(IReadOnlyList<string> args)
 	{
-		var tokens = new List<string>();
+		List<string> tokens = [];
 		for (var index = 0; index < args.Count; index++)
 		{
 			var arg = args[index];
@@ -155,6 +155,7 @@ public static class CliRootCommand
 		stream.Add(CreateTargetCommand("visual-tree-delta", "Stream visual tree deltas.", actions, static actionSet => actionSet.StreamVisualTreeDelta, AddStreamOptions));
 		stream.Add(CreateTargetCommand("screenshot", "Stream screenshots.", actions, static actionSet => actionSet.StreamScreenshot, AddStreamScreenshotOptions));
 		stream.Add(CreateTargetCommand("event-log", "Stream target event logs.", actions, static actionSet => actionSet.StreamEventLog, AddStreamOptions));
+		stream.Add(CreateTargetCommand("binding-failures", "Stream WPF binding failures.", actions, static actionSet => actionSet.StreamBindingFailures, AddStreamOptions));
 		return stream;
 	}
 

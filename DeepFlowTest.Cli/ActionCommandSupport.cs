@@ -126,8 +126,8 @@ public sealed class ActionCommandSupport
 		IEnumerable<string> defaults,
 		IEnumerable<string>? extras)
 	{
-		var result = new List<string>();
-		foreach (var property in defaults.Concat(extras ?? Array.Empty<string>()))
+		List<string> result = [];
+		foreach (var property in defaults.Concat(extras ?? []))
 			if (!string.IsNullOrWhiteSpace(property) && !result.Contains(property, StringComparer.Ordinal))
 				result.Add(property);
 

@@ -65,7 +65,7 @@ public partial class Element
 
 	public virtual Element SelectText(string text)
 	{
-		var currentText = GetProperty<string>("Text") ?? string.Empty;
+		var currentText = GetProperty<string>(KnownProperties.Text) ?? string.Empty;
 		var startIndex = currentText.IndexOf(text ?? string.Empty, StringComparison.Ordinal);
 		if (startIndex < 0)
 			return SetProperty("SelectedText", text);
@@ -84,36 +84,36 @@ public partial class Element
 	public virtual Element Invoke(string methodName, bool allowUnsafeCode = false) =>
 		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = methodName, AllowUnsafeCode = allowUnsafeCode });
 
-	public virtual Element Invoke<TInput>(Expression<Action<TInput>> code, int timeoutMs = 10_000) =>
+	public virtual Element Invoke<TInput>(Expression<Action<TInput>> code, int timeoutMs = TimeoutDefaults.CommandTimeoutMs) =>
 		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
 
-	public virtual TOutput? Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, int timeoutMs = 10_000)
+	public virtual TOutput? Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
 		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
 		ElementCommandExecutor.ThrowIfUnserializableResult(response, nameof(Invoke));
 		return ElementCommandExecutor.ConvertResponseValue<TOutput>(response.Value);
 	}
 
-	public virtual Element Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, out TOutput? result, int timeoutMs = 10_000)
+	public virtual Element Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, out TOutput? result, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
 		result = Invoke(code, timeoutMs);
 		return this;
 	}
 
-	public virtual Element InvokeAsync<TInput>(Expression<Func<TInput, Task>> code, int timeoutMs = 10_000)
+	public virtual Element InvokeAsync<TInput>(Expression<Func<TInput, Task>> code, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
 		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
 		return this;
 	}
 
-	public virtual TOutput? InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, int timeoutMs = 10_000)
+	public virtual TOutput? InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
 		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
 		ElementCommandExecutor.ThrowIfUnserializableResult(response, nameof(InvokeAsync));
 		return ElementCommandExecutor.ConvertResponseValue<TOutput>(response.Value);
 	}
 
-	public virtual Element InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, out TOutput? result, int timeoutMs = 10_000)
+	public virtual Element InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, out TOutput? result, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
 		result = InvokeAsync(code, timeoutMs);
 		return this;
@@ -130,7 +130,7 @@ public partial class Element
 			PropertyValue = Eval.SerializeCode(getValue),
 		});
 
-	public virtual Element Assert(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs = 10_000)
+	public virtual Element Assert(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
 		_ = predicateExpression ?? throw new ArgumentNullException(nameof(predicateExpression));
 		var parameter = DebugValueExpressionVisitor.GetDebugExpression(TypeName, this);

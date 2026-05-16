@@ -22,34 +22,24 @@ internal interface IUiCommandHandler
 {
 }
 
-internal sealed class CommandContext
+internal sealed class CommandContext(
+	NamedPipeServer.Command command,
+	AppDriverPayloadStartupOptions options,
+	ReusablePipeSession? reusableSession,
+	TreeService treeService,
+	ExpressionCache expressionCache)
 {
-	public CommandContext(
-		NamedPipeServer.Command command,
-		AppDriverPayloadStartupOptions options,
-		ReusablePipeSession? reusableSession,
-		TreeService treeService,
-		ExpressionCache expressionCache)
-	{
-		Command = command;
-		Options = options ?? throw new ArgumentNullException(nameof(options));
-		ReusableSession = reusableSession;
-		TreeService = treeService ?? throw new ArgumentNullException(nameof(treeService));
-		ExpressionCache = expressionCache ?? throw new ArgumentNullException(nameof(expressionCache));
-		LogCorrelationId = PayloadLog.CurrentCorrelationId;
-	}
+	public NamedPipeServer.Command Command { get; } = command;
 
-	public NamedPipeServer.Command Command { get; }
+	public AppDriverPayloadStartupOptions Options { get; } = options ?? throw new ArgumentNullException(nameof(options));
 
-	public AppDriverPayloadStartupOptions Options { get; }
+	public ReusablePipeSession? ReusableSession { get; } = reusableSession;
 
-	public ReusablePipeSession? ReusableSession { get; }
+	public TreeService TreeService { get; } = treeService ?? throw new ArgumentNullException(nameof(treeService));
 
-	public TreeService TreeService { get; }
+	public ExpressionCache ExpressionCache { get; } = expressionCache ?? throw new ArgumentNullException(nameof(expressionCache));
 
-	public ExpressionCache ExpressionCache { get; }
-
-	public string LogCorrelationId { get; }
+	public string LogCorrelationId { get; } = PayloadLog.CurrentCorrelationId;
 }
 
 internal sealed class CommandHandlerRegistry

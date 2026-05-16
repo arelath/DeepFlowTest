@@ -9,7 +9,7 @@ using System.Text.Json.Serialization;
 using DeepFlowTest;
 using DeepFlowTest.Shared;
 
-public sealed class ProcessSnapshot
+public sealed record class ProcessSnapshot
 {
 	public int ProcessId { get; set; }
 
@@ -17,7 +17,7 @@ public sealed class ProcessSnapshot
 
 	public string? MainWindowTitle { get; set; }
 
-	public IReadOnlyList<ProcessWindowSnapshot> TopLevelWindows { get; set; } = Array.Empty<ProcessWindowSnapshot>();
+	public IReadOnlyList<ProcessWindowSnapshot> TopLevelWindows { get; set; } = [];
 
 	public string? Architecture { get; set; }
 
@@ -49,9 +49,9 @@ public sealed class ProcessInspectionWarning
 
 public sealed class ProcessSnapshotResult
 {
-	public IReadOnlyList<ProcessSnapshot> Processes { get; set; } = Array.Empty<ProcessSnapshot>();
+	public IReadOnlyList<ProcessSnapshot> Processes { get; set; } = [];
 
-	public IReadOnlyList<ProcessInspectionWarning> Warnings { get; set; } = Array.Empty<ProcessInspectionWarning>();
+	public IReadOnlyList<ProcessInspectionWarning> Warnings { get; set; } = [];
 }
 
 public interface IProcessSnapshotSource
@@ -63,8 +63,8 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 {
 	public ProcessSnapshotResult GetSnapshots()
 	{
-		var snapshots = new List<ProcessSnapshot>();
-		var warnings = new List<ProcessInspectionWarning>();
+		List<ProcessSnapshot> snapshots = [];
+		List<ProcessInspectionWarning> warnings = [];
 		foreach (var process in Process.GetProcesses())
 		{
 			try
@@ -133,7 +133,7 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 				ProcessName = processName,
 				Message = ex.Message,
 			});
-			return Array.Empty<string>();
+			return [];
 		}
 	}
 
@@ -196,9 +196,9 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 	private static IReadOnlyList<ProcessWindowSnapshot> EnumerateTopLevelWindows(int processId)
 	{
 		if (processId <= 0)
-			return Array.Empty<ProcessWindowSnapshot>();
+			return [];
 
-		var windows = new List<ProcessWindowSnapshot>();
+		List<ProcessWindowSnapshot> windows = [];
 		NativeMethods.EnumWindows((hwnd, _) =>
 		{
 			NativeMethods.GetWindowThreadProcessId(hwnd, out var windowProcessId);
@@ -237,7 +237,7 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 
 public sealed class ProcessListData
 {
-	public IReadOnlyList<ProcessSnapshot> Processes { get; set; } = Array.Empty<ProcessSnapshot>();
+	public IReadOnlyList<ProcessSnapshot> Processes { get; set; } = [];
 
-	public IReadOnlyList<ProcessInspectionWarning> Warnings { get; set; } = Array.Empty<ProcessInspectionWarning>();
+	public IReadOnlyList<ProcessInspectionWarning> Warnings { get; set; } = [];
 }

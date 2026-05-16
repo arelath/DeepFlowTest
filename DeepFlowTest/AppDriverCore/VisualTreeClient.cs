@@ -6,21 +6,14 @@ using System.Linq;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
-internal sealed class VisualTreeClient
+internal sealed class VisualTreeClient(
+	DriverCommandClient commandClient,
+	ElementRegistry elementRegistry,
+	ElementFactory elementFactory)
 {
-	private readonly DriverCommandClient commandClient;
-	private readonly ElementRegistry elementRegistry;
-	private readonly ElementFactory elementFactory;
-
-	public VisualTreeClient(
-		DriverCommandClient commandClient,
-		ElementRegistry elementRegistry,
-		ElementFactory elementFactory)
-	{
-		this.commandClient = commandClient ?? throw new ArgumentNullException(nameof(commandClient));
-		this.elementRegistry = elementRegistry ?? throw new ArgumentNullException(nameof(elementRegistry));
-		this.elementFactory = elementFactory ?? throw new ArgumentNullException(nameof(elementFactory));
-	}
+	private readonly DriverCommandClient commandClient = commandClient ?? throw new ArgumentNullException(nameof(commandClient));
+	private readonly ElementRegistry elementRegistry = elementRegistry ?? throw new ArgumentNullException(nameof(elementRegistry));
+	private readonly ElementFactory elementFactory = elementFactory ?? throw new ArgumentNullException(nameof(elementFactory));
 
 	public VisualTreeSnapshot GetVisualTree(string? rootTargetId = null) =>
 		GetVisualTree(rootTargetId, propNames: null);

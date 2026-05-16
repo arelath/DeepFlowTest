@@ -174,7 +174,7 @@ internal sealed class NativeHwndTargetAdapter : UiTargetAdapterBase
 	}
 
 	private static bool IsNativeTextProperty(string propertyName) =>
-		string.Equals(propertyName, "FileName", StringComparison.Ordinal)
-		|| string.Equals(propertyName, "Text", StringComparison.Ordinal)
-		|| string.Equals(propertyName, "Value", StringComparison.Ordinal);
+		string.Equals(propertyName, KnownProperties.FileName, StringComparison.Ordinal)
+		|| string.Equals(propertyName, KnownProperties.Text, StringComparison.Ordinal)
+		|| string.Equals(propertyName, KnownProperties.Value, StringComparison.Ordinal);
 }

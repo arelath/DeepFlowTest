@@ -32,7 +32,7 @@ internal static class NativeDialogService
 			return rootWindowsForTests;
 
 		var processId = Process.GetCurrentProcess().Id;
-		var windows = new List<IntPtr>();
+		List<IntPtr> windows = [];
 		NativeMethods.EnumWindows((hwnd, _) =>
 		{
 			NativeMethods.GetWindowThreadProcessId(hwnd, out var windowProcessId);

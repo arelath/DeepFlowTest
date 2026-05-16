@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Input;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.Shared;
 
 internal static class KeyboardInput
@@ -26,7 +27,7 @@ internal static class KeyboardInput
 		InputManager.Current.ProcessInput(args);
 	}
 
-	public static void TypePhysical(string text, int delayMs = 20)
+	public static void TypePhysical(string text, int delayMs = TimeoutDefaults.KeyboardTextInputDelayMs)
 	{
 		foreach (var character in text ?? string.Empty)
 		{
@@ -52,13 +53,13 @@ internal static class KeyboardInput
 			}
 
 			if (delayMs > 0)
-				Thread.Sleep(Math.Min(delayMs, 50));
+				Thread.Sleep(Math.Min(delayMs, TimeoutDefaults.KeyboardPhysicalDelayCapMs));
 		}
 	}
 
-	public static void PressPhysical(IEnumerable<Key> keys, int delayMs = 50)
+	public static void PressPhysical(IEnumerable<Key> keys, int delayMs = TimeoutDefaults.KeyboardDelayMs)
 	{
-		var heldModifiers = new List<Key>();
+		List<Key> heldModifiers = [];
 		try
 		{
 			foreach (var key in keys)
@@ -90,7 +91,7 @@ internal static class KeyboardInput
 	public static IReadOnlyList<Key[]> ParseKeyGroups(object? rawKeys)
 	{
 		if (rawKeys is null)
-			return Array.Empty<Key[]>();
+			return [];
 
 		if (rawKeys is string stringKeys)
 			return stringKeys

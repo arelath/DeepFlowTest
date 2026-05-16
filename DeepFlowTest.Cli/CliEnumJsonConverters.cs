@@ -79,3 +79,28 @@ internal sealed class CliMouseButtonJsonConverter : JsonConverter<MouseButtonKin
 		writer.WriteStringValue(ProtocolValueMapper.FormatMouseButton(value));
 	}
 }
+
+internal sealed class CliBindingFailureSeverityJsonConverter : JsonConverter<BindingFailureSeverity>
+{
+	public override BindingFailureSeverity Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		if (reader.TokenType == JsonTokenType.String)
+		{
+			try
+			{
+				return ProtocolValueMapper.ParseBindingFailureSeverity(reader.GetString());
+			}
+			catch (FormatException ex)
+			{
+				throw new JsonException(ex.Message, ex);
+			}
+		}
+
+		throw new JsonException("Binding failure severity must be a string.");
+	}
+
+	public override void Write(Utf8JsonWriter writer, BindingFailureSeverity value, JsonSerializerOptions options)
+	{
+		writer.WriteStringValue(ProtocolValueMapper.FormatBindingFailureSeverity(value));
+	}
+}

@@ -139,7 +139,7 @@ public sealed class CliReadServiceTests
 		Assert.That(byAutomation.MatchCount, Is.EqualTo(1));
 		Assert.That(byText.MatchCount, Is.EqualTo(1));
 		Assert.That(
-			() => service.Find(snapshot, new FindSnapshotOptions { PropertyRegex = new KeyValuePair<string, string>("Text", "[") }),
+			() => service.Find(snapshot, new FindSnapshotOptions { PropertyRegex = new KeyValuePair<string, string>(KnownProperties.Text, "[") }),
 			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
 	}
 
@@ -147,8 +147,8 @@ public sealed class CliReadServiceTests
 	public void FindSnapshotServiceMatchesFullSelectorMatrix()
 	{
 		var node = Node("button-2", "root-1", type: "Button", automationId: "GoButton", text: "Go");
-		node.Properties["Content"] = "Run";
-		node.Properties["Header"] = "Launch";
+		node.Properties[KnownProperties.Content] = "Run";
+		node.Properties[KnownProperties.Header] = "Launch";
 		node.Properties["Custom"] = "abc-123";
 		var snapshot = Snapshot(Node("root-1", isRoot: true, childIds: new[] { "button-2" }), node);
 		var service = new FindSnapshotService();
@@ -177,15 +177,15 @@ public sealed class CliReadServiceTests
 	{
 		var properties = new Dictionary<string, object?>
 		{
-			["Name"] = targetId,
-			["AutomationProperties.Name"] = targetId,
-			["IsVisible"] = visible,
-			["IsEnabled"] = true,
+			[KnownProperties.Name] = targetId,
+			[KnownProperties.AutomationName] = targetId,
+			[KnownProperties.IsVisible] = visible,
+			[KnownProperties.IsEnabled] = true,
 		};
 		if (automationId is not null)
-			properties["AutomationProperties.AutomationId"] = automationId;
+			properties[KnownProperties.AutomationId] = automationId;
 		if (text is not null)
-			properties["Text"] = text;
+			properties[KnownProperties.Text] = text;
 
 		return new VisualTreeNodeDto
 		{
