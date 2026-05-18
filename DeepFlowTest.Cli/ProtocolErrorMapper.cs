@@ -2,12 +2,13 @@ namespace DeepFlowTest.Cli;
 
 using DeepFlowTest.Contracts;
 
-internal static class ProtocolErrorMapper
+public static class ProtocolErrorMapper
 {
 	public static string Map(string? errorCode)
 	{
 		return errorCode switch
 		{
+			ProtocolConstants.ErrorCodes.InvalidArguments => CliErrorCodes.InvalidArguments,
 			ProtocolConstants.ErrorCodes.StaleTarget => CliErrorCodes.StaleTarget,
 			ProtocolConstants.ErrorCodes.TargetExited => CliErrorCodes.TargetExited,
 			ProtocolConstants.ErrorCodes.UnsupportedTarget => CliErrorCodes.UnsupportedTarget,

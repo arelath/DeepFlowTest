@@ -61,6 +61,9 @@ public sealed partial class TreeService
 
 		foreach (var root in roots)
 		{
+			if (root is null)
+				continue;
+
 			if (nodes.Count >= options.MaxNodeCount)
 			{
 				isTruncated = true;

@@ -2,6 +2,7 @@ namespace DeepFlowTest.Cli.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using NUnit.Framework;
@@ -40,14 +41,23 @@ public sealed class CliReadServiceTests
 	}
 
 	[Test]
-	public void VisualTreeReaderRejectsBlankAndDuplicateTargetIds()
+	public void VisualTreeReaderRejectsBlankTargetIds()
 	{
 		Assert.That(
 			() => new VisualTreeResponseReader().Read(Snapshot(Node(""))),
 			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ProtocolError));
-		Assert.That(
-			() => new VisualTreeResponseReader().Read(Snapshot(Node("dup"), Node("dup"))),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ProtocolError));
+	}
+
+	[Test]
+	public void VisualTreeReaderDeduplicatesRepeatedTargetIds()
+	{
+		var snapshot = new VisualTreeResponseReader().Read(Snapshot(
+			Node("root", isRoot: true, childIds: new[] { "child", "child" }),
+			Node("child", "root"),
+			Node("child", "root")));
+
+		Assert.That(snapshot.Nodes.Select(static node => node.TargetId), Is.EqualTo(new[] { "root", "child" }));
+		Assert.That(snapshot.Nodes.Single(static node => node.TargetId == "root").ChildIds, Is.EqualTo(new[] { "child" }));
 	}
 
 	[Test]
@@ -101,6 +111,18 @@ public sealed class CliReadServiceTests
 		Assert.That(flat.Nodes[1].Depth, Is.EqualTo(1));
 		Assert.That(flat.Nodes[1].Path, Is.EqualTo("/root-1/child-2"));
 		Assert.That(nested.Roots[0].Children, Has.Count.EqualTo(1));
+	}
+
+	[Test]
+	public void TreeSnapshotServiceDoesNotEmitRepeatedNodesFromDuplicateChildReferences()
+	{
+		var snapshot = Snapshot(
+			Node("root-1", isRoot: true, childIds: new[] { "child-2", "child-2" }),
+			Node("child-2", "root-1"));
+
+		var shaped = new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions { Shape = TreeShape.Flat });
+
+		Assert.That(shaped.Nodes.Select(static node => node.TargetId), Is.EqualTo(new[] { "root-1", "child-2" }));
 	}
 
 	[Test]

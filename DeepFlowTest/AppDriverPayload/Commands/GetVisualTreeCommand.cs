@@ -19,7 +19,7 @@ internal static class GetVisualTreeCommand
 				RootTargetId = request.RootTargetId,
 				IncludeHidden = request.IncludeHidden,
 				MaxDepth = request.MaxDepth,
-				MaxNodeCount = request.MaxNodeCount ?? 1000,
+				MaxNodeCount = request.MaxNodeCount ?? VisualTreeDefaults.DefaultMaxNodeCount,
 			});
 
 			if (snapshot.NodeCount == 0)

@@ -21,7 +21,7 @@ internal static class PingCommand
 				{
 					RequestedPropertyNames = [],
 					IncludeHidden = true,
-					MaxNodeCount = 1000,
+					MaxNodeCount = VisualTreeDefaults.DefaultMaxNodeCount,
 				});
 				rootCount = snapshot.RootIds.Count;
 				nodeCount = snapshot.Nodes.Count;

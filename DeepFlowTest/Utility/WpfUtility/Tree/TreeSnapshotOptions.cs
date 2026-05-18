@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Utility.WpfUtility.Tree;
 
 using System.Collections.Generic;
+using DeepFlowTest.Contracts;
 
 public sealed class TreeSnapshotOptions
 {
@@ -12,5 +13,5 @@ public sealed class TreeSnapshotOptions
 
 	public int? MaxDepth { get; set; }
 
-	public int MaxNodeCount { get; set; } = 1000;
+	public int MaxNodeCount { get; set; } = VisualTreeDefaults.DefaultMaxNodeCount;
 }

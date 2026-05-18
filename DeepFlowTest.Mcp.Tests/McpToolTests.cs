@@ -1,0 +1,382 @@
+namespace DeepFlowTest.Mcp.Tests;
+
+using System.Linq;
+using System.Threading;
+using DeepFlowTest.Contracts;
+using DeepFlowTest.Mcp.Hosting;
+using DeepFlowTest.Mcp.Prompts;
+using DeepFlowTest.Mcp.Resources;
+using DeepFlowTest.Mcp.Tools;
+using DeepFlowTest.Interop;
+using NUnit.Framework;
+
+[TestFixture]
+public sealed class McpToolTests
+{
+	[Test]
+	public void ListProcessesFiltersCandidates()
+	{
+		var fixture = McpTestHost.CreateHost();
+
+		var response = TargetTools.ListProcesses(fixture.Runner, fixture.Services);
+		var data = (DeepFlowTest.Cli.ProcessListData)response.Data!;
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(data.Processes.Select(static process => process.ProcessName), Is.EqualTo(new[] { "UiApp" }));
+	}
+
+	[Test]
+	public void GetVisualTreeUsesAttachedSession()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().AsSnapshot, Is.True);
+	}
+
+	[Test]
+	public void FailedIpcResponsesMapToStructuredMcpErrors()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.SendHandler = _ => StandardIpcResponse.FromError(
+			"target went stale",
+			ProtocolConstants.ErrorCodes.StaleTarget);
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = TargetTools.PingTarget(fixture.Runner, fixture.Host, fixture.Options);
+
+		Assert.That(response.Success, Is.False);
+		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.StaleTarget));
+		Assert.That(response.Error.Message, Is.EqualTo("target went stale"));
+		Assert.That(response.Recovery, Does.Contain("Refresh the visual tree"));
+	}
+
+	[Test]
+	public void NamedPipeFailuresMapToStructuredMcpErrors()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.SendHandler = _ => throw new NamedPipeSessionException(
+			ProtocolConstants.ErrorCodes.CommandTimeout,
+			"target did not answer");
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = TargetTools.PingTarget(fixture.Runner, fixture.Host, fixture.Options);
+
+		Assert.That(response.Success, Is.False);
+		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.CommandTimeout));
+		Assert.That(response.Error.Message, Is.EqualTo("target did not answer"));
+		Assert.That(response.Recovery, Does.Contain("Increase timeoutMs"));
+	}
+
+	[TestCase(ProtocolConstants.ErrorCodes.InvalidArguments, DeepFlowTest.Cli.CliErrorCodes.InvalidArguments)]
+	[TestCase(ProtocolConstants.ErrorCodes.UnsupportedTarget, DeepFlowTest.Cli.CliErrorCodes.UnsupportedTarget)]
+	[TestCase(ProtocolConstants.ErrorCodes.UnsupportedCommand, DeepFlowTest.Cli.CliErrorCodes.UnsupportedTarget)]
+	[TestCase(ProtocolConstants.ErrorCodes.TargetExited, DeepFlowTest.Cli.CliErrorCodes.TargetExited)]
+	public void ProtocolErrorCodesMapToCliErrorClasses(string protocolError, string expectedCliError)
+	{
+		Assert.That(DeepFlowTest.Cli.ProtocolErrorMapper.Map(protocolError), Is.EqualTo(expectedCliError));
+	}
+
+	[Test]
+	public void ActionToolsDenyMutationsByDefault()
+	{
+		var fixture = McpTestHost.CreateHost();
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = ActionTools.ClickElement(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Options,
+			targetId: "0002");
+
+		Assert.That(response.Success, Is.False);
+		Assert.That(response.Error!.Code, Is.EqualTo("action-denied"));
+	}
+
+	[Test]
+	public void ClickSendsPayloadCommandWhenActionsAreAllowed()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = ActionTools.ClickElement(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Options,
+			targetId: "0002",
+			button: "right");
+
+		Assert.That(response.Success, Is.True);
+		var command = sessionService.Session.Commands.OfType<ClickCommandRequest>().Single();
+		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
+		Assert.That(command.MouseButton, Is.EqualTo(MouseButtonKind.Right));
+	}
+
+	[Test]
+	public void ScreenshotFileWritesRequirePolicy()
+	{
+		var fixture = McpTestHost.CreateHost();
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = ScreenshotTools.CaptureScreenshot(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Resources,
+			fixture.Options,
+			outputPath: "capture.png");
+
+		Assert.That(response.Success, Is.False);
+		Assert.That(response.Error!.Code, Is.EqualTo("action-denied"));
+	}
+
+	[Test]
+	public void ScreenshotCanReturnInlineBytesAndResourceReference()
+	{
+		var fixture = McpTestHost.CreateHost();
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = ScreenshotTools.CaptureScreenshot(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Resources,
+			fixture.Options,
+			includeBase64: true);
+		var data = (ScreenshotCaptureData)response.Data!;
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(data.Screenshot.BytesBase64, Is.EqualTo("AQIDBA=="));
+		Assert.That(data.Resource.Uri, Is.EqualTo(DeepFlowResourceNames.LatestScreenshot));
+		Assert.That(DeepFlowResources.LatestScreenshot(fixture.ServiceProvider), Does.Contain("AQIDBA=="));
+	}
+
+	[Test]
+	public void ScreenshotWithFullTargetIdDoesNotForceVisualTreeRefresh()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = ScreenshotTools.CaptureScreenshot(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Resources,
+			fixture.Options,
+			targetId: "button-0002");
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>(), Is.Empty);
+		Assert.That(sessionService.Session.Commands.OfType<ScreenshotCommandRequest>().Single().TargetId, Is.EqualTo("button-0002"));
+	}
+
+	[Test]
+	public void StreamStopSendsPayloadStopCommand()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var started = StreamTools.StartStream(fixture.Runner, fixture.Host, fixture.Streams, fixture.Options);
+		var streamId = ((DeepFlowTest.Mcp.Hosting.StreamStartResult)started.Data!).StreamId;
+		var stopped = StreamTools.StopStream(fixture.Runner, fixture.Streams, streamId);
+
+		Assert.That(started.Success, Is.True);
+		Assert.That(stopped.Success, Is.True);
+		Assert.That(sessionService.Session.Commands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
+	}
+
+	[Test]
+	public void StreamReadReportsBufferedFramesAndDrops()
+	{
+		var options = McpTestHost.Options();
+		options.StreamBufferSize = 1;
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.StreamFrames =
+		[
+			new StreamMessage("sub-1", ProtocolConstants.StreamKinds.VisualTree, 1, new { value = 1 }),
+			new StreamMessage("sub-1", ProtocolConstants.StreamKinds.VisualTree, 2, new { value = 2 }),
+			new StreamMessage("sub-1", ProtocolConstants.StreamKinds.VisualTree, 3, new { value = 3 }),
+		];
+		var fixture = McpTestHost.CreateHost(options: options, sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var started = StreamTools.StartStream(fixture.Runner, fixture.Host, fixture.Streams, fixture.Options);
+		var streamId = ((StreamStartResult)started.Data!).StreamId;
+		Assert.That(SpinWait.SpinUntil(() => sessionService.Session.LastStreamSession!.ReadCount >= 3, 1_000), Is.True);
+		var read = StreamTools.ReadStream(fixture.Runner, fixture.Streams, streamId, maxFrames: 10);
+		var data = (StreamReadResult)read.Data!;
+
+		Assert.That(read.Success, Is.True);
+		Assert.That(data.Frames.Select(static frame => frame.Sequence), Is.EqualTo(new long[] { 3 }));
+		Assert.That(data.DroppedFrames, Is.EqualTo(2));
+	}
+
+	[Test]
+	public void DetachStopsActiveStreams()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		StreamTools.StartStream(fixture.Runner, fixture.Host, fixture.Streams, fixture.Options);
+		fixture.Host.Detach();
+
+		Assert.That(sessionService.Session.LastStreamSession!.Disposed, Is.True);
+		Assert.That(sessionService.Session.Commands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
+	}
+
+	[Test]
+	public void DeadTargetStatusStopsActiveStreams()
+	{
+		var resolver = new FakeTargetResolver();
+		var targetProcess = (FakeTargetProcess)resolver.Target.TargetProcess!;
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(resolver: resolver, sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+		StreamTools.StartStream(fixture.Runner, fixture.Host, fixture.Streams, fixture.Options);
+
+		targetProcess.HasExited = true;
+		var status = fixture.Host.Status;
+
+		Assert.That(status.IsAlive, Is.False);
+		Assert.That(sessionService.Session.LastStreamSession!.Disposed, Is.True);
+		Assert.That(sessionService.Session.Commands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
+	}
+
+	[Test]
+	public void VisualTreeCacheHitsAndRefreshMisses()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
+		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
+		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options, refresh: true);
+
+		Assert.That(sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>().Count(), Is.EqualTo(2));
+	}
+
+	[Test]
+	public void VisualTreeCacheRetainsIndependentPropertySets()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options, properties: "Name");
+		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options, properties: "Text");
+		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options, properties: "Name");
+		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options, properties: "Text");
+
+		Assert.That(sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>().Count(), Is.EqualTo(2));
+	}
+
+	[Test]
+	public void ActionInvalidatesVisualTreeCache()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
+		ActionTools.FocusElement(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, targetId: "button-0002", after: "none");
+		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
+
+		Assert.That(sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>().Count(), Is.EqualTo(2));
+	}
+
+	[Test]
+	public void ActionToolsGenerateExpectedIpcCommands()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		ActionTools.FocusElement(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, targetId: "0002", after: "none");
+		ActionTools.TypeText(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, "hello", targetId: "0002", clearFirst: true, after: "none");
+		ActionTools.PressKeys(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, "Enter", targetId: "0002", delayMs: 5, ensureForeground: false, after: "none");
+		ActionTools.SetProperty(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, KnownProperties.Value, "\"42\"", targetId: "0002", after: "none");
+		ActionTools.RaiseEvent(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, "Click", targetId: "0002", after: "none");
+		ActionTools.InvokeOperation(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, "Select", targetId: "0002", after: "none");
+
+		Assert.That(sessionService.Session.Commands.OfType<FocusCommandRequest>().Single().TargetId, Is.EqualTo("button-0002"));
+		Assert.That(sessionService.Session.Commands.OfType<TypeTextCommandRequest>().Single().ClearFirst, Is.True);
+		Assert.That(sessionService.Session.Commands.OfType<KeyPressCommandRequest>().Single().EnsureForeground, Is.False);
+		Assert.That(sessionService.Session.Commands.OfType<SetPropertyCommandRequest>().Single().PropertyValue, Is.EqualTo("42"));
+		Assert.That(sessionService.Session.Commands.OfType<KnownRoutedEventCommandRequest>().Single().EventName, Is.EqualTo("Click"));
+		Assert.That(sessionService.Session.Commands.OfType<KnownOperationCommandRequest>().Single().Operation, Is.EqualTo("Select"));
+	}
+
+	[Test]
+	public void LatestResourcesAreUpdatedByTools()
+	{
+		var fixture = McpTestHost.CreateHost();
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
+		InspectTools.GetNode(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options, "0002");
+		InspectTools.GetBindingFailures(fixture.Runner, fixture.Host, fixture.Resources, fixture.Options);
+		ScreenshotTools.CaptureScreenshot(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
+
+		Assert.That(DeepFlowResources.LatestVisualTree(fixture.ServiceProvider), Does.Contain("SubmitButton"));
+		Assert.That(DeepFlowResources.LatestNode(fixture.ServiceProvider), Does.Contain("button-0002"));
+		Assert.That(DeepFlowResources.LatestBindingFailures(fixture.ServiceProvider), Does.Contain("failures"));
+		Assert.That(DeepFlowResources.LatestScreenshot(fixture.ServiceProvider), Does.Contain("AQIDBA=="));
+	}
+
+	[Test]
+	public void LiveResourceReadsFreshVisualTree()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var json = DeepFlowResources.LiveVisualTree(fixture.ServiceProvider);
+
+		Assert.That(json, Does.Contain("SubmitButton"));
+		Assert.That(sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().AsSnapshot, Is.True);
+	}
+
+	[Test]
+	public void PromptsReferenceExistingTools()
+	{
+		var fixture = McpTestHost.CreateHost();
+		var promptText = string.Join("\n", DeepFlowPrompts.InspectUi(), DeepFlowPrompts.DriveUi(), DeepFlowPrompts.DiagnoseUiFailure(), DeepFlowPrompts.AuthorTest());
+		var knownTools = fixture.Resources.ListKnownToolNames();
+		var referencedTools = knownTools.Where(promptText.Contains).ToArray();
+
+		Assert.That(referencedTools, Is.SupersetOf(new[]
+		{
+			"deepflow_target_status",
+			"deepflow_get_visual_tree",
+			"deepflow_find_elements",
+			"deepflow_click_element",
+			"deepflow_get_binding_failures",
+		}));
+	}
+
+	[Test]
+	public void UnexpectedToolErrorsAreSanitizedAndLogged()
+	{
+		var fixture = McpTestHost.CreateHost();
+
+		var response = fixture.Runner.Run(() => throw new System.InvalidOperationException("sensitive detail"));
+
+		Assert.That(response.Success, Is.False);
+		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.UnexpectedError));
+		Assert.That(response.Error.Message, Does.Not.Contain("sensitive detail"));
+		Assert.That(DeepFlowResources.RecentLogs(fixture.ServiceProvider), Does.Contain("Unexpected MCP tool failure"));
+	}
+}

@@ -117,7 +117,7 @@ public sealed class CliTreeDefaults
 	public TreeShape Shape { get; set; } = TreeShape.Flat;
 	public string? Root { get; set; }
 	public int MaxDepth { get; set; } = -1;
-	public int Limit { get; set; } = 1_000;
+	public int Limit { get; set; } = VisualTreeDefaults.DefaultMaxNodeCount;
 	public List<string> Props { get; set; } = CliDefaults.CreateDefaultPropertyList();
 	public List<string>? TypeNames { get; set; }
 	public bool IncludePath { get; set; }

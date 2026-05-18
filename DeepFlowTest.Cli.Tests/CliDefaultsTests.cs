@@ -23,7 +23,7 @@ public sealed class CliDefaultsTests
 		Assert.That(defaults.AfterSnapshot, Is.EqualTo("none"));
 		Assert.That(defaults.TreeShape, Is.EqualTo("flat"));
 		Assert.That(defaults.TreeMaxDepth, Is.EqualTo(-1));
-		Assert.That(defaults.TreeLimit, Is.EqualTo(1000));
+		Assert.That(defaults.TreeLimit, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 		Assert.That(defaults.PropertyNames, Is.EquivalentTo(KnownProperties.DefaultVisualTreePropertyNames));
 		Assert.That(defaults.FindLimit, Is.EqualTo(50));
 		Assert.That(defaults.WaitIntervalMs, Is.EqualTo(TimeoutDefaults.CliWaitIntervalMs));
@@ -61,7 +61,7 @@ public sealed class CliDefaultsTests
 
 		store.Clear("commands.tree.limit");
 
-		Assert.That(store.Load().TreeLimit, Is.EqualTo(1000));
+		Assert.That(store.Load().TreeLimit, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 	}
 
 	[Test]

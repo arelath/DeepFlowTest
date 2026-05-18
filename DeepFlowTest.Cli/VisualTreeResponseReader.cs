@@ -46,32 +46,47 @@ public sealed class VisualTreeResponseReader
 
 	private static VisualTreeSnapshot NormalizeSnapshot(VisualTreeSnapshot snapshot, IReadOnlyList<string>? requestedProperties)
 	{
+		var uniqueNodes = new List<VisualTreeNodeDto>(snapshot.Nodes.Count);
 		var duplicateCheck = new HashSet<string>(StringComparer.Ordinal);
 		foreach (var node in snapshot.Nodes)
 		{
 			if (string.IsNullOrWhiteSpace(node.TargetId))
 				throw new CliException(CliErrorCodes.ProtocolError, "Visual tree response contained a blank target ID.");
 			if (!duplicateCheck.Add(node.TargetId))
-				throw new CliException(CliErrorCodes.ProtocolError, $"Visual tree response contained duplicate target ID '{node.TargetId}'.");
+				continue;
 
 			node.ChildIds ??= [];
 			node.Properties ??= [];
+			uniqueNodes.Add(node);
 		}
 
-		var byParent = snapshot.Nodes
+		snapshot.Nodes = uniqueNodes;
+		var validIds = uniqueNodes.Select(static node => node.TargetId).ToHashSet(StringComparer.Ordinal);
+		foreach (var node in uniqueNodes)
+		{
+			if (!string.IsNullOrWhiteSpace(node.ParentId) && !validIds.Contains(node.ParentId!))
+				node.ParentId = null;
+
+			node.ChildIds = node.ChildIds
+				.Where(childId => validIds.Contains(childId) && !string.Equals(childId, node.TargetId, StringComparison.Ordinal))
+				.Distinct(StringComparer.Ordinal)
+				.ToList();
+		}
+
+		var byParent = uniqueNodes
 			.Where(static node => !string.IsNullOrWhiteSpace(node.ParentId))
 			.GroupBy(static node => node.ParentId!, StringComparer.Ordinal)
 			.ToDictionary(static group => group.Key, static group => group.Select(static node => node.TargetId).ToList(), StringComparer.Ordinal);
-		foreach (var node in snapshot.Nodes)
+		foreach (var node in uniqueNodes)
 		{
 			if (node.ChildIds.Count == 0 && byParent.TryGetValue(node.TargetId, out var childIds))
 				node.ChildIds = childIds;
 		}
 
 		snapshot.RootIds = snapshot.RootIds.Count == 0
-			? snapshot.Nodes.Where(static node => node.IsRoot || string.IsNullOrWhiteSpace(node.ParentId)).Select(static node => node.TargetId).ToList()
-			: snapshot.RootIds;
-		snapshot.NodeCount = snapshot.Nodes.Count;
+			? uniqueNodes.Where(static node => node.IsRoot || string.IsNullOrWhiteSpace(node.ParentId)).Select(static node => node.TargetId).ToList()
+			: snapshot.RootIds.Where(validIds.Contains).Distinct(StringComparer.Ordinal).ToList();
+		snapshot.NodeCount = uniqueNodes.Count;
 		if (requestedProperties is not null && snapshot.RequestedPropertyNames.Count == 0)
 			snapshot.RequestedPropertyNames = requestedProperties.ToList();
 		return snapshot;

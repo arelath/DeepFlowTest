@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>DeepFlowTest.Mcp.Tests</RootNamespace>
+    <AssemblyName>DeepFlowTest.Mcp.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <ProjectReference Include="..\DeepFlowTest.Mcp\DeepFlowTest.Mcp.csproj" />
+    <ProjectReference Include="..\TestHarnesses\HelloWorld\HelloWorld.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

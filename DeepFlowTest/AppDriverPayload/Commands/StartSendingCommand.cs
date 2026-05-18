@@ -151,7 +151,7 @@ internal static class StartSendingCommand
 			RequestedPropertyNames = request.PropNames,
 			RootTargetId = request.TargetId,
 			IncludeHidden = true,
-			MaxNodeCount = 1000,
+			MaxNodeCount = VisualTreeDefaults.DefaultMaxNodeCount,
 		});
 
 	private static object CaptureDelta(StartSendingCommandRequest request, TreeService treeService, ref VisualTreeSnapshot? previous)

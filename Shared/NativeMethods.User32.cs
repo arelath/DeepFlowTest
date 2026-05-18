@@ -21,6 +21,7 @@ internal static partial class NativeMethods
 	public const int WM_MBUTTONUP = 0x0208;
 	public const int WM_SETTEXT = 0x000C;
 	public const int BM_CLICK = 0x00F5;
+	public const uint PW_RENDERFULLCONTENT = 0x00000002;
 
 	[DllImport("user32.dll", SetLastError = true)]
 	public static extern uint SendInput(uint inputCount, Input[] inputs, int inputSize);
@@ -81,6 +82,9 @@ internal static partial class NativeMethods
 
 	[DllImport("user32.dll")]
 	public static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
+
+	[DllImport("user32.dll", SetLastError = true)]
+	public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdcBlt, uint flags);
 
 	public delegate bool EnumChildWindowsProc(IntPtr hwnd, IntPtr lParam);
 

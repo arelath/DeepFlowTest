@@ -14,7 +14,7 @@ public sealed class TreeSnapshotOptions
 
 	public int MaxDepth { get; set; } = -1;
 
-	public int Limit { get; set; } = 1000;
+	public int Limit { get; set; } = VisualTreeDefaults.DefaultMaxNodeCount;
 
 	public bool IncludeHidden { get; set; }
 
@@ -105,6 +105,7 @@ public sealed class TreeSnapshotService(CliTargetIdService? targetIds = null)
 	private static List<TreeNodeTraversalItem> Flatten(VisualTreeSnapshot snapshot, SnapshotRelationships relationships, IReadOnlyList<string> rootIds)
 	{
 		List<TreeNodeTraversalItem> result = [];
+		HashSet<string> visited = new(StringComparer.Ordinal);
 		foreach (var rootId in rootIds)
 			Visit(rootId, 0);
 
@@ -112,6 +113,9 @@ public sealed class TreeSnapshotService(CliTargetIdService? targetIds = null)
 
 		void Visit(string targetId, int depth)
 		{
+			if (!visited.Add(targetId))
+				return;
+
 			if (!relationships.Nodes.TryGetValue(targetId, out var node))
 				return;
 
