@@ -26,6 +26,9 @@ internal abstract class UiTargetAdapterBase : IUiTargetAdapter
 	public virtual bool TryEnsureForeground(object target) =>
 		Focus(target).Success;
 
+	public virtual PointerTargetResult GetPointerTarget(object target, PointerAnchor anchor) =>
+		PointerTargetResult.Unsupported($"Target type '{target.GetType().FullName}' cannot be converted to screen coordinates.");
+
 	public virtual ActionResult SetProperty(object target, string propertyName, object? value) =>
 		TrySetClrProperty(target, propertyName, value, out var result)
 			? result

@@ -75,6 +75,74 @@ internal static class ActionTools
 		});
 	}
 
+	[McpServerTool(Name = "deepflow_drag_and_drop"), Description("Drag a source element and drop it on a destination element. Mutates UI and requires allowActions.")]
+	public static McpToolResponse DragAndDrop(
+		McpToolRunner runner,
+		McpSessionHost host,
+		McpSnapshotCache cache,
+		IOptions<DeepFlowMcpOptions> options,
+		string? targetId = null,
+		string? typeName = null,
+		string? name = null,
+		string? automationId = null,
+		string? text = null,
+		string? property = null,
+		string? destinationTargetId = null,
+		string? destinationTypeName = null,
+		string? destinationName = null,
+		string? destinationAutomationId = null,
+		string? destinationText = null,
+		string? destinationProperty = null,
+		int durationMs = 500,
+		int holdMs = 75,
+		int stepIntervalMs = 16,
+		int postDropWaitMs = 100,
+		double sourceAnchorX = 0.5,
+		double sourceAnchorY = 0.5,
+		double destinationAnchorX = 0.5,
+		double destinationAnchorY = 0.5,
+		bool ensureForeground = true,
+		bool validateSameProcess = true,
+		string? after = "target")
+	{
+		return runner.Run(() =>
+		{
+			if (!options.Value.Policy.AllowActions)
+				throw new CliException(CliErrorCodes.ActionDenied, "Action 'drag' requires allowActions policy.");
+
+			var session = host.RequireSession();
+			var common = CreateCommonOptions(options.Value, after);
+			var defaults = CreateDefaults(options.Value);
+			var sourceSelector = CreateSelector(targetId, typeName, null, name, automationId, text, property).ToCliSelector();
+			var destinationSelector = CreateSelector(destinationTargetId, destinationTypeName, null, destinationName, destinationAutomationId, destinationText, destinationProperty).ToCliSelector();
+			var result = new ActionCommandSupport().ExecuteTwoTarget(
+				"drag",
+				session.AppSession,
+				common,
+				defaults,
+				sourceSelector,
+				destinationSelector,
+				(sourceTargetId, resolvedDestinationTargetId) => new DragAndDropCommandRequest
+				{
+					TargetId = sourceTargetId,
+					DestinationTargetId = resolvedDestinationTargetId,
+					DurationMs = durationMs,
+					HoldMs = holdMs,
+					StepIntervalMs = stepIntervalMs,
+					PostDropWaitMs = postDropWaitMs,
+					SourceAnchorX = sourceAnchorX,
+					SourceAnchorY = sourceAnchorY,
+					DestinationAnchorX = destinationAnchorX,
+					DestinationAnchorY = destinationAnchorY,
+					EnsureForeground = ensureForeground,
+					ValidateSameProcess = validateSameProcess,
+					TimeoutMs = common.TimeoutMs,
+				});
+			cache.Invalidate();
+			return result;
+		});
+	}
+
 	[McpServerTool(Name = "deepflow_focus_element"), Description("Move focus to an element resolved by target ID or selector.")]
 	public static McpToolResponse FocusElement(
 		McpToolRunner runner,

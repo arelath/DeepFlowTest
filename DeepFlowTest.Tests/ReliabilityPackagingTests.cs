@@ -31,13 +31,16 @@ public sealed class ReliabilityPackagingTests
 	[Test]
 	public void PublishLayoutConfigurationIncludesPayloadAndResourceFolders()
 	{
-		var project = File.ReadAllText(Path.Combine(TestContext.CurrentContext.TestDirectory, "..", "..", "..", "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj"));
+		var root = Path.Combine(TestContext.CurrentContext.TestDirectory, "..", "..", "..");
+		var project = File.ReadAllText(Path.Combine(root, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj"));
+		var payloadLayoutTargets = File.ReadAllText(Path.Combine(root, "Shared", "DeepFlowTestPayloadLayout.targets"));
 
-		Assert.That(project, Does.Contain("payloads\\netframework"));
-		Assert.That(project, Does.Contain("payloads\\netcoreapp"));
-		Assert.That(project, Does.Contain("payloads\\dotnet"));
-		Assert.That(project, Does.Contain("DeepFlowTestResources\\x86"));
-		Assert.That(project, Does.Contain("DeepFlowTestResources\\x64"));
+		Assert.That(project, Does.Contain("DeepFlowTestPayloadLayout.targets"));
+		Assert.That(payloadLayoutTargets, Does.Contain("payloads\\netframework"));
+		Assert.That(payloadLayoutTargets, Does.Contain("payloads\\netcoreapp"));
+		Assert.That(payloadLayoutTargets, Does.Contain("payloads\\dotnet"));
+		Assert.That(payloadLayoutTargets, Does.Contain("DeepFlowTestResources\\x86"));
+		Assert.That(payloadLayoutTargets, Does.Contain("DeepFlowTestResources\\x64"));
 	}
 
 	[Test]

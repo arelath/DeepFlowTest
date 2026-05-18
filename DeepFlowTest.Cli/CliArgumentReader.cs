@@ -57,6 +57,18 @@ internal static class CliArgumentReader
 		return parsed;
 	}
 
+	public static double GetDouble(IReadOnlyList<string> args, string name, double defaultValue)
+	{
+		var value = GetOption(args, name);
+		if (value is null)
+			return defaultValue;
+
+		if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid number value for '{name}'.");
+
+		return parsed;
+	}
+
 	public static bool GetBool(IReadOnlyList<string> args, string name, bool defaultValue)
 	{
 		for (var i = 0; i < args.Count; i++)

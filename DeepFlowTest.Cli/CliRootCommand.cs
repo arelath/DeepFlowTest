@@ -23,6 +23,7 @@ public static class CliRootCommand
 		"wait",
 		"stream",
 		"click",
+		"drag",
 		"focus",
 		"type",
 		"key",
@@ -53,6 +54,7 @@ public static class CliRootCommand
 		root.Add(CreateTargetCommand("wait", "Wait for a node or state.", actions, static actionSet => actionSet.Wait, AddWaitOptions));
 		root.Add(CreateStreamCommand(actions));
 		root.Add(CreateTargetCommand("click", "Click a target node.", actions, static actionSet => actionSet.Click, AddClickOptions));
+		root.Add(CreateTargetCommand("drag", "Drag a source node and drop it on a destination node.", actions, static actionSet => actionSet.Drag, AddDragOptions));
 		root.Add(CreateTargetCommand("focus", "Focus a target node.", actions, static actionSet => actionSet.Focus, AddActionTargetOptions));
 		root.Add(CreateTargetCommand("type", "Type text into a target node.", actions, static actionSet => actionSet.Type, AddTypeOptions));
 		root.Add(CreateTargetCommand("key", "Send key input.", actions, static actionSet => actionSet.Key, AddKeyOptions));
@@ -66,7 +68,7 @@ public static class CliRootCommand
 
 	public static string HelpText =>
 		$"{DeepFlowTest.ProductInfo.Name} CLI{Environment.NewLine}"
-		+ "Commands: config, processes, ping, pipe status, tree, find, node, props, selectors, screenshot, wait, stream, click, focus, type, key, set, raise, invoke, version";
+		+ "Commands: config, processes, ping, pipe status, tree, find, node, props, selectors, screenshot, wait, stream, click, drag, focus, type, key, set, raise, invoke, version";
 
 	public static string GetCommandPath(IReadOnlyList<string> args)
 	{
@@ -300,6 +302,22 @@ public static class CliRootCommand
 		command.Add(CreateOption<bool>("--double", "Send a double-click routed event."));
 	}
 
+	private static void AddDragOptions(Command command)
+	{
+		AddActionTargetOptions(command);
+		AddDestinationTargetOptions(command);
+		command.Add(CreateOption<int>("--duration-ms", "Mouse movement duration in milliseconds."));
+		command.Add(CreateOption<int>("--hold-ms", "Delay after mouse down before movement."));
+		command.Add(CreateOption<int>("--step-interval-ms", "Delay between movement steps."));
+		command.Add(CreateOption<int>("--post-drop-wait-ms", "Delay after mouse up."));
+		command.Add(CreateOption<double>("--source-anchor-x", "Normalized source X anchor."));
+		command.Add(CreateOption<double>("--source-anchor-y", "Normalized source Y anchor."));
+		command.Add(CreateOption<double>("--destination-anchor-x", "Normalized destination X anchor."));
+		command.Add(CreateOption<double>("--destination-anchor-y", "Normalized destination Y anchor."));
+		command.Add(CreateOption<bool>("--foreground", "Bring the source target main window to foreground first."));
+		command.Add(CreateOption<bool>("--validate-same-process", "Require drag points to remain over the target process."));
+	}
+
 	private static void AddTypeOptions(Command command)
 	{
 		AddActionTargetOptions(command);
@@ -352,6 +370,24 @@ public static class CliRootCommand
 		command.Add(CreateOption<bool>("--case-sensitive", "Use case-sensitive matching."));
 		command.Add(CreateOption<bool>("--first", "Use the first matching node."));
 		command.Add(CreateOption<int>("--index", "Use zero-based index from matching nodes."));
+	}
+
+	private static void AddDestinationTargetOptions(Command command)
+	{
+		command.Add(CreateOption<string>("--to-target", "Destination target element ID.", "--to-target-id"));
+		command.Add(CreateOption<string>("--to-name", "Destination name selector."));
+		command.Add(CreateOption<string>("--to-automation-id", "Destination automation ID selector."));
+		command.Add(CreateOption<string>("--to-text", "Destination text selector."));
+		command.Add(CreateOption<string>("--to-type", "Destination type selector."));
+		command.Add(CreateOption<string>("--to-type-contains", "Destination type contains selector."));
+		command.Add(CreateOption<string>("--to-match-property", "Destination property equality selector as name=value.", "--to-prop", "--to-property"));
+		command.Add(CreateOption<string>("--to-property-contains", "Destination property contains selector as name=value.", "--to-contains"));
+		command.Add(CreateOption<string>("--to-property-regex", "Destination property regex selector as name=regex.", "--to-regex"));
+		command.Add(CreateOption<bool>("--to-visible", "Require visible destination nodes.", "--to-require-visible"));
+		command.Add(CreateOption<bool>("--to-enabled", "Require enabled destination nodes.", "--to-require-enabled"));
+		command.Add(CreateOption<bool>("--to-case-sensitive", "Use case-sensitive destination matching."));
+		command.Add(CreateOption<bool>("--to-first", "Use the first matching destination node."));
+		command.Add(CreateOption<int>("--to-index", "Use zero-based destination index from matching nodes."));
 	}
 
 	private static Option<T> CreateOption<T>(string name, string description, params string[] aliases) =>
@@ -444,6 +480,28 @@ public static class CliRootCommand
 			or "--subtree-depth"
 			or "--button"
 			or "--count"
+			or "--hold-ms"
+			or "--step-interval-ms"
+			or "--post-drop-wait-ms"
+			or "--source-anchor-x"
+			or "--source-anchor-y"
+			or "--destination-anchor-x"
+			or "--destination-anchor-y"
+			or "--to-target"
+			or "--to-target-id"
+			or "--to-name"
+			or "--to-automation-id"
+			or "--to-text"
+			or "--to-type"
+			or "--to-type-contains"
+			or "--to-match-property"
+			or "--to-property"
+			or "--to-prop"
+			or "--to-property-contains"
+			or "--to-contains"
+			or "--to-property-regex"
+			or "--to-regex"
+			or "--to-index"
 			or "--value"
 			or "--selector-text"
 			or "--keys"

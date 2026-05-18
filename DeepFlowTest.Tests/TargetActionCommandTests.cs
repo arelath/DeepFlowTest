@@ -718,6 +718,64 @@ public sealed class TargetActionCommandTests
 	}
 
 	[Test]
+	public void DragAndDropRejectsInvalidOptionsBeforePhysicalInput()
+	{
+		var window = CreateWindow("Drag validation", new Button { Name = "dragValidationButton", Content = "Drag" });
+
+		try
+		{
+			window.Show();
+			var response = (StandardIpcResponse)CaptureResponse(new DragAndDropCommandRequest
+			{
+				TargetId = "source",
+				DestinationTargetId = "destination",
+				DurationMs = -1,
+			})!;
+
+			Assert.That(response.Success, Is.False);
+			Assert.That(response.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.InvalidArguments));
+			Assert.That(response.Error, Does.Contain("duration"));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void DragAndDropRejectsDisabledSourceBeforePhysicalInput()
+	{
+		var source = new Button
+		{
+			Name = "disabledDragSource",
+			Content = "Drag",
+			IsEnabled = false,
+		};
+		var window = CreateWindow("Drag disabled source", source);
+
+		try
+		{
+			window.Show();
+			var sourceId = FindTargetId("disabledDragSource");
+			var response = (StandardIpcResponse)CaptureResponse(new DragAndDropCommandRequest
+			{
+				TargetId = sourceId,
+				DestinationTargetId = sourceId,
+				EnsureForeground = false,
+			})!;
+
+			Assert.That(response.Success, Is.False);
+			Assert.That(response.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.UnsupportedTarget));
+			Assert.That(response.Error, Does.Contain("source target"));
+			Assert.That(response.Error, Does.Contain("not enabled"));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
 	public void ModalDialogWatcherReturnsPendingWhenShowDialogHookFires()
 	{
 		AppHooks.ShowDialogCalled = true;

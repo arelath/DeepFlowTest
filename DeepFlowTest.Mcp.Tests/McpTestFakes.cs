@@ -200,6 +200,7 @@ internal sealed class FakeAppSession : ICliAppSession
 				BytesBase64 = "AQIDBA==",
 			},
 			StopSendingCommandRequest stop => new StopSendingCommandResponse(stop.SubscriptionId, ProtocolConstants.Statuses.Stopped),
+			DragAndDropCommandRequest => new StandardIpcResponse { Success = true },
 			_ => new StandardIpcResponse { Success = true },
 		};
 		return (TResponse)response;

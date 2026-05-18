@@ -407,7 +407,6 @@ public sealed class WinFormsSupportTests
 	[Test]
 	public void HybridWpfWinFormsHostAppearsInSnapshots()
 	{
-		EnsureWpfApplication();
 		var root = new StackPanel { Name = "hybridRoot" };
 		var host = new WindowsFormsHost
 		{
@@ -451,20 +450,6 @@ public sealed class WinFormsSupportTests
 		Assert.That(wpfNode.ParentId, Is.EqualTo(hostNode.TargetId));
 		Assert.That(wpfNode.Properties["Content"], Is.EqualTo("Hosted WPF"));
 		Assert.That(snapshot.TargetFrameworkFamily, Is.EqualTo("mixed"));
-	}
-
-	private static void EnsureWpfApplication()
-	{
-		if (Application.Current is not null)
-			return;
-
-		try
-		{
-			_ = new Application();
-		}
-		catch (InvalidOperationException)
-		{
-		}
 	}
 
 	private static Forms.Form CreateForm()

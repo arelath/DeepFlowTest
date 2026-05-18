@@ -171,6 +171,7 @@ internal sealed class FakeCliAppSession : ICliAppSession
 				BytesBase64 = Screenshot.BytesBase64,
 			},
 			ClickCommandRequest => ActionResponse,
+			DragAndDropCommandRequest => ActionResponse,
 			FocusCommandRequest => ActionResponse,
 			TypeTextCommandRequest => ActionResponse,
 			KeyPressCommandRequest => ActionResponse,

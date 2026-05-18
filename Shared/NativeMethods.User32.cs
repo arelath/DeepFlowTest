@@ -6,12 +6,17 @@ using System.Text;
 
 internal static partial class NativeMethods
 {
+	public const int INPUT_MOUSE = 0;
 	public const int INPUT_KEYBOARD = 1;
 	public const ushort VK_SHIFT = 0x10;
 	public const ushort VK_CONTROL = 0x11;
 	public const ushort VK_MENU = 0x12;
 	public const uint KEYEVENTF_KEYUP = 0x0002;
 	public const uint KEYEVENTF_UNICODE = 0x0004;
+	public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+	public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+	public const int SM_CXDRAG = 68;
+	public const int SM_CYDRAG = 69;
 
 	public const int WM_LBUTTONDOWN = 0x0201;
 	public const int WM_LBUTTONUP = 0x0202;
@@ -34,6 +39,21 @@ internal static partial class NativeMethods
 
 	[DllImport("user32.dll")]
 	public static extern bool SetForegroundWindow(IntPtr hwnd);
+
+	[DllImport("user32.dll")]
+	public static extern bool SetCursorPos(int x, int y);
+
+	[DllImport("user32.dll")]
+	public static extern bool GetCursorPos(out NativePoint point);
+
+	[DllImport("user32.dll")]
+	public static extern IntPtr WindowFromPoint(NativePoint point);
+
+	[DllImport("user32.dll")]
+	public static extern bool ClientToScreen(IntPtr hwnd, ref NativePoint point);
+
+	[DllImport("user32.dll")]
+	public static extern int GetSystemMetrics(int index);
 
 	[DllImport("user32.dll")]
 	public static extern bool GetClientRect(IntPtr hwnd, out NativeRect rect);
@@ -96,6 +116,13 @@ internal static partial class NativeMethods
 		public int Type;
 		public InputUnion Union;
 
+		public static Input Mouse(MouseInputData input) =>
+			new()
+			{
+				Type = INPUT_MOUSE,
+				Union = new InputUnion { Mouse = input },
+			};
+
 		public static Input Keyboard(KeyboardInputData input) =>
 			new()
 			{
@@ -109,6 +136,20 @@ internal static partial class NativeMethods
 	{
 		[FieldOffset(0)]
 		public KeyboardInputData Keyboard;
+
+		[FieldOffset(0)]
+		public MouseInputData Mouse;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	public struct MouseInputData
+	{
+		public int Dx;
+		public int Dy;
+		public uint MouseData;
+		public uint Flags;
+		public uint Time;
+		public IntPtr ExtraInfo;
 	}
 
 	[StructLayout(LayoutKind.Sequential)]
@@ -128,6 +169,14 @@ internal static partial class NativeMethods
 		public int Top;
 		public int Right;
 		public int Bottom;
+#pragma warning restore CS0649
+	}
+
+	public struct NativePoint
+	{
+#pragma warning disable CS0649
+		public int X;
+		public int Y;
 #pragma warning restore CS0649
 	}
 }

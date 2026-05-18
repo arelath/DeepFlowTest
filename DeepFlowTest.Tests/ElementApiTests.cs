@@ -382,6 +382,51 @@ public sealed class ElementApiTests
 	}
 
 	[Test]
+	public void DragAndDropToSelectorSendsDestinationAndOptions()
+	{
+		var session = new FakeSession(
+			FindMatch("source-target", "drag-source"),
+			FindMatch("destination-target", "drop-target"),
+			StandardIpcResponse.Ok());
+		var driver = CreateDriver(session);
+		var source = driver.GetElement(ElementSelector.ByName("drag-source"));
+		var options = new DragAndDropOptions
+		{
+			DurationMs = 350,
+			HoldMs = 40,
+			StepIntervalMs = 7,
+			PostDropWaitMs = 15,
+			SourceAnchorX = 0.1,
+			SourceAnchorY = 0.2,
+			DestinationAnchorX = 0.8,
+			DestinationAnchorY = 0.9,
+			EnsureForeground = false,
+			ValidateSameProcess = false,
+			TimeoutMs = 1234,
+		};
+
+		var returned = source.DragAndDropTo(ElementSelector.ByName("drop-target"), options);
+
+		Assert.That(returned, Is.SameAs(source));
+		var findRequests = session.SentCommands.OfType<FindElementCommandRequest>().ToArray();
+		Assert.That(findRequests.Select(static request => request.Selector?.Name), Is.EqualTo(new[] { "drag-source", "drop-target" }));
+		var drag = session.SentCommands.OfType<DragAndDropCommandRequest>().Single();
+		Assert.That(drag.TargetId, Is.EqualTo("source-target"));
+		Assert.That(drag.DestinationTargetId, Is.EqualTo("destination-target"));
+		Assert.That(drag.DurationMs, Is.EqualTo(350));
+		Assert.That(drag.HoldMs, Is.EqualTo(40));
+		Assert.That(drag.StepIntervalMs, Is.EqualTo(7));
+		Assert.That(drag.PostDropWaitMs, Is.EqualTo(15));
+		Assert.That(drag.SourceAnchorX, Is.EqualTo(0.1));
+		Assert.That(drag.SourceAnchorY, Is.EqualTo(0.2));
+		Assert.That(drag.DestinationAnchorX, Is.EqualTo(0.8));
+		Assert.That(drag.DestinationAnchorY, Is.EqualTo(0.9));
+		Assert.That(drag.EnsureForeground, Is.False);
+		Assert.That(drag.ValidateSameProcess, Is.False);
+		Assert.That(drag.TimeoutMs, Is.EqualTo(1234));
+	}
+
+	[Test]
 	public void ElementAssertUsesDiagnosticAssertionFramework()
 	{
 		var match = new FindElementCommandResponse

@@ -36,6 +36,8 @@ public sealed class CommandParsingTests
 	[TestCase("click --pid 1 --target dft-1")]
 	[TestCase("click --pid 1 --target dft-1 --double")]
 	[TestCase("click --pid 1 --prop Name=Save --require-visible")]
+	[TestCase("drag --pid 1 --target dft-1 --to-target dft-2 --duration-ms 250")]
+	[TestCase("drag --pid 1 --automation-id Card --to-automation-id Lane --destination-anchor-y 0.25 --foreground false")]
 	[TestCase("focus --pid 1 --target dft-1")]
 	[TestCase("type --pid 1 --target dft-1 --text hello")]
 	[TestCase("key --pid 1 --keys Enter")]

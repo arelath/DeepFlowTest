@@ -71,7 +71,8 @@ internal static class AppDriverCommandDispatcher
 	private static async Task<object> RunUiHandlerAsync(
 		string kind,
 		RegisteredCommandHandler handler,
-		CommandContext context)
+		CommandContext context,
+		CancellationToken token)
 	{
 		if (delayBeforeUiHandlerForTests > 0)
 			await Task.Delay(delayBeforeUiHandlerForTests).ConfigureAwait(false);
@@ -87,7 +88,12 @@ internal static class AppDriverCommandDispatcher
 		}).ConfigureAwait(false);
 
 		if (runResult == UiThreadRunResult.Finished)
+		{
+			if (result is IDeferredCommandAction deferred)
+				return await deferred.ExecuteAsync(token).ConfigureAwait(false);
+
 			return result ?? StandardIpcResponse.Ok();
+		}
 
 		return UnsupportedUiCommand.Process(kind);
 	}
@@ -101,7 +107,7 @@ internal static class AppDriverCommandDispatcher
 		AppHooks.ShowDialogCalled = false;
 		using var cancellation = new CancellationTokenSource();
 		var commandTask = ThreadUtility.RunCommandWithTimeoutAsync(
-			() => RunUiHandlerAsync(kind, handler, context),
+			() => RunUiHandlerAsync(kind, handler, context, cancellation.Token),
 			timeoutMs,
 			(message, exception) => PayloadLog.Write(message, exception),
 			context.LogCorrelationId);
@@ -198,6 +204,7 @@ internal static class AppDriverCommandDispatcher
 		if (IsNativeWindowTargetId(targetId))
 		{
 			return kind is ProtocolConstants.Commands.Click
+				or ProtocolConstants.Commands.DragAndDrop
 				or ProtocolConstants.Commands.Focus
 				or ProtocolConstants.Commands.TypeText
 				or ProtocolConstants.Commands.SetProperty

@@ -228,6 +228,42 @@ public sealed record class ClickCommandRequest : TargetedIpcCommand
 	public int ClickCount { get; set; } = 1;
 }
 
+public sealed record class DragAndDropCommandRequest : TargetedIpcCommand
+{
+	public DragAndDropCommandRequest()
+		: base(ProtocolConstants.Commands.DragAndDrop)
+	{
+	}
+
+	public DragAndDropCommandRequest(string sourceTargetId, string destinationTargetId, int? timeoutMs = null)
+		: base(ProtocolConstants.Commands.DragAndDrop, sourceTargetId, timeoutMs)
+	{
+		DestinationTargetId = destinationTargetId;
+	}
+
+	public string DestinationTargetId { get; set; } = string.Empty;
+
+	public int DurationMs { get; set; } = 500;
+
+	public int HoldMs { get; set; } = 75;
+
+	public int StepIntervalMs { get; set; } = 16;
+
+	public int PostDropWaitMs { get; set; } = 100;
+
+	public double SourceAnchorX { get; set; } = 0.5;
+
+	public double SourceAnchorY { get; set; } = 0.5;
+
+	public double DestinationAnchorX { get; set; } = 0.5;
+
+	public double DestinationAnchorY { get; set; } = 0.5;
+
+	public bool EnsureForeground { get; set; } = true;
+
+	public bool ValidateSameProcess { get; set; } = true;
+}
+
 public sealed record class FocusCommandRequest : TargetedIpcCommand
 {
 	public FocusCommandRequest()

@@ -24,7 +24,6 @@ public sealed class TreeServiceTests
 	[Test]
 	public void WpfRootDiscoveryBuildsSnapshotFromShownWindow()
 	{
-		_ = Application.Current ?? new Application();
 		var button = new Button { Name = "helloButton", Content = "Hello" };
 		var window = CreateWindow("Root discovery", button);
 
@@ -40,7 +39,6 @@ public sealed class TreeServiceTests
 
 			Assert.That(snapshot.RootIds, Is.Not.Empty);
 			Assert.That(snapshot.TargetFrameworkFamily, Is.EqualTo("wpf"));
-			Assert.That(snapshot.Nodes.Any(static node => node.TypeName == "Application"), Is.True);
 			Assert.That(snapshot.Nodes.Any(static node => node.TypeName == "Window"), Is.True);
 
 			var buttonNode = snapshot.Nodes.SingleOrDefault(node =>
@@ -125,7 +123,6 @@ public sealed class TreeServiceTests
 	[Test]
 	public void WrapperModelExposesTargetKindResourcesImagesWebBrowserAndAutomationPeers()
 	{
-		_ = Application.Current ?? new Application();
 		var image = new Image
 		{
 			Name = "treeImage",
@@ -143,7 +140,7 @@ public sealed class TreeServiceTests
 		{
 			window.Show();
 
-			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
+			var snapshot = new TreeService(rootProvider: () => [window, new SystemResourceRoot()]).CaptureSnapshot(new TreeSnapshotOptions
 			{
 				RequestedPropertyNames = new[] { KnownProperties.Name, "Width", "Height", "Count", KnownProperties.ResourceKeys, KnownProperties.ImageMetadata, KnownProperties.Xaml, KnownProperties.ResourceOrigin },
 				MaxNodeCount = 500,
@@ -186,7 +183,6 @@ public sealed class TreeServiceTests
 	[Test]
 	public void ResourceDictionariesExposeMergedDictionariesAndSystemResources()
 	{
-		_ = Application.Current ?? new Application();
 		var merged = new ResourceDictionary
 		{
 			["mergedBrush"] = Brushes.CadetBlue,
@@ -200,7 +196,7 @@ public sealed class TreeServiceTests
 		{
 			window.Show();
 
-			var snapshot = new TreeService().CaptureSnapshot(new TreeSnapshotOptions
+			var snapshot = new TreeService(rootProvider: () => [window, new SystemResourceRoot()]).CaptureSnapshot(new TreeSnapshotOptions
 			{
 				RequestedPropertyNames = new[] { KnownProperties.Name, KnownProperties.ResourceKeys, KnownProperties.MergedDictionaryCount, KnownProperties.ResourceOrigin },
 				MaxNodeCount = 500,

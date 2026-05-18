@@ -177,6 +177,8 @@ public static class Program
 				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.BindingFailures)),
 			Click = () => context.Execute("click", targetBound: true, () =>
 				ExecuteClick(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Drag = () => context.Execute("drag", targetBound: true, () =>
+				ExecuteDrag(context.Args, context.Services, context.Defaults, context.CommonOptions)),
 			Focus = () => context.Execute("focus", targetBound: true, () =>
 				ExecuteFocus(context.Args, context.Services, context.Defaults, context.CommonOptions)),
 			Type = () => context.Execute("type", targetBound: true, () =>
@@ -221,7 +223,7 @@ public static class Program
 
 		var limit = CliArgumentReader.GetInt(args, "--limit", defaults.Commands.Tree.Limit);
 		using var session = OpenSession(services, commonOptions);
-		var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.Commands.Tree.Limit, limit));
+		var snapshot = ReadSnapshot(session, commonOptions, properties, limit);
 		var options = new TreeSnapshotOptions
 		{
 			Shape = GetTreeShapeOption(args, defaults.Commands.Tree.Shape),
@@ -244,7 +246,7 @@ public static class Program
 		var properties = GetRequestedProperties(args, defaults);
 		using var session = OpenSession(services, commonOptions);
 		var options = CreateFindOptions(args, defaults, commonOptions, properties);
-		var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.TreeLimit, options.Limit));
+		var snapshot = ReadSnapshot(session, commonOptions, properties, options.Limit);
 		var result = new FindSnapshotService().Find(snapshot, options);
 		if (result.MatchCount == 0 && CliArgumentReader.HasOption(args, "--require-match"))
 			throw new CliException(CliErrorCodes.NoMatch, "No matching nodes were found.");
@@ -616,6 +618,54 @@ public static class Program
 				};
 			},
 			requireElementTarget: true);
+	}
+
+	private static DragAndDropActionCommandResult ExecuteDrag(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	{
+		new ActionGate().Demand("drag", commonOptions);
+		var sourceSelector = ElementSelector.FromArgs(args);
+		var destinationSelector = ElementSelector.FromArgs(args, "to");
+		if (sourceSelector.IsEmpty)
+			throw new CliException(CliErrorCodes.InvalidArguments, "The drag command requires a source target or selector.");
+		if (destinationSelector.IsEmpty)
+			throw new CliException(CliErrorCodes.InvalidArguments, "The drag command requires a destination target or selector.");
+
+		var dragDefaults = defaults.Commands.Drag;
+		var durationMs = CliArgumentReader.GetInt(args, "--duration-ms", dragDefaults.DurationMs);
+		var holdMs = CliArgumentReader.GetInt(args, "--hold-ms", dragDefaults.HoldMs);
+		var stepIntervalMs = CliArgumentReader.GetInt(args, "--step-interval-ms", dragDefaults.StepIntervalMs);
+		var postDropWaitMs = CliArgumentReader.GetInt(args, "--post-drop-wait-ms", dragDefaults.PostDropWaitMs);
+		var sourceAnchorX = CliArgumentReader.GetDouble(args, "--source-anchor-x", dragDefaults.SourceAnchorX);
+		var sourceAnchorY = CliArgumentReader.GetDouble(args, "--source-anchor-y", dragDefaults.SourceAnchorY);
+		var destinationAnchorX = CliArgumentReader.GetDouble(args, "--destination-anchor-x", dragDefaults.DestinationAnchorX);
+		var destinationAnchorY = CliArgumentReader.GetDouble(args, "--destination-anchor-y", dragDefaults.DestinationAnchorY);
+		var foreground = CliArgumentReader.GetBool(args, "--foreground", dragDefaults.Foreground);
+		var validateSameProcess = CliArgumentReader.GetBool(args, "--validate-same-process", dragDefaults.ValidateSameProcess);
+
+		using var session = OpenSession(services, commonOptions);
+		return new ActionCommandSupport().ExecuteTwoTarget(
+			"drag",
+			session,
+			commonOptions,
+			defaults,
+			sourceSelector,
+			destinationSelector,
+			(sourceTargetId, destinationTargetId) => new DragAndDropCommandRequest
+			{
+				TargetId = sourceTargetId,
+				DestinationTargetId = destinationTargetId,
+				DurationMs = durationMs,
+				HoldMs = holdMs,
+				StepIntervalMs = stepIntervalMs,
+				PostDropWaitMs = postDropWaitMs,
+				SourceAnchorX = sourceAnchorX,
+				SourceAnchorY = sourceAnchorY,
+				DestinationAnchorX = destinationAnchorX,
+				DestinationAnchorY = destinationAnchorY,
+				EnsureForeground = foreground,
+				ValidateSameProcess = validateSameProcess,
+				TimeoutMs = commonOptions.TimeoutMs,
+			});
 	}
 
 	private static ActionCommandResult ExecuteFocus(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)

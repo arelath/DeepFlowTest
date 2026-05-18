@@ -50,15 +50,14 @@ public sealed class ScreenshotCommandTests
 	}
 
 	[Test]
-	public void DefaultScreenshotSkipsApplicationRootAndCapturesWindow()
+	public void DefaultScreenshotSkipsUncapturableRootAndCapturesWindow()
 	{
-		_ = Application.Current ?? new Application();
-		var window = CreateWindow("Screenshot application root", new Button { Name = "screenshotButton", Content = "Capture" });
+		var window = CreateWindow("Screenshot default root", new Button { Name = "screenshotButton", Content = "Capture" });
 
 		try
 		{
 			window.Show();
-			var treeService = new TreeService(rootProvider: () => [Application.Current!]);
+			var treeService = new TreeService(rootProvider: () => [new object(), window]);
 
 			var response = (ScreenshotCommandResponse)InvokeScreenshotProcess(new ScreenshotCommandRequest { Format = ImageFormat.Png }, treeService)!;
 

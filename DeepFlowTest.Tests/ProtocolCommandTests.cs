@@ -33,6 +33,7 @@ public sealed class ProtocolCommandTests
 	{
 		var leftClick = new ClickCommandRequest("button", "Left", 123);
 		var sameLeftClick = new ClickCommandRequest("button", "Left", 123);
+		var drag = new DragAndDropCommandRequest("source", "destination", 456);
 		var screenshot = new ScreenshotCommandResponse("AQID");
 		var find = new FindElementCommandResponse(new[]
 		{
@@ -51,6 +52,9 @@ public sealed class ProtocolCommandTests
 		Assert.That(leftClick.TargetId, Is.EqualTo("button"));
 		Assert.That(leftClick.MouseButton, Is.EqualTo(MouseButtonKind.Left));
 		Assert.That(leftClick.TimeoutMs, Is.EqualTo(123));
+		Assert.That(drag.TargetId, Is.EqualTo("source"));
+		Assert.That(drag.DestinationTargetId, Is.EqualTo("destination"));
+		Assert.That(drag.TimeoutMs, Is.EqualTo(456));
 		Assert.That(screenshot.BytesBase64, Is.EqualTo("AQID"));
 		Assert.That(screenshot.Base64Screenshot, Is.EqualTo("AQID"));
 		Assert.That(find.Matches.Single().TargetId, Is.EqualTo("button"));
@@ -380,6 +384,7 @@ public sealed class ProtocolCommandTests
 			new FindElementCommandRequest { MatcherCode = "matcher" },
 			new ScreenshotCommandRequest(),
 			new ClickCommandRequest { TargetId = "target" },
+			new DragAndDropCommandRequest { TargetId = "source", DestinationTargetId = "destination" },
 			new FocusCommandRequest { TargetId = "target" },
 			new TypeTextCommandRequest { Text = "hello" },
 			new KeyPressCommandRequest { Keys = "Enter" },

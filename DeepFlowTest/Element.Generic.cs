@@ -24,6 +24,8 @@ public class Element<T> : Element
 	public override T Click() => Return(base.Click());
 	public override T RightClick() => Return(base.RightClick());
 	public override T DoubleClick() => Return(base.DoubleClick());
+	public override T DragAndDropTo(Element destination, DragAndDropOptions? options = null) => Return(base.DragAndDropTo(destination, options));
+	public override T DragAndDropTo(ElementSelector destinationSelector, DragAndDropOptions? options = null) => Return(base.DragAndDropTo(destinationSelector, options));
 	public override T Focus() => Return(base.Focus());
 	public override T Select() => Return(base.Select());
 	public override T Expand() => Return(base.Expand());
@@ -83,6 +85,8 @@ public class Element<T> : Element
 	public new T Click() => Return(base.Click());
 	public new T RightClick() => Return(base.RightClick());
 	public new T DoubleClick() => Return(base.DoubleClick());
+	public new T DragAndDropTo(Element destination, DragAndDropOptions? options = null) => Return(base.DragAndDropTo(destination, options));
+	public new T DragAndDropTo(ElementSelector destinationSelector, DragAndDropOptions? options = null) => Return(base.DragAndDropTo(destinationSelector, options));
 	public new T Focus() => Return(base.Focus());
 	public new T Select() => Return(base.Select());
 	public new T Expand() => Return(base.Expand());

@@ -62,6 +62,73 @@ public sealed class ActionCommandHandlerTests
 	}
 
 	[Test]
+	public void DragSendsPayloadRequestWithSourceAndDestination()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[]
+		{
+			"drag",
+			"--pid", "1234",
+			"--target", "0002",
+			"--to-target", "0002",
+			"--duration-ms", "700",
+			"--destination-anchor-y", "0.25",
+			"--foreground", "false",
+		}, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		var command = session.Session.Commands.OfType<DragAndDropCommandRequest>().Single();
+		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
+		Assert.That(command.DestinationTargetId, Is.EqualTo("button-0002"));
+		Assert.That(command.DurationMs, Is.EqualTo(700));
+		Assert.That(command.DestinationAnchorY, Is.EqualTo(0.25));
+		Assert.That(command.EnsureForeground, Is.False);
+	}
+
+	[Test]
+	public void DragResolvesDestinationSelectorAndForwardsAllOptions()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[]
+		{
+			"drag",
+			"--pid", "1234",
+			"--automation-id", "SubmitButton",
+			"--to-name", "SubmitButton",
+			"--duration-ms", "650",
+			"--hold-ms", "25",
+			"--step-interval-ms", "5",
+			"--post-drop-wait-ms", "35",
+			"--source-anchor-x", "0.1",
+			"--source-anchor-y", "0.2",
+			"--destination-anchor-x", "0.8",
+			"--destination-anchor-y", "0.9",
+			"--foreground", "false",
+			"--validate-same-process", "false",
+		}, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Count(), Is.EqualTo(1));
+		var command = session.Session.Commands.OfType<DragAndDropCommandRequest>().Single();
+		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
+		Assert.That(command.DestinationTargetId, Is.EqualTo("button-0002"));
+		Assert.That(command.DurationMs, Is.EqualTo(650));
+		Assert.That(command.HoldMs, Is.EqualTo(25));
+		Assert.That(command.StepIntervalMs, Is.EqualTo(5));
+		Assert.That(command.PostDropWaitMs, Is.EqualTo(35));
+		Assert.That(command.SourceAnchorX, Is.EqualTo(0.1));
+		Assert.That(command.SourceAnchorY, Is.EqualTo(0.2));
+		Assert.That(command.DestinationAnchorX, Is.EqualTo(0.8));
+		Assert.That(command.DestinationAnchorY, Is.EqualTo(0.9));
+		Assert.That(command.EnsureForeground, Is.False);
+		Assert.That(command.ValidateSameProcess, Is.False);
+	}
+
+	[Test]
 	public void CommandSpecificDefaultsFeedActionHandlers()
 	{
 		var store = new CliDefaultsStore(CliTestHost.CreateTempConfigPath());

@@ -17,6 +17,8 @@ internal interface IUiTargetAdapter
 
 	bool TryEnsureForeground(object target);
 
+	PointerTargetResult GetPointerTarget(object target, PointerAnchor anchor);
+
 	ActionResult SetProperty(object target, string propertyName, object? value);
 
 	ActionResult RaiseKnownRoutedEvent(object target, string eventName);

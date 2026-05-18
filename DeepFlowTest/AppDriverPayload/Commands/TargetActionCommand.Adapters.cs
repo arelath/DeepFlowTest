@@ -29,6 +29,14 @@ internal static partial class TargetActionCommand
 		return adapter?.TryEnsureForeground(target) == true;
 	}
 
+	private static PointerTargetResult GetPointerTarget(object target, PointerAnchor anchor)
+	{
+		var adapter = TargetAdapters.FirstOrDefault(adapter => adapter.CanHandle(target));
+		return adapter is null
+			? PointerTargetResult.Unsupported($"Target type '{target.GetType().FullName}' cannot be converted to screen coordinates.")
+			: adapter.GetPointerTarget(target, anchor);
+	}
+
 	private static ActionResult TypeTextIntoFocusedTarget(string text, bool clearFirst)
 	{
 		var focusedTarget = WpfTargetAdapter.GetFocusedTarget();

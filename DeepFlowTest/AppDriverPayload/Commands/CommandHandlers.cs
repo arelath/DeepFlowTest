@@ -62,6 +62,12 @@ internal sealed class ClickCommandHandler : ICommandHandler<ClickCommandRequest,
 		TargetActionCommand.Click(request, context.TreeService);
 }
 
+internal sealed class DragAndDropCommandHandler : ICommandHandler<DragAndDropCommandRequest, object>, IUiCommandHandler
+{
+	public object Handle(DragAndDropCommandRequest request, CommandContext context) =>
+		TargetActionCommand.DragAndDrop(request, context.TreeService);
+}
+
 internal sealed class FocusCommandHandler : ICommandHandler<FocusCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(FocusCommandRequest request, CommandContext context) =>

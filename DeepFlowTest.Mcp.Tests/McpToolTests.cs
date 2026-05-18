@@ -305,6 +305,7 @@ public sealed class McpToolTests
 		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
 
 		ActionTools.FocusElement(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, targetId: "0002", after: "none");
+		ActionTools.DragAndDrop(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, targetId: "0002", destinationTargetId: "0002", durationMs: 250, after: "none");
 		ActionTools.TypeText(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, "hello", targetId: "0002", clearFirst: true, after: "none");
 		ActionTools.PressKeys(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, "Enter", targetId: "0002", delayMs: 5, ensureForeground: false, after: "none");
 		ActionTools.SetProperty(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, KnownProperties.Value, "\"42\"", targetId: "0002", after: "none");
@@ -312,11 +313,57 @@ public sealed class McpToolTests
 		ActionTools.InvokeOperation(fixture.Runner, fixture.Host, fixture.Cache, fixture.Options, "Select", targetId: "0002", after: "none");
 
 		Assert.That(sessionService.Session.Commands.OfType<FocusCommandRequest>().Single().TargetId, Is.EqualTo("button-0002"));
+		var drag = sessionService.Session.Commands.OfType<DragAndDropCommandRequest>().Single();
+		Assert.That(drag.TargetId, Is.EqualTo("button-0002"));
+		Assert.That(drag.DestinationTargetId, Is.EqualTo("button-0002"));
+		Assert.That(drag.DurationMs, Is.EqualTo(250));
 		Assert.That(sessionService.Session.Commands.OfType<TypeTextCommandRequest>().Single().ClearFirst, Is.True);
 		Assert.That(sessionService.Session.Commands.OfType<KeyPressCommandRequest>().Single().EnsureForeground, Is.False);
 		Assert.That(sessionService.Session.Commands.OfType<SetPropertyCommandRequest>().Single().PropertyValue, Is.EqualTo("42"));
 		Assert.That(sessionService.Session.Commands.OfType<KnownRoutedEventCommandRequest>().Single().EventName, Is.EqualTo("Click"));
 		Assert.That(sessionService.Session.Commands.OfType<KnownOperationCommandRequest>().Single().Operation, Is.EqualTo("Select"));
+	}
+
+	[Test]
+	public void DragToolResolvesDestinationSelectorAndForwardsOptions()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		ActionTools.DragAndDrop(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Options,
+			targetId: "0002",
+			destinationAutomationId: "SubmitButton",
+			durationMs: 640,
+			holdMs: 20,
+			stepIntervalMs: 8,
+			postDropWaitMs: 30,
+			sourceAnchorX: 0.15,
+			sourceAnchorY: 0.25,
+			destinationAnchorX: 0.75,
+			destinationAnchorY: 0.85,
+			ensureForeground: false,
+			validateSameProcess: false,
+			after: "none");
+
+		Assert.That(sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>().Count(), Is.EqualTo(1));
+		var drag = sessionService.Session.Commands.OfType<DragAndDropCommandRequest>().Single();
+		Assert.That(drag.TargetId, Is.EqualTo("button-0002"));
+		Assert.That(drag.DestinationTargetId, Is.EqualTo("button-0002"));
+		Assert.That(drag.DurationMs, Is.EqualTo(640));
+		Assert.That(drag.HoldMs, Is.EqualTo(20));
+		Assert.That(drag.StepIntervalMs, Is.EqualTo(8));
+		Assert.That(drag.PostDropWaitMs, Is.EqualTo(30));
+		Assert.That(drag.SourceAnchorX, Is.EqualTo(0.15));
+		Assert.That(drag.SourceAnchorY, Is.EqualTo(0.25));
+		Assert.That(drag.DestinationAnchorX, Is.EqualTo(0.75));
+		Assert.That(drag.DestinationAnchorY, Is.EqualTo(0.85));
+		Assert.That(drag.EnsureForeground, Is.False);
+		Assert.That(drag.ValidateSameProcess, Is.False);
 	}
 
 	[Test]

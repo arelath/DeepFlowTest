@@ -90,6 +90,37 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		return foregroundSet || focusSet;
 	}
 
+	public override PointerTargetResult GetPointerTarget(object target, PointerAnchor anchor)
+	{
+		if (target is not UIElement uiElement)
+			return base.GetPointerTarget(target, anchor);
+
+		if (!uiElement.IsVisible)
+			return PointerTargetResult.Unsupported("WPF target is not visible.");
+		if (!uiElement.IsEnabled)
+			return PointerTargetResult.Unsupported("WPF target is not enabled.");
+
+		var width = uiElement.RenderSize.Width;
+		var height = uiElement.RenderSize.Height;
+		if (!IsPositiveFinite(width) || !IsPositiveFinite(height))
+			return PointerTargetResult.Unsupported("WPF target has no renderable size.");
+
+		try
+		{
+			var local = new Point(width * anchor.X, height * anchor.Y);
+			var screen = uiElement.PointToScreen(local);
+			return PointerTargetResult.FromTarget(new PointerTarget(
+				(int)Math.Round(screen.X),
+				(int)Math.Round(screen.Y),
+				GetOwnerHwnd(uiElement),
+				uiElement.GetType().FullName ?? uiElement.GetType().Name));
+		}
+		catch (InvalidOperationException ex)
+		{
+			return PointerTargetResult.Unsupported($"WPF target screen coordinates could not be resolved: {ex.Message}");
+		}
+	}
+
 	public override ActionResult SetProperty(object target, string propertyName, object? value)
 	{
 		if (TrySetClrProperty(target, propertyName, value, out var result))
@@ -394,6 +425,7 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 
 		UIHighlight.Select(target);
 		TryEnsureAppHooks();
+		using var syntheticMouseInput = AppHooks.BeginSyntheticMouseInput();
 		var clickEvent = mouseButton == MouseButton.Left ? ResolvePrimaryClickEvent(target) : null;
 		var observedClickCount = 0;
 		var observedDoubleClickCount = 0;
@@ -863,4 +895,19 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		var handle = new WindowInteropHelper(window).Handle;
 		return handle != IntPtr.Zero && NativeMethods.SetForegroundWindow(handle);
 	}
+
+	private static IntPtr GetOwnerHwnd(UIElement element)
+	{
+		if (element is Window window)
+			return new WindowInteropHelper(window).Handle;
+
+		if (element is Visual visual && PresentationSource.FromVisual(visual) is HwndSource source)
+			return source.Handle;
+
+		var ownerWindow = Window.GetWindow(element);
+		return ownerWindow is null ? IntPtr.Zero : new WindowInteropHelper(ownerWindow).Handle;
+	}
+
+	private static bool IsPositiveFinite(double value) =>
+		value > 0 && !double.IsNaN(value) && !double.IsInfinity(value);
 }

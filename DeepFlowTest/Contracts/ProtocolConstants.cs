@@ -9,6 +9,7 @@ public static class ProtocolConstants
 	public static class Commands
 	{
 		public const string Click = "ClickCommand";
+		public const string DragAndDrop = "DragAndDropCommand";
 		public const string FindElement = "FindElementCommand";
 		public const string GetBindingFailures = "GetBindingFailuresCommand";
 		public const string Focus = "FocusCommand";
@@ -35,12 +36,18 @@ public static class ProtocolConstants
 		public const string ClearFirst = "ClearFirst";
 		public const string Code = "Code";
 		public const string DelayMs = "DelayMs";
+		public const string DestinationAnchorX = "DestinationAnchorX";
+		public const string DestinationAnchorY = "DestinationAnchorY";
+		public const string DestinationTargetId = "DestinationTargetId";
+		public const string DurationMs = "DurationMs";
+		public const string EnsureForeground = "EnsureForeground";
 		public const string Error = "Error";
 		public const string ErrorCode = "ErrorCode";
 		public const string EventName = "EventName";
 		public const string Format = "Format";
 		public const string Framework = "Framework";
 		public const string GetRoutedEventArgs = "GetRoutedEventArgs";
+		public const string HoldMs = "HoldMs";
 		public const string IntervalMs = "IntervalMs";
 		public const string Kind = "Kind";
 		public const string Keys = "Keys";
@@ -52,6 +59,10 @@ public static class ProtocolConstants
 		public const string PropNames = "PropNames";
 		public const string PropertyName = "PropertyName";
 		public const string PropertyValue = "PropertyValue";
+		public const string PostDropWaitMs = "PostDropWaitMs";
+		public const string SourceAnchorX = "SourceAnchorX";
+		public const string SourceAnchorY = "SourceAnchorY";
+		public const string StepIntervalMs = "StepIntervalMs";
 		public const string StreamKind = "StreamKind";
 		public const string SubscriptionId = "SubscriptionId";
 		public const string Status = "Status";
@@ -59,6 +70,7 @@ public static class ProtocolConstants
 		public const string TargetId = "TargetId";
 		public const string Text = "Text";
 		public const string TimeoutMs = "TimeoutMs";
+		public const string ValidateSameProcess = "ValidateSameProcess";
 		public const string Value = "Value";
 	}
 

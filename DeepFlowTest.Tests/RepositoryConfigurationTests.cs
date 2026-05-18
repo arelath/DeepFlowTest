@@ -225,17 +225,19 @@ public sealed class RepositoryConfigurationTests
 		var launcherProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.InjectorLauncher", "DeepFlowTest.InjectorLauncher.csproj"));
 		var nativeProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.GenericInjector", "DeepFlowTest.GenericInjector.vcxproj"));
 		var cliProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj"));
+		var payloadLayoutTargets = File.ReadAllText(Path.Combine(root, "Shared", "DeepFlowTestPayloadLayout.targets"));
 
 		Assert.That(launcherProject, Does.Contain(@"DeepFlowTestResources\$(PlatformTarget)\"));
 		Assert.That(nativeProject, Does.Contain(@"DeepFlowTestResources\$(ArchitectureName)\"));
-		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x86"));
-		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x64"));
-		Assert.That(cliProject, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x86"));
-		Assert.That(cliProject, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x64"));
-		Assert.That(cliProject, Does.Not.Contain(@"DeepFlowTestResources\x86\**\*.*"));
-		Assert.That(cliProject, Does.Not.Contain(@"DeepFlowTestResources\x64\**\*.*"));
-		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x86\*.dll"));
-		Assert.That(cliProject, Does.Contain(@"DeepFlowTestResources\x64\*.exe"));
+		Assert.That(cliProject, Does.Contain("DeepFlowTestPayloadLayout.targets"));
+		Assert.That(payloadLayoutTargets, Does.Contain(@"DeepFlowTestResources\x86"));
+		Assert.That(payloadLayoutTargets, Does.Contain(@"DeepFlowTestResources\x64"));
+		Assert.That(payloadLayoutTargets, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x86"));
+		Assert.That(payloadLayoutTargets, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x64"));
+		Assert.That(payloadLayoutTargets, Does.Not.Contain(@"DeepFlowTestResources\x86\**\*.*"));
+		Assert.That(payloadLayoutTargets, Does.Not.Contain(@"DeepFlowTestResources\x64\**\*.*"));
+		Assert.That(payloadLayoutTargets, Does.Contain(@"DeepFlowTestResources\x86\*.dll"));
+		Assert.That(payloadLayoutTargets, Does.Contain(@"DeepFlowTestResources\x64\*.exe"));
 		Assert.That(nativeProject, Does.Contain("$(ArchitecturePreprocessorDefinition)"));
 		Assert.That(nativeProject, Does.Contain("DEEPFLOWTEST_ARCH_X86"));
 	}

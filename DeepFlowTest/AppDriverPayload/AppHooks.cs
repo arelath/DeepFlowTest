@@ -3,6 +3,7 @@ namespace DeepFlowTest.AppDriverPayload;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -19,6 +20,7 @@ public static class AppHooks
 	private static WpfPatchResult lastResult = new() { FrameworkFamily = RuntimeFrameworkFamilies.Unknown };
 	private static bool hooksApplied;
 	private static volatile bool showDialogCalled;
+	private static int syntheticMouseInputDepth;
 
 	public static WpfPatchResult LastResult
 	{
@@ -65,6 +67,14 @@ public static class AppHooks
 		IsRightMousePressed = null;
 	}
 
+	public static bool IsSyntheticMouseInputActive => Volatile.Read(ref syntheticMouseInputDepth) > 0;
+
+	public static IDisposable BeginSyntheticMouseInput()
+	{
+		Interlocked.Increment(ref syntheticMouseInputDepth);
+		return new SyntheticMouseInputScope();
+	}
+
 	public static bool ShowDialogCalled
 	{
 		get => showDialogCalled;
@@ -91,6 +101,7 @@ public static class AppHooks
 			lastResult = new WpfPatchResult { FrameworkFamily = RuntimeFrameworkFamilies.Unknown };
 		ShowDialogCalled = false;
 		ResetMouseState();
+		Volatile.Write(ref syntheticMouseInputDepth, 0);
 	}
 
 	private static void WarmupHookedMembers()
@@ -224,6 +235,9 @@ public static class AppHooks
 	{
 		public static bool Prefix(ref MouseButtonState __result, MouseButton mouseButton)
 		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
 			if (mouseButton == MouseButton.Right && IsRightMousePressed is not null)
 			{
 				__result = IsRightMousePressed == true ? MouseButtonState.Pressed : MouseButtonState.Released;
@@ -248,6 +262,9 @@ public static class AppHooks
 
 		public static bool Prefix(ButtonBase __instance)
 		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
 			var isPressed = (bool)(IsPressedProperty?.GetValue(__instance) ?? false);
 			SetIsPressedMethod?.Invoke(__instance, new object[] { !isPressed });
 			return false;
@@ -259,6 +276,9 @@ public static class AppHooks
 	{
 		public static bool Prefix(ref bool __result)
 		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
 			__result = false;
 			return false;
 		}
@@ -272,6 +292,9 @@ public static class AppHooks
 
 		public static bool Prefix(MenuItem __instance, object[] __args)
 		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
 			if (__args.Length > 0 && __args[0] is MouseButtonEventArgs args)
 			{
 				var role = (MenuItemRole)(RoleProperty?.GetValue(__instance) ?? MenuItemRole.TopLevelItem);
@@ -293,6 +316,9 @@ public static class AppHooks
 
 		public static bool Prefix(MenuItem __instance, object[] __args)
 		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
 			if (__args.Length > 0 && __args[0] is MouseButtonEventArgs args)
 			{
 				var role = (MenuItemRole)(RoleProperty?.GetValue(__instance) ?? MenuItemRole.TopLevelItem);
@@ -316,6 +342,9 @@ public static class AppHooks
 
 		public static bool Prefix(MenuItem __instance)
 		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
 			if (Mouse.LeftButton == MouseButtonState.Pressed)
 			{
 				IsPressedProperty?.SetValue(__instance, true);
@@ -336,6 +365,9 @@ public static class AppHooks
 
 		public static bool Prefix(RibbonMenuItem __instance)
 		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
 			IsPressedProperty?.SetValue(__instance, Mouse.LeftButton == MouseButtonState.Pressed);
 			return false;
 		}
@@ -346,8 +378,22 @@ public static class AppHooks
 	{
 		public static bool Prefix(ref bool __result)
 		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
 			__result = true;
 			return false;
+		}
+	}
+
+	private sealed class SyntheticMouseInputScope : IDisposable
+	{
+		private int disposed;
+
+		public void Dispose()
+		{
+			if (Interlocked.Exchange(ref disposed, 1) == 0)
+				Interlocked.Decrement(ref syntheticMouseInputDepth);
 		}
 	}
 

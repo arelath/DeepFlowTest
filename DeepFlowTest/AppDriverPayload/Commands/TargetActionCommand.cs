@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.Serialization;
 using System.Threading;
+using System.Threading.Tasks;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Commands.TargetAdapters;
 using DeepFlowTest.Contracts;
@@ -22,6 +23,45 @@ internal static partial class TargetActionCommand
 
 			return InvokeTargetAdapter(target, adapter => adapter.Click(target, button, request.ClickCount), $"{buttonName} click");
 		});
+
+	public static object DragAndDrop(DragAndDropCommandRequest request, TreeService treeService)
+	{
+		var validationError = ValidateDragAndDropRequest(request);
+		if (validationError is not null)
+			return StandardIpcResponse.FromError(validationError, ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
+
+		var sourceResolution = ResolveDragTarget(ProtocolConstants.Commands.DragAndDrop, request.TargetId, treeService, "source");
+		if (sourceResolution.Response is not null)
+			return sourceResolution.Response;
+
+		var destinationResolution = ResolveDragTarget(ProtocolConstants.Commands.DragAndDrop, request.DestinationTargetId, treeService, "destination");
+		if (destinationResolution.Response is not null)
+			return destinationResolution.Response;
+
+		var sourceTarget = sourceResolution.Target!;
+		var destinationTarget = destinationResolution.Target!;
+		if (request.EnsureForeground)
+			EnsureForegroundTarget(sourceTarget);
+
+		var sourcePoint = GetPointerTarget(sourceTarget, new PointerAnchor(request.SourceAnchorX, request.SourceAnchorY));
+		if (!sourcePoint.Success || sourcePoint.Value is null)
+			return UnsupportedTarget($"DragAndDropCommand: source target '{request.TargetId}': {sourcePoint.Error ?? "Screen coordinates could not be resolved."}");
+
+		var destinationPoint = GetPointerTarget(destinationTarget, new PointerAnchor(request.DestinationAnchorX, request.DestinationAnchorY));
+		if (!destinationPoint.Success || destinationPoint.Value is null)
+			return UnsupportedTarget($"DragAndDropCommand: destination target '{request.DestinationTargetId}': {destinationPoint.Error ?? "Screen coordinates could not be resolved."}");
+
+		var plan = new DragPlan(
+			sourcePoint.Value,
+			destinationPoint.Value,
+			request.DurationMs,
+			request.HoldMs,
+			request.StepIntervalMs,
+			request.PostDropWaitMs,
+			request.EnsureForeground,
+			request.ValidateSameProcess);
+		return new DeferredDragAndDropAction(plan, request.TargetId);
+	}
 
 	public static object Focus(FocusCommandRequest request, TreeService treeService) =>
 		WithTarget(ProtocolConstants.Commands.Focus, request.TargetId, treeService, target =>
@@ -220,4 +260,54 @@ internal static partial class TargetActionCommand
 
 	private static ActionResult RunKnownOperation(object target, string operation) =>
 		InvokeTargetAdapter(target, adapter => adapter.RunKnownOperation(target, operation), $"known operation '{operation}'");
+
+	private static (object? Target, StandardIpcResponse? Response) ResolveDragTarget(string commandName, string targetId, TreeService treeService, string role)
+	{
+		if (string.IsNullOrWhiteSpace(targetId))
+			return (null, StandardIpcResponse.FromError($"{commandName}: a {role} target ID is required.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId));
+
+		var resolution = treeService.ResolveTarget(targetId);
+		if (resolution.Status == TargetIdResolutionStatus.Found)
+			return (resolution.Target!, null);
+
+		var errorCode = resolution.Status == TargetIdResolutionStatus.Stale
+			? ProtocolConstants.ErrorCodes.StaleTarget
+			: ProtocolConstants.ErrorCodes.UnsupportedTarget;
+		return (null, StandardIpcResponse.FromError($"{commandName}: {role} target '{targetId}' resolved as {resolution.Status}.", errorCode, PayloadLog.CurrentCorrelationId));
+	}
+
+	private static string? ValidateDragAndDropRequest(DragAndDropCommandRequest request)
+	{
+		if (string.IsNullOrWhiteSpace(request.TargetId))
+			return "Drag and drop requires a source target ID.";
+		if (string.IsNullOrWhiteSpace(request.DestinationTargetId))
+			return "Drag and drop requires a destination target ID.";
+		if (request.DurationMs is < 0 or > 15_000)
+			return "Drag duration must be between 0 and 15000 ms.";
+		if (request.HoldMs is < 0 or > 5_000)
+			return "Drag hold time must be between 0 and 5000 ms.";
+		if (request.StepIntervalMs is < 1 or > 250)
+			return "Drag step interval must be between 1 and 250 ms.";
+		if (request.PostDropWaitMs is < 0 or > 5_000)
+			return "Post-drop wait must be between 0 and 5000 ms.";
+		if (!IsValidAnchor(request.SourceAnchorX) || !IsValidAnchor(request.SourceAnchorY) ||
+			!IsValidAnchor(request.DestinationAnchorX) || !IsValidAnchor(request.DestinationAnchorY))
+		{
+			return "Drag anchors must be finite values between 0.0 and 1.0.";
+		}
+
+		return null;
+	}
+
+	private static bool IsValidAnchor(double value) =>
+		value >= 0 && value <= 1 && !double.IsNaN(value) && !double.IsInfinity(value);
+
+	private sealed class DeferredDragAndDropAction(DragPlan plan, string sourceTargetId) : IDeferredCommandAction
+	{
+		public Task<object> ExecuteAsync(CancellationToken cancellationToken)
+		{
+			var result = TargetMouseInput.PerformDragAndDrop(plan, cancellationToken);
+			return Task.FromResult<object>(ToResponse(result, ProtocolConstants.Commands.DragAndDrop, sourceTargetId));
+		}
+	}
 }

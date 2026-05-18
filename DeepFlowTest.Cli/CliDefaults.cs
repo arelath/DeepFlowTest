@@ -97,6 +97,7 @@ public sealed class CliCommandDefaults
 	public CliWaitDefaults Wait { get; set; } = new();
 	public CliStreamDefaults Stream { get; set; } = new();
 	public CliClickDefaults Click { get; set; } = new();
+	public CliDragDefaults Drag { get; set; } = new();
 	public CliFocusDefaults Focus { get; set; } = new();
 	public CliTypeDefaults Type { get; set; } = new();
 	public CliKeyDefaults Key { get; set; } = new();
@@ -238,6 +239,22 @@ public sealed class CliClickDefaults
 	public CliElementSelectorDefaults Selector { get; set; } = new();
 	public MouseButtonKind Button { get; set; } = MouseButtonKind.Left;
 	public bool Double { get; set; }
+}
+
+public sealed class CliDragDefaults
+{
+	public CliElementSelectorDefaults Source { get; set; } = new();
+	public CliElementSelectorDefaults Destination { get; set; } = new();
+	public int DurationMs { get; set; } = 500;
+	public int HoldMs { get; set; } = 75;
+	public int StepIntervalMs { get; set; } = 16;
+	public int PostDropWaitMs { get; set; } = 100;
+	public double SourceAnchorX { get; set; } = 0.5;
+	public double SourceAnchorY { get; set; } = 0.5;
+	public double DestinationAnchorX { get; set; } = 0.5;
+	public double DestinationAnchorY { get; set; } = 0.5;
+	public bool Foreground { get; set; } = true;
+	public bool ValidateSameProcess { get; set; } = true;
 }
 
 public sealed class CliFocusDefaults

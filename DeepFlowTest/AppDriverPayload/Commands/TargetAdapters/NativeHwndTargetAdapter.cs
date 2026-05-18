@@ -35,6 +35,35 @@ internal sealed class NativeHwndTargetAdapter : UiTargetAdapterBase
 	public override bool TryEnsureForeground(object target) =>
 		Focus(target).Success;
 
+	public override PointerTargetResult GetPointerTarget(object target, PointerAnchor anchor)
+	{
+		if (target is not IntPtr hwnd)
+			return base.GetPointerTarget(target, anchor);
+		if (hwnd == IntPtr.Zero || !NativeMethods.IsWindow(hwnd))
+			return PointerTargetResult.Unsupported("Native HWND target is not a valid window.");
+		if (!NativeMethods.IsWindowVisible(hwnd))
+			return PointerTargetResult.Unsupported("Native HWND target is not visible.");
+		if (!NativeMethods.IsWindowEnabled(hwnd))
+			return PointerTargetResult.Unsupported("Native HWND target is not enabled.");
+		if (!NativeMethods.GetClientRect(hwnd, out var rect))
+			return PointerTargetResult.Unsupported("Native HWND client rectangle could not be read.");
+
+		var width = rect.Right - rect.Left;
+		var height = rect.Bottom - rect.Top;
+		if (width <= 0 || height <= 0)
+			return PointerTargetResult.Unsupported("Native HWND target has no renderable size.");
+
+		var point = new NativeMethods.NativePoint
+		{
+			X = (int)Math.Round(width * anchor.X),
+			Y = (int)Math.Round(height * anchor.Y),
+		};
+		if (!NativeMethods.ClientToScreen(hwnd, ref point))
+			return PointerTargetResult.Unsupported("Native HWND client coordinates could not be converted to screen coordinates.");
+
+		return PointerTargetResult.FromTarget(new PointerTarget(point.X, point.Y, hwnd, "HWND"));
+	}
+
 	public override ActionResult SetProperty(object target, string propertyName, object? value)
 	{
 		if (IsNativeTextProperty(propertyName))

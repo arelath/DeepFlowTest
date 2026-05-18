@@ -33,6 +33,35 @@ internal sealed class AutomationTargetAdapter : UiTargetAdapterBase
 	public override ActionResult SendKeys(object target, object? keys, string keyText, int delayMs) =>
 		TargetKeyboardInput.SendKeysToForeground(keys, delayMs);
 
+	public override PointerTargetResult GetPointerTarget(object target, PointerAnchor anchor)
+	{
+		if (target is not AutomationElement automationElement)
+			return base.GetPointerTarget(target, anchor);
+
+		try
+		{
+			var bounds = automationElement.Current.BoundingRectangle;
+			if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0)
+				return PointerTargetResult.Unsupported("Automation target has an empty bounding rectangle.");
+			if (double.IsNaN(bounds.X) || double.IsInfinity(bounds.X) || double.IsNaN(bounds.Y) || double.IsInfinity(bounds.Y))
+				return PointerTargetResult.Unsupported("Automation target has invalid screen coordinates.");
+
+			return PointerTargetResult.FromTarget(new PointerTarget(
+				(int)Math.Round(bounds.X + bounds.Width * anchor.X),
+				(int)Math.Round(bounds.Y + bounds.Height * anchor.Y),
+				new IntPtr(automationElement.Current.NativeWindowHandle),
+				automationElement.Current.ControlType.ProgrammaticName));
+		}
+		catch (ElementNotAvailableException)
+		{
+			return PointerTargetResult.Unsupported("Automation target is no longer available.");
+		}
+		catch (InvalidOperationException ex)
+		{
+			return PointerTargetResult.Unsupported($"Automation target screen coordinates could not be resolved: {ex.Message}");
+		}
+	}
+
 	public override ActionResult SetProperty(object target, string propertyName, object? value)
 	{
 		if (IsNativeTextProperty(propertyName))

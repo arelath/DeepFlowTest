@@ -143,17 +143,17 @@ public sealed partial class TreeService
 		{
 		}
 
-		try
+		foreach (var hwnd in EnumerateProcessTopLevelWindows())
 		{
-			foreach (var hwnd in EnumerateProcessTopLevelWindows())
+			try
 			{
 				var source = HwndSource.FromHwnd(hwnd);
 				if (source?.Dispatcher.CheckAccess() == true)
 					AddRoot(source.RootVisual);
 			}
-		}
-		catch (InvalidOperationException)
-		{
+			catch (InvalidOperationException)
+			{
+			}
 		}
 
 		try

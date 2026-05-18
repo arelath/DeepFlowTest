@@ -88,6 +88,30 @@ internal sealed class WinFormsTargetAdapter : UiTargetAdapterBase
 		return foregroundSet || focusSet;
 	}
 
+	public override PointerTargetResult GetPointerTarget(object target, PointerAnchor anchor)
+	{
+		if (target is not Forms.Control control)
+			return base.GetPointerTarget(target, anchor);
+
+		if (!control.Visible)
+			return PointerTargetResult.Unsupported("WinForms target is not visible.");
+		if (!control.Enabled)
+			return PointerTargetResult.Unsupported("WinForms target is not enabled.");
+		if (control.ClientSize.Width <= 0 || control.ClientSize.Height <= 0)
+			return PointerTargetResult.Unsupported("WinForms target has no renderable size.");
+
+		var local = new System.Drawing.Point(
+			(int)Math.Round(control.ClientSize.Width * anchor.X),
+			(int)Math.Round(control.ClientSize.Height * anchor.Y));
+		var screen = control.PointToScreen(local);
+		var owner = control.FindForm()?.Handle ?? control.Handle;
+		return PointerTargetResult.FromTarget(new PointerTarget(
+			screen.X,
+			screen.Y,
+			owner,
+			control.GetType().FullName ?? control.GetType().Name));
+	}
+
 	public override ActionResult RunKnownOperation(object target, string? operation)
 	{
 		switch (operation?.Trim())

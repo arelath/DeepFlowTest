@@ -62,6 +62,45 @@ public sealed class ActionCommandSupport
 		};
 	}
 
+	public DragAndDropActionCommandResult ExecuteTwoTarget(
+		string actionName,
+		ICliAppSession session,
+		CliCommonOptions commonOptions,
+		CliDefaults defaults,
+		ElementSelector sourceSelector,
+		ElementSelector destinationSelector,
+		Func<string, string, IpcCommand> createCommand,
+		IReadOnlyList<string>? afterProperties = null)
+	{
+		_ = session ?? throw new ArgumentNullException(nameof(session));
+		_ = commonOptions ?? throw new ArgumentNullException(nameof(commonOptions));
+		_ = defaults ?? throw new ArgumentNullException(nameof(defaults));
+		_ = sourceSelector ?? throw new ArgumentNullException(nameof(sourceSelector));
+		_ = destinationSelector ?? throw new ArgumentNullException(nameof(destinationSelector));
+		_ = createCommand ?? throw new ArgumentNullException(nameof(createCommand));
+
+		VisualTreeSnapshot? beforeSnapshot = null;
+		VisualTreeSnapshot GetBeforeSnapshot()
+		{
+			beforeSnapshot ??= ReadSnapshot(session, commonOptions, defaults);
+			return beforeSnapshot;
+		}
+
+		var source = ResolveTarget(sourceSelector, GetBeforeSnapshot);
+		var destination = ResolveTarget(destinationSelector, GetBeforeSnapshot);
+		var payload = session.Send<object>(createCommand(source.TargetId, destination.TargetId), commonOptions.TimeoutMs);
+		EnsurePayloadSucceeded(payload);
+
+		return new DragAndDropActionCommandResult
+		{
+			Action = actionName,
+			Source = source.Summary,
+			Destination = destination.Summary,
+			Payload = payload,
+			After = CreateAfterSnapshot(session, commonOptions, defaults, destination.TargetId, afterProperties),
+		};
+	}
+
 	private static object? CreateAfterSnapshot(
 		ICliAppSession session,
 		CliCommonOptions commonOptions,
@@ -145,6 +184,24 @@ public sealed class ActionCommandSupport
 	private static bool LooksLikeFullTargetId(string targetId) =>
 		targetId.Length > 8 && targetId.Contains('-', StringComparison.Ordinal);
 
+	private ElementResolution ResolveTarget(ElementSelector selector, Func<VisualTreeSnapshot> readSnapshot)
+	{
+		if (!string.IsNullOrWhiteSpace(selector.TargetId) && LooksLikeFullTargetId(selector.TargetId!))
+		{
+			return new ElementResolution
+			{
+				TargetId = selector.TargetId!,
+				Summary = new TreeNodeData
+				{
+					TargetId = selector.TargetId!,
+					ShortId = new CliTargetIdService().GetShortId(selector.TargetId!),
+				},
+			};
+		}
+
+		return resolver.Resolve(readSnapshot(), selector);
+	}
+
 }
 
 public sealed class ActionCommandResult
@@ -152,6 +209,19 @@ public sealed class ActionCommandResult
 	public string Action { get; set; } = string.Empty;
 
 	public TreeNodeData? Target { get; set; }
+
+	public object? Payload { get; set; }
+
+	public object? After { get; set; }
+}
+
+public sealed class DragAndDropActionCommandResult
+{
+	public string Action { get; set; } = string.Empty;
+
+	public TreeNodeData? Source { get; set; }
+
+	public TreeNodeData? Destination { get; set; }
 
 	public object? Payload { get; set; }
 

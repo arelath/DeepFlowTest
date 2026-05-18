@@ -20,6 +20,19 @@ public partial class Element
 			? SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, ClickCount = 2 })
 			: RaiseEvent("MouseDoubleClick");
 
+	public virtual Element DragAndDropTo(Element destination, DragAndDropOptions? options = null)
+	{
+		_ = destination ?? throw new ArgumentNullException(nameof(destination));
+		return SendTargetedWithRepair(() => CreateDragAndDropCommand(destination.TargetId, options));
+	}
+
+	public virtual Element DragAndDropTo(ElementSelector destinationSelector, DragAndDropOptions? options = null)
+	{
+		_ = destinationSelector ?? throw new ArgumentNullException(nameof(destinationSelector));
+		var destination = Driver.GetElement(destinationSelector);
+		return DragAndDropTo(destination, options);
+	}
+
 	public virtual Element Focus() => SendTargetedWithRepair(() => new FocusCommandRequest { TargetId = TargetId });
 
 	public virtual Element Select() => KnownOperation("Select");
@@ -149,6 +162,30 @@ public partial class Element
 	private Element SendTargetedWithRepair(Func<IpcCommand> commandFactory)
 	{
 		return Commands.SendTargetedWithRepair(this, commandFactory);
+	}
+
+	private DragAndDropCommandRequest CreateDragAndDropCommand(string destinationTargetId, DragAndDropOptions? options)
+	{
+		var request = new DragAndDropCommandRequest
+		{
+			TargetId = TargetId,
+			DestinationTargetId = destinationTargetId,
+		};
+		if (options is null)
+			return request;
+
+		request.DurationMs = options.DurationMs;
+		request.HoldMs = options.HoldMs;
+		request.StepIntervalMs = options.StepIntervalMs;
+		request.PostDropWaitMs = options.PostDropWaitMs;
+		request.SourceAnchorX = options.SourceAnchorX;
+		request.SourceAnchorY = options.SourceAnchorY;
+		request.DestinationAnchorX = options.DestinationAnchorX;
+		request.DestinationAnchorY = options.DestinationAnchorY;
+		request.EnsureForeground = options.EnsureForeground;
+		request.ValidateSameProcess = options.ValidateSameProcess;
+		request.TimeoutMs = options.TimeoutMs;
+		return request;
 	}
 
 	private StandardIpcResponse SendTargetedWithRepairResponse(Func<IpcCommand> commandFactory)
