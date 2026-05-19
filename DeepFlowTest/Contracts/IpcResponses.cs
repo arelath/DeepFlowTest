@@ -471,6 +471,93 @@ public sealed record class VisualTreeDeltaSnapshotFrame
 	}
 }
 
+public sealed record class SemanticRecordingBatch
+{
+	public int SchemaVersion { get; set; } = 1;
+
+	public string RecordingId { get; set; } = string.Empty;
+
+	public long BatchSequenceNumber { get; set; }
+
+	public DateTimeOffset GeneratedUtc { get; set; } = DateTimeOffset.UtcNow;
+
+	public int DroppedActionCount { get; set; }
+
+	public List<SemanticRecordingFrame> Frames { get; set; } = [];
+}
+
+public sealed record class SemanticRecordingFrame
+{
+	public int SchemaVersion { get; set; } = 1;
+
+	public string RecordingId { get; set; } = string.Empty;
+
+	public string FrameKind { get; set; } = string.Empty;
+
+	public long SequenceNumber { get; set; }
+
+	public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
+
+	public VisualTreeSnapshot? Snapshot { get; set; }
+
+	public VisualTreeSnapshotDelta? Delta { get; set; }
+
+	public RecordedInputAction? Action { get; set; }
+
+	public Dictionary<string, object?> Metadata { get; set; } = [];
+}
+
+public sealed record class RecordedInputAction
+{
+	public string ActionKind { get; set; } = string.Empty;
+
+	public RecordedTarget Target { get; set; } = new();
+
+	public string? MouseButton { get; set; }
+
+	public int? ClickCount { get; set; }
+
+	public string? Text { get; set; }
+
+	public string? Keys { get; set; }
+
+	public Dictionary<string, object?> Metadata { get; set; } = [];
+}
+
+public sealed record class RecordedTarget
+{
+	public string TargetId { get; set; } = string.Empty;
+
+	public string TypeName { get; set; } = string.Empty;
+
+	public string? FrameworkTypeName { get; set; }
+
+	public string? RuntimeFamily { get; set; }
+
+	public long? Hwnd { get; set; }
+
+	public string Summary { get; set; } = string.Empty;
+
+	public List<RecordedSelectorHint> SelectorHints { get; set; } = [];
+
+	public Dictionary<string, object?> Properties { get; set; } = [];
+
+	public string? RawSourceTypeName { get; set; }
+}
+
+public sealed record class RecordedSelectorHint
+{
+	public string Kind { get; set; } = string.Empty;
+
+	public double Confidence { get; set; }
+
+	public string PropertyName { get; set; } = string.Empty;
+
+	public object? Value { get; set; }
+
+	public string Cli { get; set; } = string.Empty;
+}
+
 public sealed record class CliStreamError
 {
 	public string Code { get; set; } = string.Empty;

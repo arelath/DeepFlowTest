@@ -50,6 +50,12 @@ internal sealed class CliCommandActions
 
 	public Func<int> StreamBindingFailures { get; init; } = NoAction;
 
+	public Func<int> StreamSemanticRecording { get; init; } = NoAction;
+
+	public Func<int> Record { get; init; } = NoAction;
+
+	public Func<int> RecordSemantic { get; init; } = NoAction;
+
 	public Func<int> Click { get; init; } = NoAction;
 
 	public Func<int> Drag { get; init; } = NoAction;

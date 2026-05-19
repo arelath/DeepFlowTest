@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -119,6 +120,35 @@ public sealed class LibraryApiTests
 			AppDriver.RecordingProcessFactory = previousFactory;
 			AppDriver.RecordingFfmpegPathOverride = previousFfmpegPath;
 		}
+	}
+
+	[Test]
+	public void SemanticRecordingApiStartsStreamWritesJsonlAndStops()
+	{
+		var session = new FakeSemanticRecordingCommandSession();
+		using var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			session);
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-semantic-recording.jsonl");
+		if (File.Exists(path))
+			File.Delete(path);
+
+		using (var recording = driver.StartSemanticRecording(path, new SemanticRecordingOptions
+		{
+			IntervalMs = 60,
+			TextIdleMs = 123,
+			MaxBatchFrames = 7,
+		}))
+		{
+			Assert.That(SpinWait.SpinUntil(() => recording.FramesWritten > 0, TimeSpan.FromSeconds(2)), Is.True);
+		}
+
+		var start = session.StartRequest!;
+		Assert.That(start.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.SemanticRecording));
+		Assert.That(start.SemanticRecording!.TextIdleMs, Is.EqualTo(123));
+		Assert.That(start.SemanticRecording.MaxBatchFrames, Is.EqualTo(7));
+		Assert.That(session.SentCommands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
+		Assert.That(File.ReadAllText(path), Does.Contain("\"frameKind\":\"action\""));
 	}
 
 	[Test]
@@ -376,6 +406,83 @@ public sealed class LibraryApiTests
 		public void Dispose()
 		{
 			input.Dispose();
+		}
+	}
+
+	private sealed class FakeSemanticRecordingCommandSession : IAppDriverCommandSession, IAppDriverStreamingSession
+	{
+		public List<IpcCommand> SentCommands { get; } = [];
+
+		public StartSendingCommandRequest? StartRequest { get; private set; }
+
+		public TResponse Send<TResponse>(IpcCommand command)
+		{
+			SentCommands.Add(command);
+			if (command is StopSendingCommandRequest stop)
+				return (TResponse)(object)new StopSendingCommandResponse(stop.SubscriptionId, ProtocolConstants.Statuses.Stopped);
+
+			throw new InvalidOperationException("Unexpected command " + command.Kind);
+		}
+
+		public IAppDriverStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs)
+		{
+			StartRequest = command;
+			SentCommands.Add(command);
+			return new FakeSemanticRecordingStreamSession(command);
+		}
+	}
+
+	private sealed class FakeSemanticRecordingStreamSession : IAppDriverStreamSession
+	{
+		private int readCount;
+
+		public FakeSemanticRecordingStreamSession(StartSendingCommandRequest command)
+		{
+			Start = new StartSendingCommandResponse("sub-1", command.StreamKind, ProtocolConstants.Statuses.Started)
+			{
+				IntervalMs = command.IntervalMs,
+			};
+		}
+
+		public StartSendingCommandResponse Start { get; }
+
+		public StreamMessage? ReadFrame(int timeoutMs, CancellationToken cancellationToken = default)
+		{
+			if (Interlocked.Increment(ref readCount) > 1)
+			{
+				Thread.Sleep(10);
+				return null;
+			}
+
+			return new StreamMessage(Start.SubscriptionId, Start.StreamKind, 1, new SemanticRecordingBatch
+			{
+				RecordingId = "recording",
+				BatchSequenceNumber = 1,
+				Frames =
+				[
+					new SemanticRecordingFrame
+					{
+						RecordingId = "recording",
+						FrameKind = "action",
+						SequenceNumber = 1,
+						Action = new RecordedInputAction
+						{
+							ActionKind = "type",
+							Text = "hello",
+							Target = new RecordedTarget
+							{
+								TargetId = "text",
+								TypeName = "TextBox",
+								Summary = "TextBox[Name='User']",
+							},
+						},
+					},
+				],
+			});
+		}
+
+		public void Dispose()
+		{
 		}
 	}
 }

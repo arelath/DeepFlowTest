@@ -13,6 +13,20 @@ using DeepFlowTest.Interop;
 
 public static class Program
 {
+	private static readonly JsonSerializerOptions RecordingJsonOptions = new()
+	{
+		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+		DictionaryKeyPolicy = null,
+		WriteIndented = false,
+		Converters =
+		{
+			new CliImageFormatJsonConverter(),
+			new CliTreeShapeJsonConverter(),
+			new CliMouseButtonJsonConverter(),
+			new CliBindingFailureSeverityJsonConverter(),
+		},
+	};
+
 	public static int Main(string[] args)
 	{
 		return Run(args);
@@ -175,6 +189,11 @@ public static class Program
 				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.EventLog)),
 			StreamBindingFailures = () => context.Execute("stream binding-failures", targetBound: true, () =>
 				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.BindingFailures)),
+			StreamSemanticRecording = () => context.Execute("stream semantic-recording", targetBound: true, () =>
+				ExecuteStream(context.Args, context.Services, context.Defaults, context.CommonOptions, ProtocolConstants.StreamKinds.SemanticRecording)),
+			Record = () => context.NotImplemented("record"),
+			RecordSemantic = () => context.Execute("record semantic", targetBound: true, () =>
+				ExecuteRecordSemantic(context.Args, context.Services, context.Defaults, context.CommonOptions)),
 			Click = () => context.Execute("click", targetBound: true, () =>
 				ExecuteClick(context.Args, context.Services, context.Defaults, context.CommonOptions)),
 			Drag = () => context.Execute("drag", targetBound: true, () =>
@@ -383,6 +402,9 @@ public static class Program
 			TargetId = CliArgumentReader.GetOption(args, "--target", "--target-id"),
 			Format = format,
 			TimeoutMs = commonOptions.TimeoutMs,
+			SemanticRecording = streamKind == ProtocolConstants.StreamKinds.SemanticRecording
+				? CreateSemanticRecordingOptions(args)
+				: null,
 		};
 		using var stream = session.StartStream(request, commonOptions.TimeoutMs);
 		using var cancellation = CreateConsoleCancellationSource();
@@ -423,6 +445,113 @@ public static class Program
 
 		return new CliResponseSequence(envelopes);
 	}
+
+	private static SemanticRecordingFileData ExecuteRecordSemantic(
+		string[] args,
+		CliServices services,
+		CliDefaults defaults,
+		CliCommonOptions commonOptions)
+	{
+		var outputPath = CliArgumentReader.GetOption(args, "--output", "--out");
+		if (string.IsNullOrWhiteSpace(outputPath))
+			throw new CliException(CliErrorCodes.InvalidArguments, "record semantic requires --out.");
+
+		var interval = CliArgumentReader.GetInt(args, "--interval-ms", defaults.StreamIntervalMs);
+		if (interval < TimeoutDefaults.StreamMinimumIntervalMs)
+			throw new CliException(CliErrorCodes.InvalidArguments, $"Stream interval must be at least {TimeoutDefaults.StreamMinimumIntervalMs} ms.");
+
+		var duration = CliArgumentReader.GetInt(args, "--duration-ms", defaults.StreamDurationMs);
+		if (duration < 0)
+			throw new CliException(CliErrorCodes.InvalidArguments, "Recording duration must be zero or greater.");
+
+		var fullOutputPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(outputPath));
+		var directory = Path.GetDirectoryName(fullOutputPath);
+		if (!string.IsNullOrEmpty(directory))
+			Directory.CreateDirectory(directory);
+
+		var properties = CliArgumentReader.GetStringList(args, "--props", defaults.Commands.Stream.Props);
+		using var session = OpenSession(services, commonOptions);
+		ICliStreamSession? stream = null;
+		var framesWritten = 0L;
+		var droppedActions = 0;
+		StopSendingCommandResponse? stop = null;
+		using var cancellation = CreateConsoleCancellationSource();
+		using var writer = new StreamWriter(new FileStream(fullOutputPath, FileMode.Create, FileAccess.Write, FileShare.Read));
+
+		try
+		{
+			stream = session.StartStream(new StartSendingCommandRequest
+			{
+				StreamKind = ProtocolConstants.StreamKinds.SemanticRecording,
+				IntervalMs = interval,
+				PropNames = properties,
+				TargetId = CliArgumentReader.GetOption(args, "--target", "--target-id"),
+				TimeoutMs = commonOptions.TimeoutMs,
+				SemanticRecording = CreateSemanticRecordingOptions(args),
+			}, commonOptions.TimeoutMs);
+
+			var stopwatch = Stopwatch.StartNew();
+			while (duration == 0 || stopwatch.ElapsedMilliseconds <= duration)
+			{
+				cancellation.Token.ThrowIfCancellationRequested();
+				var remaining = duration == 0 ? commonOptions.TimeoutMs : duration - (int)stopwatch.ElapsedMilliseconds;
+				var readTimeout = duration == 0
+					? commonOptions.TimeoutMs
+					: Math.Max(interval, Math.Min(commonOptions.TimeoutMs, remaining + interval));
+				var frame = stream.ReadFrame(readTimeout, cancellation.Token);
+				if (frame is null)
+					break;
+				if (frame.Error is not null)
+					throw new CliException(frame.Error.Code, frame.Error.Message);
+				if (frame.Data is null)
+					continue;
+
+				var batch = MessagePacker.ConvertTo<SemanticRecordingBatch>(frame.Data);
+				droppedActions += Math.Max(0, batch.DroppedActionCount);
+				foreach (var recordingFrame in batch.Frames ?? [])
+				{
+					writer.WriteLine(JsonSerializer.Serialize(recordingFrame, RecordingJsonOptions));
+					framesWritten++;
+				}
+
+				writer.Flush();
+			}
+		}
+		catch (OperationCanceledException)
+		{
+		}
+		finally
+		{
+			if (stream is not null)
+			{
+				stop = session.Send<StopSendingCommandResponse>(
+					new StopSendingCommandRequest
+					{
+						SubscriptionId = stream.Start.SubscriptionId,
+						TimeoutMs = Math.Min(commonOptions.TimeoutMs, TimeoutDefaults.StreamStopTimeoutMs),
+					},
+					Math.Min(commonOptions.TimeoutMs, TimeoutDefaults.StreamStopTimeoutMs));
+				stream.Dispose();
+			}
+		}
+
+		return new SemanticRecordingFileData
+		{
+			OutputPath = fullOutputPath,
+			FramesWritten = framesWritten,
+			DroppedActionCount = droppedActions,
+			Stop = stop,
+		};
+	}
+
+	private static SemanticRecordingOptionsDto CreateSemanticRecordingOptions(IReadOnlyList<string> args) =>
+		new()
+		{
+			TextIdleMs = CliArgumentReader.GetInt(args, "--text-idle-ms", 400),
+			MaxQueuedActions = CliArgumentReader.GetInt(args, "--max-queued-actions", 1000),
+			MaxBatchFrames = CliArgumentReader.GetInt(args, "--max-batch-frames", 100),
+			MaxNodeCount = CliArgumentReader.GetInt(args, "--limit", VisualTreeDefaults.DefaultMaxNodeCount),
+		};
 
 	private static ICliAppSession OpenSession(CliServices services, CliCommonOptions commonOptions)
 	{
@@ -1028,6 +1157,17 @@ public sealed class CliResponseSequence
 	}
 
 	public IReadOnlyList<CliResponseEnvelope> Envelopes { get; }
+}
+
+public sealed class SemanticRecordingFileData
+{
+	public string OutputPath { get; set; } = string.Empty;
+
+	public long FramesWritten { get; set; }
+
+	public int DroppedActionCount { get; set; }
+
+	public StopSendingCommandResponse? Stop { get; set; }
 }
 
 internal sealed record TreePropertySelection(IReadOnlyList<string> RequestProperties, IReadOnlyList<string> OutputProperties, bool SuppressProperties);

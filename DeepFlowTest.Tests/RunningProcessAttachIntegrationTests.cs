@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading;
 using System.Windows.Controls;
 using DeepFlowTest.Contracts;
+using Newtonsoft.Json;
 using NUnit.Framework;
 
 [TestFixture]
@@ -287,6 +288,52 @@ public sealed class RunningProcessAttachIntegrationTests
 		WaitForElementText(driver, "HelloWorldInput", "TextBox1_GotKeyboardFocus event triggered.");
 	}
 
+	[Test]
+	public void SemanticRecordingWritesJsonlSnapshotInAttachedHarness()
+	{
+		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
+		var outputPath = Path.Combine(TestContext.CurrentContext.WorkDirectory, $"semantic-recording-{Guid.NewGuid():N}.jsonl");
+		if (File.Exists(outputPath))
+			File.Delete(outputPath);
+
+		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
+		{
+			Timeout = TimeSpan.FromSeconds(30),
+			PayloadRoot = ResolvePayloadRoot(),
+		});
+
+		using (driver.StartSemanticRecording(outputPath, new SemanticRecordingOptions
+		{
+			IntervalMs = 100,
+			TextIdleMs = 25,
+			MaxBatchFrames = 20,
+			PropNames = MatcherPropertyNames,
+			TimeoutMs = 30_000,
+		}))
+		{
+			Assert.That(
+				SpinWait.SpinUntil(() => RecordingFileContainsSnapshot(outputPath, "HelloWorldButton"), TimeSpan.FromSeconds(10)),
+				Is.True,
+				"Semantic recording did not write the initial harness snapshot.");
+		}
+
+		var frames = File.ReadAllLines(outputPath)
+			.Where(static line => !string.IsNullOrWhiteSpace(line))
+			.Select(static line => JsonConvert.DeserializeObject<SemanticRecordingFrame>(line)!)
+			.ToArray();
+
+		Assert.That(frames.Select(static frame => frame.FrameKind), Does.Contain("recording-started"));
+		Assert.That(
+			frames.Any(static frame => frame.FrameKind == "snapshot"
+				&& frame.Snapshot?.Nodes.Any(static node => HasAutomationId(node.Properties, "HelloWorldButton")) == true),
+			Is.True);
+		Assert.That(
+			frames.Where(static frame => frame.Snapshot is not null)
+				.SelectMany(static frame => frame.Snapshot!.Nodes)
+				.Select(static node => node.TargetId),
+			Is.Unique);
+	}
+
 	private static Element AttachAndFind(int processId, string automationId)
 	{
 		using var driver = AppDriver.AttachTo(processId, new AppDriverAttachOptions
@@ -316,6 +363,42 @@ public sealed class RunningProcessAttachIntegrationTests
 			element => element[KnownProperties.AutomationId] == "MenuHeader" && element[KnownProperties.IsSubmenuOpen] == true,
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);
+
+	private static bool RecordingFileContainsSnapshot(string outputPath, string automationId)
+	{
+		if (!File.Exists(outputPath))
+			return false;
+
+		try
+		{
+			return ReadRecordingLinesShared(outputPath)
+				.Select(static line => JsonConvert.DeserializeObject<SemanticRecordingFrame>(line))
+				.Any(frame => frame?.FrameKind == "snapshot"
+					&& frame.Snapshot?.Nodes.Any(node => HasAutomationId(node.Properties, automationId)) == true);
+		}
+		catch (JsonException)
+		{
+			return false;
+		}
+		catch (IOException)
+		{
+			return false;
+		}
+	}
+
+	private static IEnumerable<string> ReadRecordingLinesShared(string outputPath)
+	{
+		using var stream = new FileStream(outputPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+		using var reader = new StreamReader(stream);
+		while (reader.ReadLine() is { } line)
+			if (!string.IsNullOrWhiteSpace(line))
+				yield return line;
+	}
+
+	private static bool HasAutomationId(IReadOnlyDictionary<string, object?> properties, string automationId) =>
+		properties.Any(property =>
+			string.Equals(property.Key, KnownProperties.AutomationId, StringComparison.OrdinalIgnoreCase)
+			&& string.Equals(Convert.ToString(property.Value, System.Globalization.CultureInfo.InvariantCulture), automationId, StringComparison.Ordinal));
 
 	private sealed record ElementCriteria(string TypeName, string AutomationId, string Content);
 

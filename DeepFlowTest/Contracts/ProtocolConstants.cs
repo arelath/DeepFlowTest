@@ -106,6 +106,7 @@ public static class ProtocolConstants
 		public const string BindingFailures = "binding-failures";
 		public const string EventLog = "event-log";
 		public const string Screenshot = "screenshot";
+		public const string SemanticRecording = "semantic-recording";
 		public const string VisualTree = "visual-tree";
 		public const string VisualTreeDelta = "visual-tree-delta";
 	}

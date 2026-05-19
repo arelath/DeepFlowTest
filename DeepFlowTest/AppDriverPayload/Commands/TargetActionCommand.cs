@@ -72,6 +72,7 @@ internal static partial class TargetActionCommand
 		if (!string.IsNullOrWhiteSpace(request.TargetId))
 			return WithTarget(ProtocolConstants.Commands.TypeText, request.TargetId!, treeService, target => TypeTextIntoTarget(target, request.Text, request.ClearFirst));
 
+		using var syntheticInput = AppHooks.BeginSyntheticInput();
 		return ToResponse(TypeTextIntoFocusedTarget(request.Text, request.ClearFirst));
 	}
 
@@ -80,6 +81,7 @@ internal static partial class TargetActionCommand
 		if (!string.IsNullOrWhiteSpace(request.TargetId))
 			return WithTarget(ProtocolConstants.Commands.KeyPress, request.TargetId!, treeService, target => SendKeysToTarget(target, request.Keys, request.DelayMs, request.EnsureForeground));
 
+		using var syntheticInput = AppHooks.BeginSyntheticInput();
 		return ToResponse(SendKeysToForeground(request.Keys, request.DelayMs));
 	}
 
@@ -153,6 +155,7 @@ internal static partial class TargetActionCommand
 
 		try
 		{
+			using var syntheticInput = AppHooks.BeginSyntheticInput();
 			return ToResponse(action(resolution.Target!), commandName, targetId);
 		}
 		catch (TimeoutException ex)
@@ -306,6 +309,7 @@ internal static partial class TargetActionCommand
 	{
 		public Task<object> ExecuteAsync(CancellationToken cancellationToken)
 		{
+			using var syntheticInput = AppHooks.BeginSyntheticInput();
 			var result = TargetMouseInput.PerformDragAndDrop(plan, cancellationToken);
 			return Task.FromResult<object>(ToResponse(result, ProtocolConstants.Commands.DragAndDrop, sourceTargetId));
 		}

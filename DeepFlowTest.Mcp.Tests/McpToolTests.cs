@@ -197,6 +197,25 @@ public sealed class McpToolTests
 	}
 
 	[Test]
+	public void StreamStartAcceptsSemanticRecordingKind()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var started = StreamTools.StartStream(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Streams,
+			fixture.Options,
+			kind: ProtocolConstants.StreamKinds.SemanticRecording,
+			intervalMs: 100);
+
+		Assert.That(started.Success, Is.True);
+		Assert.That(sessionService.Session.Commands.OfType<StartSendingCommandRequest>().Single().StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.SemanticRecording));
+	}
+
+	[Test]
 	public void StreamReadReportsBufferedFramesAndDrops()
 	{
 		var options = McpTestHost.Options();

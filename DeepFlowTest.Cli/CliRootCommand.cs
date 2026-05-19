@@ -22,6 +22,7 @@ public static class CliRootCommand
 		"screenshot",
 		"wait",
 		"stream",
+		"record",
 		"click",
 		"drag",
 		"focus",
@@ -53,6 +54,7 @@ public static class CliRootCommand
 		root.Add(CreateTargetCommand("screenshot", "Capture a screenshot.", actions, static actionSet => actionSet.Screenshot, AddScreenshotOptions));
 		root.Add(CreateTargetCommand("wait", "Wait for a node or state.", actions, static actionSet => actionSet.Wait, AddWaitOptions));
 		root.Add(CreateStreamCommand(actions));
+		root.Add(CreateRecordCommand(actions));
 		root.Add(CreateTargetCommand("click", "Click a target node.", actions, static actionSet => actionSet.Click, AddClickOptions));
 		root.Add(CreateTargetCommand("drag", "Drag a source node and drop it on a destination node.", actions, static actionSet => actionSet.Drag, AddDragOptions));
 		root.Add(CreateTargetCommand("focus", "Focus a target node.", actions, static actionSet => actionSet.Focus, AddActionTargetOptions));
@@ -68,7 +70,7 @@ public static class CliRootCommand
 
 	public static string HelpText =>
 		$"{DeepFlowTest.ProductInfo.Name} CLI{Environment.NewLine}"
-		+ "Commands: config, processes, ping, pipe status, tree, find, node, props, selectors, screenshot, wait, stream, click, drag, focus, type, key, set, raise, invoke, version";
+		+ "Commands: config, processes, ping, pipe status, tree, find, node, props, selectors, screenshot, wait, stream, record, click, drag, focus, type, key, set, raise, invoke, version";
 
 	public static string GetCommandPath(IReadOnlyList<string> args)
 	{
@@ -88,7 +90,7 @@ public static class CliRootCommand
 				return arg;
 
 			tokens.Add(arg);
-			if (tokens.Count == 1 && arg is not ("config" or "pipe" or "stream"))
+			if (tokens.Count == 1 && arg is not ("config" or "pipe" or "stream" or "record"))
 				break;
 
 			if (tokens.Count == 2)
@@ -158,7 +160,16 @@ public static class CliRootCommand
 		stream.Add(CreateTargetCommand("screenshot", "Stream screenshots.", actions, static actionSet => actionSet.StreamScreenshot, AddStreamScreenshotOptions));
 		stream.Add(CreateTargetCommand("event-log", "Stream target event logs.", actions, static actionSet => actionSet.StreamEventLog, AddStreamOptions));
 		stream.Add(CreateTargetCommand("binding-failures", "Stream WPF binding failures.", actions, static actionSet => actionSet.StreamBindingFailures, AddStreamOptions));
+		stream.Add(CreateTargetCommand("semantic-recording", "Stream semantic recording batches.", actions, static actionSet => actionSet.StreamSemanticRecording, AddSemanticRecordingStreamOptions));
 		return stream;
+	}
+
+	private static Command CreateRecordCommand(CliCommandActions? actions)
+	{
+		var record = new Command("record", "Record target data.");
+		SetAction(record, actions?.Record);
+		record.Add(CreateTargetCommand("semantic", "Record semantic UI actions and visual tree changes to JSONL.", actions, static actionSet => actionSet.RecordSemantic, AddRecordSemanticOptions));
+		return record;
 	}
 
 	private static Command CreateVersionCommand(CliCommandActions? actions)
@@ -272,6 +283,21 @@ public static class CliRootCommand
 	{
 		AddStreamOptions(command);
 		command.Add(CreateParsedOption<ImageFormat>("--image-format", "Image format.", CliValueParser.ParseImageFormat));
+	}
+
+	private static void AddSemanticRecordingStreamOptions(Command command)
+	{
+		AddStreamOptions(command);
+		command.Add(CreateOption<int>("--text-idle-ms", "Text coalescing idle threshold in milliseconds."));
+		command.Add(CreateOption<int>("--max-queued-actions", "Maximum queued recording actions."));
+		command.Add(CreateOption<int>("--max-batch-frames", "Maximum recording frames per batch."));
+		command.Add(CreateOption<int>("--limit", "Maximum visual tree nodes per snapshot."));
+	}
+
+	private static void AddRecordSemanticOptions(Command command)
+	{
+		AddSemanticRecordingStreamOptions(command);
+		command.Add(CreateOption<string>("--output", "JSONL recording output path.", "--out"));
 	}
 
 	private static void AddWaitOptions(Command command)
@@ -476,6 +502,9 @@ public static class CliRootCommand
 			or "--out"
 			or "--duration-ms"
 			or "--interval-ms"
+			or "--text-idle-ms"
+			or "--max-queued-actions"
+			or "--max-batch-frames"
 			or "--match-count"
 			or "--subtree-depth"
 			or "--button"

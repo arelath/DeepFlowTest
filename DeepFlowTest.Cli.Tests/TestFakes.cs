@@ -267,6 +267,33 @@ internal sealed class FakeCliStreamSession : ICliStreamSession
 							},
 						},
 					}
+				: Start.StreamKind == ProtocolConstants.StreamKinds.SemanticRecording
+					? new SemanticRecordingBatch
+					{
+						RecordingId = "recording",
+						BatchSequenceNumber = sequence,
+						Frames =
+						[
+							new SemanticRecordingFrame
+							{
+								RecordingId = "recording",
+								FrameKind = sequence == 1 ? "recording-started" : "action",
+								SequenceNumber = sequence,
+								Action = sequence == 1 ? null : new RecordedInputAction
+								{
+									ActionKind = "click",
+									Target = new RecordedTarget
+									{
+										TargetId = "button-0002",
+										TypeName = "Button",
+										Summary = "Button[AutomationId='SubmitButton']",
+									},
+									MouseButton = "left",
+									ClickCount = 1,
+								},
+							},
+						],
+					}
 				: new { status = "fake" },
 		};
 	}

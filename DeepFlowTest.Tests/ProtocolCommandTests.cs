@@ -111,6 +111,55 @@ public sealed class ProtocolCommandTests
 	}
 
 	[Test]
+	public void SemanticRecordingDtosRoundTripThroughMessagePacker()
+	{
+		var batch = new SemanticRecordingBatch
+		{
+			RecordingId = "recording",
+			BatchSequenceNumber = 3,
+			DroppedActionCount = 2,
+			Frames =
+			[
+				new SemanticRecordingFrame
+				{
+					RecordingId = "recording",
+					FrameKind = "action",
+					SequenceNumber = 9,
+					Action = new RecordedInputAction
+					{
+						ActionKind = "type",
+						Text = "hello",
+						Target = new RecordedTarget
+						{
+							TargetId = "target",
+							TypeName = "TextBox",
+							Summary = "TextBox[Name='User']",
+							SelectorHints =
+							[
+								new RecordedSelectorHint
+								{
+									Kind = "name",
+									Confidence = 0.85,
+									PropertyName = KnownProperties.Name,
+									Value = "User",
+									Cli = "--name \"User\"",
+								},
+							],
+						},
+					},
+				},
+			],
+		};
+
+		var unpacked = MessagePacker.ConvertTo<SemanticRecordingBatch>(MessagePacker.Unpack(MessagePacker.Pack(batch)));
+
+		Assert.That(unpacked.RecordingId, Is.EqualTo("recording"));
+		Assert.That(unpacked.DroppedActionCount, Is.EqualTo(2));
+		Assert.That(unpacked.Frames.Single().Action!.Text, Is.EqualTo("hello"));
+		Assert.That(unpacked.Frames.Single().Action!.Target.SelectorHints.Single().Kind, Is.EqualTo("name"));
+	}
+
+	[Test]
 	public void ProtocolVersionMismatchReturnsStableError()
 	{
 		var pipeName = $"deepflowtest-test-{Guid.NewGuid():N}";
@@ -257,6 +306,27 @@ public sealed class ProtocolCommandTests
 				StreamKind = ProtocolConstants.StreamKinds.BindingFailures,
 				IntervalMs = 50,
 				TargetId = "button",
+			},
+			session);
+
+		Assert.That(response, Is.TypeOf<StandardIpcResponse>());
+		Assert.That(((StandardIpcResponse)response!).ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.InvalidArguments));
+	}
+
+	[Test]
+	public void SemanticRecordingStreamRejectsInvalidOptionsBeforeUiResolution()
+	{
+		var session = new ReusablePipeSession("test-pipe", _ => { });
+
+		var response = CaptureResponse(
+			new StartSendingCommandRequest
+			{
+				StreamKind = ProtocolConstants.StreamKinds.SemanticRecording,
+				IntervalMs = 50,
+				SemanticRecording = new SemanticRecordingOptionsDto
+				{
+					MaxBatchFrames = 0,
+				},
 			},
 			session);
 

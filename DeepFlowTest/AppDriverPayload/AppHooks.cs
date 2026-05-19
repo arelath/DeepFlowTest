@@ -21,6 +21,7 @@ public static class AppHooks
 	private static bool hooksApplied;
 	private static volatile bool showDialogCalled;
 	private static int syntheticMouseInputDepth;
+	private static int syntheticInputDepth;
 
 	public static WpfPatchResult LastResult
 	{
@@ -69,10 +70,19 @@ public static class AppHooks
 
 	public static bool IsSyntheticMouseInputActive => Volatile.Read(ref syntheticMouseInputDepth) > 0;
 
+	public static bool IsSyntheticInputActive => Volatile.Read(ref syntheticInputDepth) > 0;
+
+	public static IDisposable BeginSyntheticInput()
+	{
+		Interlocked.Increment(ref syntheticInputDepth);
+		return new SyntheticInputScope(includeMouse: false);
+	}
+
 	public static IDisposable BeginSyntheticMouseInput()
 	{
+		Interlocked.Increment(ref syntheticInputDepth);
 		Interlocked.Increment(ref syntheticMouseInputDepth);
-		return new SyntheticMouseInputScope();
+		return new SyntheticInputScope(includeMouse: true);
 	}
 
 	public static bool ShowDialogCalled
@@ -102,6 +112,7 @@ public static class AppHooks
 		ShowDialogCalled = false;
 		ResetMouseState();
 		Volatile.Write(ref syntheticMouseInputDepth, 0);
+		Volatile.Write(ref syntheticInputDepth, 0);
 	}
 
 	private static void WarmupHookedMembers()
@@ -386,13 +397,23 @@ public static class AppHooks
 		}
 	}
 
-	private sealed class SyntheticMouseInputScope : IDisposable
+	private sealed class SyntheticInputScope : IDisposable
 	{
+		private readonly bool includeMouse;
 		private int disposed;
+
+		public SyntheticInputScope(bool includeMouse)
+		{
+			this.includeMouse = includeMouse;
+		}
 
 		public void Dispose()
 		{
-			if (Interlocked.Exchange(ref disposed, 1) == 0)
+			if (Interlocked.Exchange(ref disposed, 1) != 0)
+				return;
+
+			Interlocked.Decrement(ref syntheticInputDepth);
+			if (includeMouse)
 				Interlocked.Decrement(ref syntheticMouseInputDepth);
 		}
 	}

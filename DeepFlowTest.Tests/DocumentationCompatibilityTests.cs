@@ -7,7 +7,7 @@ using NUnit.Framework;
 public sealed class DocumentationCompatibilityTests
 {
 	[TestCase("Compatibility.md", "namespace", "command is additive", "DeepFlowTestResources")]
-	[TestCase("Recording.md", "Record", "NotSupportedException", "screenshot streaming")]
+	[TestCase("Recording.md", "Record", "Semantic recording", "Screenshot streaming")]
 	[TestCase("Win32DialogSupport.md", "Dialog", "FileName", "AcceptDialog")]
 	[TestCase("WinFormsSupport.md", "WinForms", "secondary forms", "modal dialogs")]
 	[TestCase("Protocol.md", "StreamMessage", "SequenceNumber", "event-log")]

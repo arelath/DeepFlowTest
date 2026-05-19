@@ -127,6 +127,7 @@ public sealed class RepositoryConfigurationTests
 		var root = FindRepositoryRoot();
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest", "DeepFlowTest.csproj", "TargetFrameworks"), Is.EqualTo("net461;netcoreapp3.1;net5.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
+		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Recorder", "DeepFlowTest.Recorder.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Tests", "DeepFlowTest.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Cli.Tests", "DeepFlowTest.Cli.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "TestHarnesses", "Directory.Build.props", "TargetFramework"), Is.EqualTo("net8.0-windows"));
@@ -268,6 +269,7 @@ public sealed class RepositoryConfigurationTests
 			"DeepFlowTest.Cli.Tests",
 			"DeepFlowTest.GenericInjector",
 			"DeepFlowTest.InjectorLauncher",
+			"DeepFlowTest.Recorder",
 			"DeepFlowTest.Tests",
 			"Shared",
 			Path.Combine("TestHarnesses", "HelloWorld"),

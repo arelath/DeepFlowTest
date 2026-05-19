@@ -16,13 +16,13 @@ using DeepFlowMcpOptions = DeepFlowTest.Mcp.Configuration.McpServerOptions;
 [McpServerToolType]
 internal static class StreamTools
 {
-	[McpServerTool(Name = "deepflow_start_stream"), Description("Start a bounded MCP-side stream buffer for visual tree, screenshot, event-log, or binding-failures frames.")]
+	[McpServerTool(Name = "deepflow_start_stream"), Description("Start a bounded MCP-side stream buffer for visual tree, screenshot, event-log, binding-failures, or semantic-recording frames.")]
 	public static McpToolResponse StartStream(
 		McpToolRunner runner,
 		McpSessionHost host,
 		McpStreamRegistry streams,
 		IOptions<DeepFlowMcpOptions> options,
-		[Description("Stream kind: visual-tree, visual-tree-delta, screenshot, event-log, or binding-failures.")] string kind = ProtocolConstants.StreamKinds.VisualTree,
+		[Description("Stream kind: visual-tree, visual-tree-delta, screenshot, event-log, binding-failures, or semantic-recording.")] string kind = ProtocolConstants.StreamKinds.VisualTree,
 		int intervalMs = TimeoutDefaults.StreamIntervalMs,
 		string? properties = null,
 		string? targetId = null,
@@ -74,5 +74,6 @@ internal static class StreamTools
 			or ProtocolConstants.StreamKinds.VisualTreeDelta
 			or ProtocolConstants.StreamKinds.Screenshot
 			or ProtocolConstants.StreamKinds.EventLog
-			or ProtocolConstants.StreamKinds.BindingFailures;
+			or ProtocolConstants.StreamKinds.BindingFailures
+			or ProtocolConstants.StreamKinds.SemanticRecording;
 }

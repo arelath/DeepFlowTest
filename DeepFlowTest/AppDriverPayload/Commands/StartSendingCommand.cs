@@ -2,6 +2,7 @@ namespace DeepFlowTest.AppDriverPayload.Commands;
 
 using System;
 using DeepFlowTest.AppDriverPayload.Diagnostics;
+using DeepFlowTest.AppDriverPayload.Streaming;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility;
@@ -32,6 +33,9 @@ internal static class StartSendingCommand
 			return targetValidation;
 
 		var capture = CreateCapture(request, treeService);
+		if (capture.Error is not null)
+			return capture.Error;
+
 		var subscription = reusableSession.StartSubscription(
 			request.StreamKind,
 			command.ConnectionId,
@@ -63,7 +67,8 @@ internal static class StartSendingCommand
 			or ProtocolConstants.StreamKinds.VisualTreeDelta
 			or ProtocolConstants.StreamKinds.Screenshot
 			or ProtocolConstants.StreamKinds.EventLog
-			or ProtocolConstants.StreamKinds.BindingFailures))
+			or ProtocolConstants.StreamKinds.BindingFailures
+			or ProtocolConstants.StreamKinds.SemanticRecording))
 		{
 			return StandardIpcResponse.FromError($"Unsupported stream kind '{request.StreamKind}'.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
 		}
@@ -76,6 +81,20 @@ internal static class StartSendingCommand
 
 		if (request.StreamKind == ProtocolConstants.StreamKinds.BindingFailures && !string.IsNullOrWhiteSpace(request.TargetId))
 			return StandardIpcResponse.FromError("Binding failure streams do not support target IDs.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
+
+		if (request.SemanticRecording is not null)
+		{
+			if (request.StreamKind != ProtocolConstants.StreamKinds.SemanticRecording)
+				return StandardIpcResponse.FromError("Semantic recording options require the semantic-recording stream kind.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
+			if (request.SemanticRecording.TextIdleMs is < 0 or > 60_000)
+				return StandardIpcResponse.FromError("Semantic recording text idle time must be between 0 and 60000 ms.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
+			if (request.SemanticRecording.MaxQueuedActions < 1)
+				return StandardIpcResponse.FromError("Semantic recording max queued actions must be at least 1.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
+			if (request.SemanticRecording.MaxBatchFrames < 1)
+				return StandardIpcResponse.FromError("Semantic recording max batch frames must be at least 1.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
+			if (request.SemanticRecording.MaxNodeCount < 1)
+				return StandardIpcResponse.FromError("Semantic recording max node count must be at least 1.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
+		}
 
 		if (request.PropNames is not null)
 		{
@@ -112,6 +131,13 @@ internal static class StartSendingCommand
 		{
 			var bindingFailures = new BindingFailureStreamCapture();
 			return new StreamCapturePlan(bindingFailures.Capture, bindingFailures);
+		}
+		if (request.StreamKind == ProtocolConstants.StreamKinds.SemanticRecording)
+		{
+			var semanticRecording = SemanticRecordingStreamCapture.TryStart(request, treeService);
+			return semanticRecording.Error is not null
+				? new StreamCapturePlan(semanticRecording.Error)
+				: new StreamCapturePlan(semanticRecording.Capture!.Capture, semanticRecording.Capture);
 		}
 
 		return new StreamCapturePlan(_ =>
@@ -225,9 +251,17 @@ internal static class StartSendingCommand
 			Lifetime = lifetime;
 		}
 
+		public StreamCapturePlan(StandardIpcResponse error)
+		{
+			Error = error ?? throw new ArgumentNullException(nameof(error));
+			Capture = _ => error;
+		}
+
 		public Func<long, object> Capture { get; }
 
 		public IDisposable? Lifetime { get; }
+
+		public StandardIpcResponse? Error { get; }
 	}
 
 }

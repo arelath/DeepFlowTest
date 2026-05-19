@@ -1,5 +1,6 @@
 namespace DeepFlowTest.Cli.Tests;
 
+using System.IO;
 using System.Linq;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
@@ -14,6 +15,7 @@ public sealed class StreamCommandHandlerTests
 	[TestCase(ProtocolConstants.StreamKinds.Screenshot, "screenshot")]
 	[TestCase(ProtocolConstants.StreamKinds.EventLog, "event-log")]
 	[TestCase(ProtocolConstants.StreamKinds.BindingFailures, "binding-failures")]
+	[TestCase(ProtocolConstants.StreamKinds.SemanticRecording, "semantic-recording")]
 	public void StreamKindCommandStartsFramesAndStops(string streamKind, string commandName)
 	{
 		var session = new FakeAppSessionService();
@@ -85,6 +87,7 @@ public sealed class StreamCommandHandlerTests
 			ProtocolConstants.StreamKinds.Screenshot,
 			ProtocolConstants.StreamKinds.EventLog,
 			ProtocolConstants.StreamKinds.BindingFailures,
+			ProtocolConstants.StreamKinds.SemanticRecording,
 		})
 		{
 			var request = new StartSendingCommandRequest
@@ -94,10 +97,15 @@ public sealed class StreamCommandHandlerTests
 				TargetId = "target",
 				PropNames = new[] { KnownProperties.Name },
 				Format = ImageFormat.Png,
+				SemanticRecording = kind == ProtocolConstants.StreamKinds.SemanticRecording
+					? new SemanticRecordingOptionsDto { TextIdleMs = 250, MaxBatchFrames = 10 }
+					: null,
 			};
 			var unpacked = MessagePacker.ConvertTo<StartSendingCommandRequest>(MessagePacker.Unpack(MessagePacker.Pack(request)));
 			Assert.That(unpacked.StreamKind, Is.EqualTo(kind));
 			Assert.That(unpacked.PropNames, Is.EqualTo(new[] { KnownProperties.Name }));
+			if (kind == ProtocolConstants.StreamKinds.SemanticRecording)
+				Assert.That(unpacked.SemanticRecording!.TextIdleMs, Is.EqualTo(250));
 		}
 
 		var message = new StreamMessage
@@ -119,5 +127,26 @@ public sealed class StreamCommandHandlerTests
 
 		Assert.That(unpackedMessage.SequenceNumber, Is.EqualTo(2));
 		Assert.That(unpackedError.Error!.Code, Is.EqualTo("bad"));
+	}
+
+	[Test]
+	public void RecordSemanticWritesJsonlFramesAndStops()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "semantic-recording.jsonl");
+		if (File.Exists(path))
+			File.Delete(path);
+
+		var result = CliTestHost.Run(new[] { "record", "semantic", "--pid", "1234", "--out", path, "--duration-ms", "120", "--interval-ms", "60", "--text-idle-ms", "200" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("\"framesWritten\""));
+		Assert.That(File.Exists(path), Is.True);
+		Assert.That(File.ReadAllText(path), Does.Contain("\"frameKind\":\"recording-started\""));
+		var start = session.Session.Commands.OfType<StartSendingCommandRequest>().Single();
+		Assert.That(start.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.SemanticRecording));
+		Assert.That(start.SemanticRecording!.TextIdleMs, Is.EqualTo(200));
+		Assert.That(session.Session.Commands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
 	}
 }

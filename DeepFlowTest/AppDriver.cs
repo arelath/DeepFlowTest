@@ -238,6 +238,13 @@ public sealed class AppDriver : IDisposable
 	public static IDisposable Record(string fileOutputPath, string? windowTitle = null) =>
 		MediaCaptureService.Record(fileOutputPath, windowTitle);
 
+	public SemanticRecordingSession StartSemanticRecording(string outputFilePath, SemanticRecordingOptions? options = null) =>
+		SemanticRecordingSession.Start(
+			Session,
+			outputFilePath,
+			options ?? new SemanticRecordingOptions(),
+			(int)Math.Max(1, Options.Timeout.TotalMilliseconds));
+
 	internal static Func<ProcessStartInfo, IRecordingProcess> RecordingProcessFactory
 	{
 		get => MediaCaptureService.RecordingProcessFactory;

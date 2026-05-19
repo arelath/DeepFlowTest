@@ -457,6 +457,21 @@ public sealed record class StartSendingCommandRequest : IpcCommand
 	public ImageFormat Format { get; set; } = ImageFormat.Png;
 
 	public string? TargetId { get; set; }
+
+	public SemanticRecordingOptionsDto? SemanticRecording { get; set; }
+}
+
+public sealed record class SemanticRecordingOptionsDto
+{
+	public bool IncludeInitialSnapshot { get; set; } = true;
+
+	public int TextIdleMs { get; set; } = 400;
+
+	public int MaxQueuedActions { get; set; } = 1000;
+
+	public int MaxBatchFrames { get; set; } = 100;
+
+	public int MaxNodeCount { get; set; } = VisualTreeDefaults.DefaultMaxNodeCount;
 }
 
 public sealed record class StopSendingCommandRequest : IpcCommand

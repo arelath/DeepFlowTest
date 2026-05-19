@@ -55,6 +55,7 @@ public sealed partial class TreeService
 		var roots = ResolveRoots(options);
 		List<VisualTreeNodeDto> nodes = [];
 		var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+		var visitedTargetIds = new HashSet<string>(StringComparer.Ordinal);
 		var requestedProperties = options.RequestedPropertyNames ?? VisualTreePropertyExtractor.DefaultPropertyNames;
 		var isTruncated = false;
 		string? truncationReason = null;
@@ -71,7 +72,7 @@ public sealed partial class TreeService
 				break;
 			}
 
-			AddNode(root, parent: null, depth: 0, siblingIndex: nodes.Count, nodes, visited, requestedProperties, options, ref isTruncated, ref truncationReason);
+			AddNode(root, parent: null, depth: 0, siblingIndex: nodes.Count, nodes, visited, visitedTargetIds, requestedProperties, options, ref isTruncated, ref truncationReason);
 		}
 
 		return VisualTreeSnapshot.Create(
@@ -175,6 +176,7 @@ public sealed partial class TreeService
 		int siblingIndex,
 		List<VisualTreeNodeDto> nodes,
 		HashSet<object> visited,
+		HashSet<string> visitedTargetIds,
 		IEnumerable<string> requestedProperties,
 		TreeSnapshotOptions options,
 		ref bool isTruncated,
@@ -192,6 +194,9 @@ public sealed partial class TreeService
 
 		using var wrapper = TargetObjectWrapper.Create(target);
 		var targetId = targetIds.GetOrCreateId(target);
+		if (!visitedTargetIds.Add(targetId))
+			return null;
+
 		var node = new VisualTreeNodeDto
 		{
 			TargetId = targetId,
@@ -230,7 +235,7 @@ public sealed partial class TreeService
 			if (isTruncated)
 				break;
 
-			AddNode(children[i], node, depth + 1, i, nodes, visited, requestedProperties, options, ref isTruncated, ref truncationReason);
+			AddNode(children[i], node, depth + 1, i, nodes, visited, visitedTargetIds, requestedProperties, options, ref isTruncated, ref truncationReason);
 		}
 
 		return node;
