@@ -20,7 +20,7 @@ public sealed class AppDriverTests
 	public void LaunchUsesBackendAndOwnsProcessByDefault()
 	{
 		var backend = new FakeBackend();
-		var factory = new AppDriverFactory(backend);
+		var factory = CreateBackendOnlyFactory(backend);
 
 		using var driver = factory.Launch("target.exe", new AppDriverLaunchOptions { Arguments = "--demo" });
 
@@ -40,7 +40,7 @@ public sealed class AppDriverTests
 		try
 		{
 			var backend = new FakeBackend();
-			var factory = new AppDriverFactory(backend);
+			var factory = CreateBackendOnlyFactory(backend);
 
 			using var driver = factory.Launch(@"%DFT_LAUNCH_ROOT%\target.exe");
 
@@ -56,7 +56,7 @@ public sealed class AppDriverTests
 	public void ProcessStartInfoLaunchPreservesCallerStartInfo()
 	{
 		var backend = new FakeBackend();
-		var factory = new AppDriverFactory(backend);
+		var factory = CreateBackendOnlyFactory(backend);
 		var startInfo = new ProcessStartInfo("relative-target.exe", "--demo")
 		{
 			WorkingDirectory = @"C:\TestEnvironment",
@@ -146,7 +146,7 @@ public sealed class AppDriverTests
 	public void AttachByPidUsesBackendAndDoesNotOwnProcess()
 	{
 		var backend = new FakeBackend();
-		var factory = new AppDriverFactory(backend);
+		var factory = CreateBackendOnlyFactory(backend);
 
 		using var driver = factory.AttachTo(42);
 
@@ -775,6 +775,9 @@ public sealed class AppDriverTests
 				File.Delete(launcherPath);
 		}
 	}
+
+	private static AppDriverFactory CreateBackendOnlyFactory(FakeBackend backend) =>
+		new(backend, static (_, _) => new FakeSession());
 
 	private sealed class FakeBackend : IAppDriverBackend
 	{

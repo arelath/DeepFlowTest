@@ -3,6 +3,7 @@ namespace DeepFlowTest;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq.Expressions;
 using System.Runtime.ExceptionServices;
 using DeepFlowTest.Contracts;
@@ -58,8 +59,8 @@ public sealed class AppDriver : IDisposable
 		{
 			if (Options.FailOnBindingFailures)
 				automaticBindingFailureCapture = StartBindingFailureCapture();
-			var autoSemanticRecordingOutputPath = Options.AutoSemanticRecordingOutputPath;
-			if (autoSemanticRecordingOutputPath is not null && !string.IsNullOrWhiteSpace(autoSemanticRecordingOutputPath))
+			var autoSemanticRecordingOutputPath = ResolveAutomaticSemanticRecordingOutputPath();
+			if (autoSemanticRecordingOutputPath is not null)
 				automaticSemanticRecording = StartSemanticRecording(autoSemanticRecordingOutputPath, Options.AutoSemanticRecordingOptions);
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -119,7 +120,7 @@ public sealed class AppDriver : IDisposable
 	}
 
 	public static AppDriver CreateForTests(AppConnection connection, IAppDriverCommandSession session, AppDriverOptions? options = null) =>
-		new(connection, options ?? new AppDriverOptions(), session: session);
+		new(connection, options ?? CreateTestOptions(), session: session);
 
 	internal static AppDriver FromConnection(
 		AppConnection connection,
@@ -258,6 +259,67 @@ public sealed class AppDriver : IDisposable
 			outputFilePath,
 			options ?? new SemanticRecordingOptions(),
 			(int)Math.Max(1, Options.Timeout.TotalMilliseconds));
+
+	private string? ResolveAutomaticSemanticRecordingOutputPath()
+	{
+		if (!Options.AutoSemanticRecordingEnabled)
+			return null;
+
+		var configuredPath = Options.AutoSemanticRecordingOutputPath;
+		if (!string.IsNullOrWhiteSpace(configuredPath))
+			return configuredPath;
+
+		if (Connection.InjectorState == AppConnectionInjectorState.InjectionSkipped && !Connection.ReusesPipe)
+			return null;
+
+		if (Session is not IAppDriverStreamingSession)
+			return null;
+
+		var outputPath = CreateDefaultSemanticRecordingOutputPath(Connection);
+		Options.AutoSemanticRecordingOutputPath = outputPath;
+		return outputPath;
+	}
+
+	private static string CreateDefaultSemanticRecordingOutputPath(AppConnection connection)
+	{
+		var directory = Path.Combine(AppContext.BaseDirectory, "semantic-recordings");
+		Directory.CreateDirectory(directory);
+		var processName = SafeGetProcessName(connection.TargetProcess);
+		var label = SanitizeFileName($"{processName}-{connection.TargetProcess.Id}");
+		return Path.Combine(directory, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{label}.json");
+	}
+
+	private static string SafeGetProcessName(ITargetProcess process)
+	{
+		try
+		{
+			return string.IsNullOrWhiteSpace(process.ProcessName) ? "process" : process.ProcessName;
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			return "process";
+		}
+	}
+
+	private static string SanitizeFileName(string value)
+	{
+		var invalid = Path.GetInvalidFileNameChars();
+		var characters = value.ToCharArray();
+		for (var i = 0; i < characters.Length; i++)
+		{
+			if (Array.IndexOf(invalid, characters[i]) >= 0 || char.IsWhiteSpace(characters[i]))
+				characters[i] = '_';
+		}
+
+		var sanitized = new string(characters).Trim('_');
+		return string.IsNullOrWhiteSpace(sanitized) ? "recording" : sanitized;
+	}
+
+	private static AppDriverOptions CreateTestOptions() =>
+		new()
+		{
+			AutoSemanticRecordingEnabled = false,
+		};
 
 	internal static Func<ProcessStartInfo, IRecordingProcess> RecordingProcessFactory
 	{

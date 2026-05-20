@@ -348,6 +348,8 @@ public sealed class RunningProcessAttachIntegrationTests
 		};
 		if (enableTestRecording)
 			TestSemanticRecording.Configure(options, recordingLabel);
+		else
+			options.AutoSemanticRecordingEnabled = false;
 
 		return AppDriver.AttachTo(processId, options);
 	}

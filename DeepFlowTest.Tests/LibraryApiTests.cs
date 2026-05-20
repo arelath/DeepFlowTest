@@ -185,6 +185,68 @@ public sealed class LibraryApiTests
 	}
 
 	[Test]
+	public void AutoSemanticRecordingStartsByDefaultWhenOptionsAreProvidedAndSessionSupportsStreaming()
+	{
+		var session = new FakeSemanticRecordingCommandSession();
+		var options = new AppDriverOptions();
+
+		using (AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			session,
+			options))
+		{
+			Assert.That(session.StartRequest, Is.Not.Null);
+			Assert.That(options.AutoSemanticRecordingOutputPath, Is.Not.Null);
+			Assert.That(Path.GetFileName(options.AutoSemanticRecordingOutputPath!), Does.EndWith(".json"));
+			Assert.That(SpinWait.SpinUntil(() => File.Exists(options.AutoSemanticRecordingOutputPath!) && ReadAllTextShared(options.AutoSemanticRecordingOutputPath!).Contains("\"kind\": \"action\"", StringComparison.Ordinal), TimeSpan.FromSeconds(2)), Is.True);
+		}
+
+		var recordingText = File.ReadAllText(options.AutoSemanticRecordingOutputPath!);
+		Assert.That(JArray.Parse(recordingText), Has.Count.GreaterThan(0));
+		Assert.That(recordingText, Does.Not.Contain("\"frameKind\""));
+		Assert.That(session.SentCommands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
+	}
+
+	[Test]
+	public void AutoSemanticRecordingCanBeDisabledExplicitly()
+	{
+		var session = new FakeSemanticRecordingCommandSession();
+		var options = new AppDriverOptions
+		{
+			AutoSemanticRecordingEnabled = false,
+		};
+
+		using (AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			session,
+			options))
+		{
+			Assert.That(session.StartRequest, Is.Null);
+			Assert.That(options.AutoSemanticRecordingOutputPath, Is.Null);
+		}
+	}
+
+	[Test]
+	public void AutoSemanticRecordingDoesNotStartImplicitlyWhenConnectionHasNoPayloadPipe()
+	{
+		var session = new FakeSemanticRecordingCommandSession();
+		var options = new AppDriverOptions();
+		using var connection = new AppConnection(new AppConnectionOptions
+		{
+			TargetProcess = new FakeTargetProcess(),
+			PipeName = "pipe",
+			InjectorState = AppConnectionInjectorState.InjectionSkipped,
+			ReusesPipe = false,
+		});
+
+		using (AppDriver.CreateForTests(connection, session, options))
+		{
+			Assert.That(session.StartRequest, Is.Null);
+			Assert.That(options.AutoSemanticRecordingOutputPath, Is.Null);
+		}
+	}
+
+	[Test]
 	public void AutoSemanticRecordingOptionStartsStreamAndStopsWithDriver()
 	{
 		var session = new FakeSemanticRecordingCommandSession();

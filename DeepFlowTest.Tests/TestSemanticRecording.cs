@@ -35,9 +35,13 @@ internal static class TestSemanticRecording
 	{
 		_ = options ?? throw new ArgumentNullException(nameof(options));
 		if (!IsEnabled())
+		{
+			options.AutoSemanticRecordingEnabled = false;
 			return;
+		}
 
 		var outputPath = CreateOutputPath(label);
+		options.AutoSemanticRecordingEnabled = true;
 		options.AutoSemanticRecordingOutputPath = outputPath;
 		options.AutoSemanticRecordingOptions.IntervalMs = 100;
 		options.AutoSemanticRecordingOptions.TextIdleMs = 25;

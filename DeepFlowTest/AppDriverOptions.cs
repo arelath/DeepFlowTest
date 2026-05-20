@@ -22,6 +22,8 @@ public class AppDriverOptions
 
 	public BindingFailureOptions BindingFailures { get; } = new();
 
+	public bool AutoSemanticRecordingEnabled { get; set; } = true;
+
 	public string? AutoSemanticRecordingOutputPath { get; set; }
 
 	public SemanticRecordingOptions AutoSemanticRecordingOptions { get; } = new();

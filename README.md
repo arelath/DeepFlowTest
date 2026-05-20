@@ -9,14 +9,16 @@ local build and test commands.
 
 ## Semantic Recordings for Tests
 
-WPF attach integration tests write semantic recording JSON files while they
-run. This is on by default so a failing run leaves a readable UX trace without
-needing to remember an opt-in switch.
+`AppDriver` writes semantic recording JSON files automatically while it is
+attached to a target. This is on by default so a failing run leaves a readable
+UX trace without needing to remember an opt-in switch.
 
-By default, recordings are written under the NUnit work directory in
-`semantic-recordings`.
+By default, recordings are written under `semantic-recordings` next to the test
+assembly. The DeepFlowTest integration test helper overrides that path to use
+the NUnit work directory and test name.
 
-Use the CLI switch when you intentionally want to turn them off:
+Set `AppDriverOptions.AutoSemanticRecordingEnabled = false` when you
+intentionally want to turn them off. For this repo's integration lane, use:
 
 ```powershell
 dotnet test .\DeepFlowTest.Tests\DeepFlowTest.Tests.csproj --filter "FullyQualifiedName~RunningProcessAttachIntegrationTests"

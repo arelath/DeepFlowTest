@@ -33,6 +33,7 @@ public sealed class TestSemanticRecordingTests
 
 		TestSemanticRecording.Configure(options, "hello world");
 
+		Assert.That(options.AutoSemanticRecordingEnabled, Is.True);
 		Assert.That(options.AutoSemanticRecordingOutputPath, Is.Not.Null);
 		Assert.That(options.AutoSemanticRecordingOutputPath, Does.Contain("hello_world"));
 		Assert.That(Path.GetFileName(options.AutoSemanticRecordingOutputPath!), Does.Contain("hello_world"));
@@ -55,6 +56,7 @@ public sealed class TestSemanticRecordingTests
 		TestSemanticRecording.Configure(options, "demo");
 
 		Assert.That(TestSemanticRecording.IsEnabled(), Is.False);
+		Assert.That(options.AutoSemanticRecordingEnabled, Is.False);
 		Assert.That(options.AutoSemanticRecordingOutputPath, Is.Null);
 	}
 
