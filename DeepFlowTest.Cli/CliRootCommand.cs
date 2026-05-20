@@ -168,7 +168,7 @@ public static class CliRootCommand
 	{
 		var record = new Command("record", "Record target data.");
 		SetAction(record, actions?.Record);
-		record.Add(CreateTargetCommand("semantic", "Record semantic UI actions and visual tree changes to JSONL.", actions, static actionSet => actionSet.RecordSemantic, AddRecordSemanticOptions));
+		record.Add(CreateTargetCommand("semantic", "Record semantic UI actions and visual tree changes to JSON.", actions, static actionSet => actionSet.RecordSemantic, AddRecordSemanticOptions));
 		return record;
 	}
 
@@ -297,7 +297,7 @@ public static class CliRootCommand
 	private static void AddRecordSemanticOptions(Command command)
 	{
 		AddSemanticRecordingStreamOptions(command);
-		command.Add(CreateOption<string>("--output", "JSONL recording output path.", "--out"));
+		command.Add(CreateOption<string>("--output", "JSON recording output path.", "--out"));
 	}
 
 	private static void AddWaitOptions(Command command)

@@ -251,14 +251,14 @@ public sealed class RunningProcessAttachIntegrationTests
 	}
 
 	[Test]
-	public void SemanticRecordingWritesJsonlSnapshotAndDeltaInAttachedHarness()
+	public void SemanticRecordingWritesJsonSnapshotAndDeltaInAttachedHarness()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		var outputPath = Path.Combine(TestContext.CurrentContext.WorkDirectory, $"semantic-recording-{Guid.NewGuid():N}.jsonl");
+		var outputPath = Path.Combine(TestContext.CurrentContext.WorkDirectory, $"semantic-recording-{Guid.NewGuid():N}.json");
 		if (File.Exists(outputPath))
 			File.Delete(outputPath);
 
-		using var driver = AttachToHarness(harness.Process.Id, nameof(SemanticRecordingWritesJsonlSnapshotAndDeltaInAttachedHarness), enableTestRecording: false);
+		using var driver = AttachToHarness(harness.Process.Id, nameof(SemanticRecordingWritesJsonSnapshotAndDeltaInAttachedHarness), enableTestRecording: false);
 		const string expectedEventText = "HelloWorldButton_Click event triggered.";
 
 		using (driver.StartSemanticRecording(outputPath, new SemanticRecordingOptions
@@ -284,10 +284,7 @@ public sealed class RunningProcessAttachIntegrationTests
 				"Semantic recording did not write a delta after the harness UI changed.");
 		}
 
-		var frames = File.ReadAllLines(outputPath)
-			.Where(static line => !string.IsNullOrWhiteSpace(line))
-			.Select(JObject.Parse)
-			.ToArray();
+		var frames = ReadRecordingFramesShared(outputPath).ToArray();
 
 		Assert.That(frames.Select(RecordingKind), Does.Contain("recording-started"));
 		Assert.That(
@@ -380,8 +377,7 @@ public sealed class RunningProcessAttachIntegrationTests
 
 		try
 		{
-			return ReadRecordingLinesShared(outputPath)
-				.Select(JObject.Parse)
+			return ReadRecordingFramesShared(outputPath, allowPartial: true)
 				.Any(frame => RecordingKind(frame) == "snapshot"
 					&& SnapshotNodes(frame).Any(node => CompactNodeHasAutomationId(node, automationId)));
 		}
@@ -402,8 +398,7 @@ public sealed class RunningProcessAttachIntegrationTests
 
 		try
 		{
-			return ReadRecordingLinesShared(outputPath)
-				.Select(JObject.Parse)
+			return ReadRecordingFramesShared(outputPath, allowPartial: true)
 				.Any(frame => RecordingKind(frame) == "delta"
 					&& DeltaHasChanges(frame)
 					&& DeltaNodes(frame).Any(node => CompactNodeHasAutomationId(node, automationId)
@@ -419,26 +414,43 @@ public sealed class RunningProcessAttachIntegrationTests
 		}
 	}
 
-	private static IEnumerable<string> ReadRecordingLinesShared(string outputPath)
+	private static IEnumerable<JObject> ReadRecordingFramesShared(string outputPath, bool allowPartial = false)
 	{
 		using var stream = new FileStream(outputPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 		using var reader = new StreamReader(stream);
-		while (reader.ReadLine() is { } line)
-			if (!string.IsNullOrWhiteSpace(line))
-				yield return line;
+		var text = reader.ReadToEnd();
+		if (string.IsNullOrWhiteSpace(text))
+			return [];
+		if (allowPartial && !text.TrimEnd().EndsWith("]", StringComparison.Ordinal))
+			text += Environment.NewLine + "]";
+
+		return JArray.Parse(text)
+			.OfType<JObject>()
+			.ToArray();
 	}
 
 	private static string? RecordingKind(JObject frame) =>
 		(string?)frame["kind"];
 
 	private static IEnumerable<JToken> SnapshotNodes(JObject frame) =>
-		frame["snapshot"]?["nodes"]?.Children() ?? Enumerable.Empty<JToken>();
+		FlattenNodes(frame["snapshot"]?["nodes"]);
 
 	private static IEnumerable<JToken> DeltaNodes(JObject frame) =>
-		DeltaNodes(frame, "added").Concat(DeltaNodes(frame, "changed"));
+		FlattenNodes(frame["delta"]?["added"])
+			.Concat(frame["delta"]?["changed"]?.Children() ?? Enumerable.Empty<JToken>());
 
-	private static IEnumerable<JToken> DeltaNodes(JObject frame, string section) =>
-		frame["delta"]?[section]?.Children() ?? Enumerable.Empty<JToken>();
+	private static IEnumerable<JToken> FlattenNodes(JToken? nodes)
+	{
+		if (nodes is null)
+			yield break;
+
+		foreach (var node in nodes.Children())
+		{
+			yield return node;
+			foreach (var child in FlattenNodes(node["children"]))
+				yield return child;
+		}
+	}
 
 	private static bool DeltaHasChanges(JObject frame) =>
 		((int?)frame["delta"]?["addedCount"] ?? 0) > 0
@@ -449,7 +461,8 @@ public sealed class RunningProcessAttachIntegrationTests
 		string.Equals((string?)node["automationId"], automationId, StringComparison.Ordinal);
 
 	private static bool CompactNodeHasText(JToken node, string text) =>
-		string.Equals((string?)node["text"], text, StringComparison.Ordinal);
+		string.Equals((string?)node["text"], text, StringComparison.Ordinal)
+		|| string.Equals((string?)node["changes"]?["text"], text, StringComparison.Ordinal);
 
 	private sealed record ElementCriteria(string TypeName, string AutomationId, string Content);
 

@@ -10,6 +10,7 @@ using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Tests.Fakes;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using FakeSession = DeepFlowTest.Tests.Fakes.FakeAppDriverCommandSession;
 
@@ -123,13 +124,13 @@ public sealed class LibraryApiTests
 	}
 
 	[Test]
-	public void SemanticRecordingApiStartsStreamWritesJsonlAndStops()
+	public void SemanticRecordingApiStartsStreamWritesJsonArrayAndStops()
 	{
 		var session = new FakeSemanticRecordingCommandSession();
 		using var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
 			session);
-		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-semantic-recording.jsonl");
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-semantic-recording.json");
 		if (File.Exists(path))
 			File.Delete(path);
 
@@ -150,7 +151,9 @@ public sealed class LibraryApiTests
 		Assert.That(start.SemanticRecording.MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 		Assert.That(session.SentCommands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
 		var recordingText = File.ReadAllText(path);
-		Assert.That(recordingText, Does.Contain("\"kind\":\"action\""));
+		var frames = JArray.Parse(recordingText);
+		Assert.That(frames, Has.Count.GreaterThan(0));
+		Assert.That(frames.Any(static frame => (string?)frame["kind"] == "action"), Is.True);
 		Assert.That(recordingText, Does.Not.Contain("\"frameKind\""));
 	}
 
@@ -161,7 +164,7 @@ public sealed class LibraryApiTests
 		using var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
 			session);
-		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-short-semantic-recording.jsonl");
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-short-semantic-recording.json");
 		if (File.Exists(path))
 			File.Delete(path);
 
@@ -175,7 +178,9 @@ public sealed class LibraryApiTests
 		}
 
 		var recordingText = File.ReadAllText(path);
-		Assert.That(recordingText, Does.Contain("\"kind\":\"action\""));
+		var frames = JArray.Parse(recordingText);
+		Assert.That(frames, Has.Count.GreaterThan(0));
+		Assert.That(frames.Any(static frame => (string?)frame["kind"] == "action"), Is.True);
 		Assert.That(recordingText, Does.Not.Contain("\"frameKind\""));
 	}
 
@@ -183,7 +188,7 @@ public sealed class LibraryApiTests
 	public void AutoSemanticRecordingOptionStartsStreamAndStopsWithDriver()
 	{
 		var session = new FakeSemanticRecordingCommandSession();
-		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-auto-semantic-recording.jsonl");
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-auto-semantic-recording.json");
 		if (File.Exists(path))
 			File.Delete(path);
 		var options = new AppDriverOptions
@@ -203,7 +208,7 @@ public sealed class LibraryApiTests
 			Assert.That(session.StartRequest.IntervalMs, Is.EqualTo(75));
 			Assert.That(session.StartRequest.SemanticRecording!.TextIdleMs, Is.EqualTo(25));
 			Assert.That(session.StartRequest.SemanticRecording.MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
-			Assert.That(SpinWait.SpinUntil(() => File.Exists(path) && ReadAllTextShared(path).Contains("\"kind\":\"action\"", StringComparison.Ordinal), TimeSpan.FromSeconds(2)), Is.True);
+			Assert.That(SpinWait.SpinUntil(() => File.Exists(path) && ReadAllTextShared(path).Contains("\"kind\": \"action\"", StringComparison.Ordinal), TimeSpan.FromSeconds(2)), Is.True);
 		}
 
 		Assert.That(File.ReadAllText(path), Does.Not.Contain("\"frameKind\""));
@@ -217,7 +222,7 @@ public sealed class LibraryApiTests
 		using var connection = AppConnection.ForAttach(process, "pipe");
 		var options = new AppDriverOptions
 		{
-			AutoSemanticRecordingOutputPath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-auto-semantic-recording-failure.jsonl"),
+			AutoSemanticRecordingOutputPath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-auto-semantic-recording-failure.json"),
 		};
 
 		var exception = Assert.Throws<AppDriverException>(() =>

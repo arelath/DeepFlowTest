@@ -112,6 +112,6 @@ public sealed class TestSemanticRecordingTests
 		var fileName = Path.GetFileName(options.AutoSemanticRecordingOutputPath!);
 		Assert.That(fileName, Does.Contain("bad_name_with_spaces"));
 		Assert.That(fileName, Does.Not.Contain(" "));
-		Assert.That(fileName, Does.EndWith(".jsonl"));
+		Assert.That(fileName, Does.EndWith(".json"));
 	}
 }

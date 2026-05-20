@@ -1,10 +1,12 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Linq;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 [TestFixture]
@@ -139,7 +141,12 @@ public sealed class CompactSemanticRecordingFrameTests
 		Assert.That(json, Does.Contain("\"omittedCount\":1"));
 		Assert.That(json, Does.Contain("\"id\":\"dft-target-root\""));
 		Assert.That(json, Does.Contain("\"text\":\"Ready\""));
+		Assert.That(json, Does.Contain("\"children\""));
+		Assert.That(json, Does.Not.Contain("\"parent\""));
 		Assert.That(json, Does.Not.Contain("layout-only"));
+
+		var root = JObject.Parse(json)["snapshot"]?["nodes"]?.Single();
+		Assert.That(root?["children"]?.Single()?["text"]?.Value<string>(), Is.EqualTo("Ready"));
 	}
 
 	[Test]
@@ -174,5 +181,66 @@ public sealed class CompactSemanticRecordingFrameTests
 
 		Assert.That(json, Does.Contain($"\"kind\":\"{frameKind}\""));
 		Assert.That(json, Does.Not.Contain("\"recordingId\""));
+	}
+
+	[Test]
+	public void DeltaChangedOutputShowsOnlyChangedPropertiesWhenPreviousSnapshotIsKnown()
+	{
+		var state = new CompactSemanticRecordingState();
+		_ = CompactSemanticRecordingFrame.Create(new SemanticRecordingFrame
+		{
+			FrameKind = "snapshot",
+			SequenceNumber = 1,
+			Snapshot = VisualTreeSnapshot.Create(
+				1,
+				[
+					new VisualTreeNodeDto
+					{
+						TargetId = "dft-target-input",
+						TypeName = "TextBox",
+						Properties =
+						{
+							[KnownProperties.AutomationId] = "HelloWorldInput",
+							[KnownProperties.Text] = "Ready",
+							[KnownProperties.IsEnabled] = true,
+						},
+					},
+				]),
+		}, state);
+
+		var frame = new SemanticRecordingFrame
+		{
+			FrameKind = "delta",
+			SequenceNumber = 2,
+			Delta = new VisualTreeSnapshotDelta
+			{
+				BaseSequenceNumber = 1,
+				CurrentSequenceNumber = 2,
+				Changed =
+				[
+					new VisualTreeNodeDto
+					{
+						TargetId = "dft-target-input",
+						TypeName = "TextBox",
+						Properties =
+						{
+							[KnownProperties.AutomationId] = "HelloWorldInput",
+							[KnownProperties.Text] = "HelloWorldButton_Click event triggered.",
+							[KnownProperties.IsEnabled] = true,
+						},
+					},
+				],
+			},
+		};
+
+		var json = JsonConvert.SerializeObject(CompactSemanticRecordingFrame.Create(frame, state));
+		var changed = JObject.Parse(json)["delta"]?["changed"]?.Single();
+
+		Assert.That(changed?["id"]?.Value<string>(), Is.EqualTo("dft-target-input"));
+		Assert.That(changed?["automationId"]?.Value<string>(), Is.EqualTo("HelloWorldInput"));
+		Assert.That(changed?["text"], Is.Null);
+		Assert.That(changed?["changes"]?["text"]?.Value<string>(), Is.EqualTo("HelloWorldButton_Click event triggered."));
+		Assert.That(changed?["changes"]?["automationId"], Is.Null);
+		Assert.That(changed?["changes"]?["enabled"], Is.Null);
 	}
 }

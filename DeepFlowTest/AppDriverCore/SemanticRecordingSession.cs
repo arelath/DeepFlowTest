@@ -25,9 +25,11 @@ public sealed class SemanticRecordingSession : IDisposable
 	private readonly StreamWriter writer;
 	private readonly int timeoutMs;
 	private readonly bool compactOutput;
+	private readonly CompactSemanticRecordingState? compactState;
 	private readonly Task readerTask;
 	private long framesWritten;
 	private int droppedActionCount;
+	private bool wroteFrame;
 	private Exception? backgroundError;
 	private bool disposed;
 
@@ -43,7 +45,10 @@ public sealed class SemanticRecordingSession : IDisposable
 		OutputPath = NormalizeOutputPath(outputPath);
 		this.timeoutMs = Math.Max(1, timeoutMs);
 		this.compactOutput = compactOutput;
+		compactState = compactOutput ? new CompactSemanticRecordingState() : null;
 		writer = new StreamWriter(new FileStream(OutputPath, FileMode.Create, FileAccess.Write, FileShare.Read));
+		writer.WriteLine("[");
+		writer.Flush();
 		readerTask = Task.Run(ReadLoop);
 	}
 
@@ -127,6 +132,7 @@ public sealed class SemanticRecordingSession : IDisposable
 			{
 			}
 
+			CloseOutput();
 			writer.Dispose();
 			cancellation.Dispose();
 		}
@@ -171,10 +177,25 @@ public sealed class SemanticRecordingSession : IDisposable
 	{
 		lock (writer)
 		{
-			object output = compactOutput ? CompactSemanticRecordingFrame.Create(frame) : frame;
-			writer.WriteLine(JsonConvert.SerializeObject(output, JsonSettings));
+			object output = compactOutput ? CompactSemanticRecordingFrame.Create(frame, compactState) : frame;
+			if (wroteFrame)
+				writer.WriteLine(",");
+
+			writer.Write(JsonConvert.SerializeObject(output, Formatting.Indented, JsonSettings));
 			writer.Flush();
+			wroteFrame = true;
 			Interlocked.Increment(ref framesWritten);
+		}
+	}
+
+	private void CloseOutput()
+	{
+		lock (writer)
+		{
+			if (wroteFrame)
+				writer.WriteLine();
+			writer.WriteLine("]");
+			writer.Flush();
 		}
 	}
 

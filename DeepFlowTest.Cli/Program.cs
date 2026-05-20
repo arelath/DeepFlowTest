@@ -477,6 +477,8 @@ public static class Program
 		StopSendingCommandResponse? stop = null;
 		using var cancellation = CreateConsoleCancellationSource();
 		using var writer = new StreamWriter(new FileStream(fullOutputPath, FileMode.Create, FileAccess.Write, FileShare.Read));
+		var wroteFrame = false;
+		writer.WriteLine("[");
 
 		try
 		{
@@ -510,7 +512,11 @@ public static class Program
 				droppedActions += Math.Max(0, batch.DroppedActionCount);
 				foreach (var recordingFrame in batch.Frames ?? [])
 				{
-					writer.WriteLine(JsonSerializer.Serialize(recordingFrame, RecordingJsonOptions));
+					if (wroteFrame)
+						writer.WriteLine(",");
+
+					writer.Write(JsonSerializer.Serialize(recordingFrame, RecordingJsonOptions));
+					wroteFrame = true;
 					framesWritten++;
 				}
 
@@ -533,6 +539,11 @@ public static class Program
 					Math.Min(commonOptions.TimeoutMs, TimeoutDefaults.StreamStopTimeoutMs));
 				stream.Dispose();
 			}
+
+			if (wroteFrame)
+				writer.WriteLine();
+			writer.WriteLine("]");
+			writer.Flush();
 		}
 
 		return new SemanticRecordingFileData

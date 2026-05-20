@@ -2,6 +2,7 @@ namespace DeepFlowTest.Cli.Tests;
 
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -133,11 +134,11 @@ public sealed class StreamCommandHandlerTests
 	}
 
 	[Test]
-	public void RecordSemanticWritesJsonlFramesAndStops()
+	public void RecordSemanticWritesJsonArrayFramesAndStops()
 	{
 		var session = new FakeAppSessionService();
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
-		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "semantic-recording.jsonl");
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "semantic-recording.json");
 		if (File.Exists(path))
 			File.Delete(path);
 
@@ -146,7 +147,10 @@ public sealed class StreamCommandHandlerTests
 		Assert.That(result.ExitCode, Is.EqualTo(0));
 		Assert.That(result.Stdout, Does.Contain("\"framesWritten\""));
 		Assert.That(File.Exists(path), Is.True);
-		Assert.That(File.ReadAllText(path), Does.Contain("\"frameKind\":\"recording-started\""));
+		var recordingText = File.ReadAllText(path);
+		using var recordingJson = JsonDocument.Parse(recordingText);
+		Assert.That(recordingJson.RootElement.ValueKind, Is.EqualTo(JsonValueKind.Array));
+		Assert.That(recordingText, Does.Contain("\"frameKind\":\"recording-started\""));
 		var start = session.Session.Commands.OfType<StartSendingCommandRequest>().Single();
 		Assert.That(start.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.SemanticRecording));
 		Assert.That(start.SemanticRecording!.TextIdleMs, Is.EqualTo(200));

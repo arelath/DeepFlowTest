@@ -9,7 +9,7 @@ local build and test commands.
 
 ## Semantic Recordings for Tests
 
-WPF attach integration tests write semantic recording JSONL files while they
+WPF attach integration tests write semantic recording JSON files while they
 run. This is on by default so a failing run leaves a readable UX trace without
 needing to remember an opt-in switch.
 
@@ -24,9 +24,10 @@ dotnet test .\DeepFlowTest.Tests\DeepFlowTest.Tests.csproj --filter "FullyQualif
 .\fasttest.ps1 core -Filter "FullyQualifiedName~RunningProcessAttachIntegrationTests" -NoTestRecordings
 ```
 
-Each generated `.jsonl` file contains a `recording-started` frame, the initial
+Each generated `.json` file is a JSON array containing a `recording-started` frame, the initial
 visual tree snapshot, and later UI deltas or recorded input actions. Semantic
 recordings are compact by default for both `StartSemanticRecording(...)` and
 test recordings: missing-property entries, empty values, layout-only nodes,
 framework/runtime internals, child ID lists, HWNDs, and default `enabled: true`
-/ `visible: true` state are omitted.
+/ `visible: true` state are omitted. Snapshot nodes are nested under `children`,
+and changed delta nodes report only their changed properties under `changes`.
