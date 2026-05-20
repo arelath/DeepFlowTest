@@ -186,6 +186,7 @@ public sealed class RepositoryConfigurationTests
 	public void BuildDocumentationMentionsExpectedCommands()
 	{
 		var root = FindRepositoryRoot();
+		var readme = File.ReadAllText(Path.Combine(root, "README.md"));
 		var buildDoc = File.ReadAllText(Path.Combine(root, "Docs", "HowToBuildAndTest.md"));
 		var payloadDoc = File.ReadAllText(Path.Combine(root, "Docs", "PayloadRepacking.md"));
 		var expectedCommands = new[]
@@ -203,6 +204,10 @@ public sealed class RepositoryConfigurationTests
 
 		Assert.That(buildDoc, Does.Contain("fastbuild.ps1"));
 		Assert.That(buildDoc, Does.Contain("fasttest.ps1"));
+		Assert.That(buildDoc, Does.Contain("DEEPFLOWTEST_RECORD_TESTS"));
+		Assert.That(buildDoc, Does.Contain("DEEPFLOWTEST_TEST_RECORDINGS_DIR"));
+		Assert.That(readme, Does.Contain("DEEPFLOWTEST_RECORD_TESTS"));
+		Assert.That(readme, Does.Contain("DEEPFLOWTEST_TEST_RECORDINGS_DIR"));
 		Assert.That(buildDoc, Does.Contain("Packaging Workflow"));
 		Assert.That(payloadDoc, Does.Contain("output/payloads/"));
 		Assert.That(payloadDoc, Does.Contain("ILRepack"));

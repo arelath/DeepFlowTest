@@ -128,6 +128,7 @@ public sealed class ExternalInjectorAppConnectionInjector : IAppConnectionInject
 {
 	private readonly AppDriverOptions options;
 	private readonly string payloadMode;
+	private DateTimeOffset? injectorLogNotBefore;
 
 	public ExternalInjectorAppConnectionInjector(AppDriverOptions options, string payloadMode)
 	{
@@ -153,6 +154,7 @@ public sealed class ExternalInjectorAppConnectionInjector : IAppConnectionInject
 			CreateNoWindow = true,
 			Arguments = BuildInjectorArguments(connection, startupOptions.Encode(), options.PayloadRoot),
 		};
+		injectorLogNotBefore = DateTimeOffset.UtcNow.AddSeconds(-1);
 		using var injectorProcess = Process.Start(startInfo) ?? throw new AppDriverException(AppDriverErrorCodes.InjectorFailed, "Failed to start injector launcher.");
 		if (!injectorProcess.WaitForExit((int)Math.Max(1, options.Timeout.TotalMilliseconds)))
 		{
@@ -164,12 +166,18 @@ public sealed class ExternalInjectorAppConnectionInjector : IAppConnectionInject
 			{
 			}
 
-			throw new TimeoutException($"Injector did not finish within {options.Timeout.TotalMilliseconds:0} ms.");
+			throw new TimeoutException(AppDriverInjectionDiagnostics.AppendDiagnostics(
+				$"Injector did not finish within {options.Timeout.TotalMilliseconds:0} ms.",
+				TryReadStartupLog(connection)));
 		}
 
 		var startupLog = TryReadStartupLog(connection);
 		if (injectorProcess.ExitCode != 0)
-			throw new AppDriverException(AppDriverErrorCodes.InjectorFailed, $"Injector launcher exited with code {injectorProcess.ExitCode}.");
+			throw new AppDriverException(
+				AppDriverErrorCodes.InjectorFailed,
+				AppDriverInjectionDiagnostics.AppendDiagnostics(
+					$"Injector launcher exited with code {injectorProcess.ExitCode}.",
+					startupLog));
 
 		return new AppConnectionInjectionResult
 		{
@@ -180,9 +188,10 @@ public sealed class ExternalInjectorAppConnectionInjector : IAppConnectionInject
 
 	public string? TryReadStartupLog(AppConnection connection)
 	{
-		return PayloadLog.TryReadTailForPipe(connection.PipeName, connection.TargetProcess.Id, out var tail)
-			? tail
-			: null;
+		return AppDriverInjectionDiagnostics.TryReadStartupLogTail(
+			connection.PipeName,
+			connection.TargetProcess.Id,
+			injectorLogNotBefore);
 	}
 
 	internal static string BuildInjectorArguments(AppConnection connection, string startupArgument, string payloadRoot)

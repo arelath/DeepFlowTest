@@ -19,6 +19,7 @@ public sealed class TreeCommandHandlerTests
 		Assert.That(result.Stdout, Does.Contain("\"shape\":\"flat\""));
 		Assert.That(result.Stdout, Does.Contain("SubmitButton"));
 		Assert.That(session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().PropNames, Does.Contain(KnownProperties.IsVisible));
+		Assert.That(session.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 	}
 
 	[Test]

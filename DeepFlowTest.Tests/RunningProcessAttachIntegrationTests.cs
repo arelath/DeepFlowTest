@@ -9,6 +9,7 @@ using System.Threading;
 using System.Windows.Controls;
 using DeepFlowTest.Contracts;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 [TestFixture]
@@ -49,11 +50,7 @@ public sealed class RunningProcessAttachIntegrationTests
 	public void SerializedElementLinqQueriesWithCapturedValuesRunInAttachedHarness()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(SerializedElementLinqQueriesWithCapturedValuesRunInAttachedHarness));
 
 		var buttonCriteria = new ElementCriteria("Button", "HelloWorldButton", "Click here");
 		var button = driver.GetElement(
@@ -94,11 +91,7 @@ public sealed class RunningProcessAttachIntegrationTests
 	public void CapturedCompiledElementPredicatesRunAgainstAttachedHarnessSnapshots()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(CapturedCompiledElementPredicatesRunAgainstAttachedHarnessSnapshots));
 
 		var buttonContent = "Click here";
 		Func<Element, bool> buttonPredicate = element =>
@@ -125,11 +118,7 @@ public sealed class RunningProcessAttachIntegrationTests
 	public void SageStyleMenuItemHelperPredicateFindsAttachedHarnessMenuItems()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(SageStyleMenuItemHelperPredicateFindsAttachedHarnessMenuItems));
 
 		var normalizedHeader = NormalizeMenuHeader("MenuItemOne");
 		var menuItem = driver.GetElement(
@@ -146,11 +135,7 @@ public sealed class RunningProcessAttachIntegrationTests
 	public void ClickingAttachedHarnessMenuHeaderOpensSubmenu()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(ClickingAttachedHarnessMenuHeaderOpensSubmenu));
 
 		var header = FindByAutomationId(driver, "MenuHeader");
 
@@ -164,11 +149,7 @@ public sealed class RunningProcessAttachIntegrationTests
 	public void ClickingAttachedHarnessSubmenuItemRaisesClickAndTogglesCheck()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(ClickingAttachedHarnessSubmenuItemRaisesClickAndTogglesCheck));
 
 		FindByAutomationId(driver, "MenuHeader").Click();
 		WaitForMenuHeaderOpen(driver);
@@ -187,11 +168,7 @@ public sealed class RunningProcessAttachIntegrationTests
 	public void RaisingAttachedHarnessMenuItemClickUsesMenuItemRoutedEvent()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(RaisingAttachedHarnessMenuItemClickUsesMenuItemRoutedEvent));
 
 		FindByAutomationId(driver, "MenuItemTwo").RaiseEvent("Click");
 
@@ -202,11 +179,7 @@ public sealed class RunningProcessAttachIntegrationTests
 	public void DoubleClickingAttachedHarnessButtonRaisesMouseDoubleClick()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(DoubleClickingAttachedHarnessButtonRaisesMouseDoubleClick));
 
 		FindByAutomationId(driver, "HelloWorldButton").DoubleClick();
 
@@ -217,11 +190,7 @@ public sealed class RunningProcessAttachIntegrationTests
 	public void RootScopedServerFindsDescendantInAttachedHarness()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(RootScopedServerFindsDescendantInAttachedHarness));
 
 		var buttonGroup = driver.GetElement(
 			element => element.TypeName == "GroupBox" && element[KnownProperties.Header] == "Buttons",
@@ -244,11 +213,7 @@ public sealed class RunningProcessAttachIntegrationTests
 	public void RootPredicateServerFindsDescendantInAttachedHarnessInOneCommand()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(RootPredicateServerFindsDescendantInAttachedHarnessInOneCommand));
 
 		var button = driver.GetElement(
 			root => root[KnownProperties.AutomationId] == "ButtonControls",
@@ -266,11 +231,7 @@ public sealed class RunningProcessAttachIntegrationTests
 	public void KeyboardCanTypeShortcutAndNavigateInAttachedHarness()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(KeyboardCanTypeShortcutAndNavigateInAttachedHarness));
 		driver.Keyboard.DelayMs = 1;
 
 		var textBox = FindByAutomationId(driver, "TextBox1");
@@ -289,18 +250,15 @@ public sealed class RunningProcessAttachIntegrationTests
 	}
 
 	[Test]
-	public void SemanticRecordingWritesJsonlSnapshotInAttachedHarness()
+	public void SemanticRecordingWritesJsonlSnapshotAndDeltaInAttachedHarness()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
 		var outputPath = Path.Combine(TestContext.CurrentContext.WorkDirectory, $"semantic-recording-{Guid.NewGuid():N}.jsonl");
 		if (File.Exists(outputPath))
 			File.Delete(outputPath);
 
-		using var driver = AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(harness.Process.Id, nameof(SemanticRecordingWritesJsonlSnapshotAndDeltaInAttachedHarness), enableTestRecording: false);
+		const string expectedEventText = "HelloWorldButton_Click event triggered.";
 
 		using (driver.StartSemanticRecording(outputPath, new SemanticRecordingOptions
 		{
@@ -315,35 +273,85 @@ public sealed class RunningProcessAttachIntegrationTests
 				SpinWait.SpinUntil(() => RecordingFileContainsSnapshot(outputPath, "HelloWorldButton"), TimeSpan.FromSeconds(10)),
 				Is.True,
 				"Semantic recording did not write the initial harness snapshot.");
+
+			FindByAutomationId(driver, "HelloWorldButton").Click();
+			WaitForElementText(driver, "HelloWorldInput", expectedEventText);
+
+			Assert.That(
+				SpinWait.SpinUntil(() => RecordingFileContainsDelta(outputPath, "HelloWorldInput", expectedEventText), TimeSpan.FromSeconds(10)),
+				Is.True,
+				"Semantic recording did not write a delta after the harness UI changed.");
 		}
 
 		var frames = File.ReadAllLines(outputPath)
 			.Where(static line => !string.IsNullOrWhiteSpace(line))
-			.Select(static line => JsonConvert.DeserializeObject<SemanticRecordingFrame>(line)!)
+			.Select(JObject.Parse)
 			.ToArray();
 
-		Assert.That(frames.Select(static frame => frame.FrameKind), Does.Contain("recording-started"));
+		Assert.That(frames.Select(RecordingKind), Does.Contain("recording-started"));
 		Assert.That(
-			frames.Any(static frame => frame.FrameKind == "snapshot"
-				&& frame.Snapshot?.Nodes.Any(static node => HasAutomationId(node.Properties, "HelloWorldButton")) == true),
+			frames.Any(static frame => RecordingKind(frame) == "snapshot"
+				&& SnapshotNodes(frame).Any(static node => CompactNodeHasAutomationId(node, "HelloWorldButton"))),
 			Is.True);
 		Assert.That(
-			frames.Where(static frame => frame.Snapshot is not null)
-				.SelectMany(static frame => frame.Snapshot!.Nodes)
-				.Select(static node => node.TargetId),
+			frames.Where(static frame => RecordingKind(frame) == "snapshot")
+				.SelectMany(SnapshotNodes)
+				.Select(static node => (string?)node["id"])
+				.Where(static targetId => !string.IsNullOrWhiteSpace(targetId)),
 			Is.Unique);
+		var deltaFrames = frames.Where(static frame => RecordingKind(frame) == "delta").ToArray();
+		Assert.That(deltaFrames.Any(DeltaHasChanges), Is.True);
+		Assert.That(
+			deltaFrames.Any(frame => DeltaNodes(frame)
+				.Any(static node => CompactNodeHasAutomationId(node, "HelloWorldInput")
+					&& CompactNodeHasText(node, expectedEventText))),
+			Is.True);
+	}
+
+	[Test]
+	public void AttachFailureIncludesInjectorDiagnostics()
+	{
+		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
+		var missingPayloadRoot = Path.Combine(TestContext.CurrentContext.WorkDirectory, $"missing-payload-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(missingPayloadRoot);
+		try
+		{
+			var exception = Assert.Throws<AppConnectionException>(() =>
+				AppDriver.AttachTo(harness.Process.Id, new AppDriverAttachOptions
+				{
+					Timeout = TimeSpan.FromSeconds(30),
+					PayloadRoot = missingPayloadRoot,
+				}));
+
+			Assert.That(exception!.Message, Does.Contain("Target injection failed: Injector launcher exited with code 6."));
+			Assert.That(exception.StartupLogTail, Does.Contain("Injector log tail"));
+			Assert.That(exception.StartupLogTail, Does.Contain("Could not find payload assembly"));
+		}
+		finally
+		{
+			Directory.Delete(missingPayloadRoot, recursive: true);
+		}
 	}
 
 	private static Element AttachAndFind(int processId, string automationId)
 	{
-		using var driver = AppDriver.AttachTo(processId, new AppDriverAttachOptions
-		{
-			Timeout = TimeSpan.FromSeconds(30),
-			PayloadRoot = ResolvePayloadRoot(),
-		});
+		using var driver = AttachToHarness(processId, $"{nameof(AttachToRunningProcessCanDisconnectAndReattach)}-{automationId}");
 
 		Assert.That(driver.Connection.OwnsProcess, Is.False);
 		return driver.GetElement(ElementSelector.ByAutomationId(automationId));
+	}
+
+	private static AppDriver AttachToHarness(int processId, string recordingLabel, bool enableTestRecording = true)
+	{
+		var options = new AppDriverAttachOptions
+		{
+			Timeout = TimeSpan.FromSeconds(30),
+			PayloadRoot = ResolvePayloadRoot(),
+		};
+		if (enableTestRecording)
+			TestSemanticRecording.Configure(options, recordingLabel);
+
+		return AppDriver.AttachTo(processId, options);
 	}
 
 	private static Element FindByAutomationId(AppDriver driver, string automationId) =>
@@ -372,9 +380,33 @@ public sealed class RunningProcessAttachIntegrationTests
 		try
 		{
 			return ReadRecordingLinesShared(outputPath)
-				.Select(static line => JsonConvert.DeserializeObject<SemanticRecordingFrame>(line))
-				.Any(frame => frame?.FrameKind == "snapshot"
-					&& frame.Snapshot?.Nodes.Any(node => HasAutomationId(node.Properties, automationId)) == true);
+				.Select(JObject.Parse)
+				.Any(frame => RecordingKind(frame) == "snapshot"
+					&& SnapshotNodes(frame).Any(node => CompactNodeHasAutomationId(node, automationId)));
+		}
+		catch (JsonException)
+		{
+			return false;
+		}
+		catch (IOException)
+		{
+			return false;
+		}
+	}
+
+	private static bool RecordingFileContainsDelta(string outputPath, string automationId, string expectedText)
+	{
+		if (!File.Exists(outputPath))
+			return false;
+
+		try
+		{
+			return ReadRecordingLinesShared(outputPath)
+				.Select(JObject.Parse)
+				.Any(frame => RecordingKind(frame) == "delta"
+					&& DeltaHasChanges(frame)
+					&& DeltaNodes(frame).Any(node => CompactNodeHasAutomationId(node, automationId)
+						&& CompactNodeHasText(node, expectedText)));
 		}
 		catch (JsonException)
 		{
@@ -395,10 +427,28 @@ public sealed class RunningProcessAttachIntegrationTests
 				yield return line;
 	}
 
-	private static bool HasAutomationId(IReadOnlyDictionary<string, object?> properties, string automationId) =>
-		properties.Any(property =>
-			string.Equals(property.Key, KnownProperties.AutomationId, StringComparison.OrdinalIgnoreCase)
-			&& string.Equals(Convert.ToString(property.Value, System.Globalization.CultureInfo.InvariantCulture), automationId, StringComparison.Ordinal));
+	private static string? RecordingKind(JObject frame) =>
+		(string?)frame["kind"];
+
+	private static IEnumerable<JToken> SnapshotNodes(JObject frame) =>
+		frame["snapshot"]?["nodes"]?.Children() ?? Enumerable.Empty<JToken>();
+
+	private static IEnumerable<JToken> DeltaNodes(JObject frame) =>
+		DeltaNodes(frame, "added").Concat(DeltaNodes(frame, "changed"));
+
+	private static IEnumerable<JToken> DeltaNodes(JObject frame, string section) =>
+		frame["delta"]?[section]?.Children() ?? Enumerable.Empty<JToken>();
+
+	private static bool DeltaHasChanges(JObject frame) =>
+		((int?)frame["delta"]?["addedCount"] ?? 0) > 0
+		|| ((int?)frame["delta"]?["changedCount"] ?? 0) > 0
+		|| ((int?)frame["delta"]?["removedCount"] ?? 0) > 0;
+
+	private static bool CompactNodeHasAutomationId(JToken node, string automationId) =>
+		string.Equals((string?)node["automationId"], automationId, StringComparison.Ordinal);
+
+	private static bool CompactNodeHasText(JToken node, string text) =>
+		string.Equals((string?)node["text"], text, StringComparison.Ordinal);
 
 	private sealed record ElementCriteria(string TypeName, string AutomationId, string Content);
 

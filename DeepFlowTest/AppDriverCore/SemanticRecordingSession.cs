@@ -24,6 +24,7 @@ public sealed class SemanticRecordingSession : IDisposable
 	private readonly CancellationTokenSource cancellation = new();
 	private readonly StreamWriter writer;
 	private readonly int timeoutMs;
+	private readonly bool compactOutput;
 	private readonly Task readerTask;
 	private long framesWritten;
 	private int droppedActionCount;
@@ -34,12 +35,14 @@ public sealed class SemanticRecordingSession : IDisposable
 		IAppDriverCommandSession commandSession,
 		IAppDriverStreamSession streamSession,
 		string outputPath,
-		int timeoutMs)
+		int timeoutMs,
+		bool compactOutput)
 	{
 		this.commandSession = commandSession ?? throw new ArgumentNullException(nameof(commandSession));
 		this.streamSession = streamSession ?? throw new ArgumentNullException(nameof(streamSession));
 		OutputPath = NormalizeOutputPath(outputPath);
 		this.timeoutMs = Math.Max(1, timeoutMs);
+		this.compactOutput = compactOutput;
 		writer = new StreamWriter(new FileStream(OutputPath, FileMode.Create, FileAccess.Write, FileShare.Read));
 		readerTask = Task.Run(ReadLoop);
 	}
@@ -86,7 +89,8 @@ public sealed class SemanticRecordingSession : IDisposable
 			commandSession,
 			streamingSession.StartStream(request, timeoutMs),
 			outputPath,
-			timeoutMs);
+			timeoutMs,
+			options.CompactOutput);
 	}
 
 	public void Dispose()
@@ -166,7 +170,8 @@ public sealed class SemanticRecordingSession : IDisposable
 	{
 		lock (writer)
 		{
-			writer.WriteLine(JsonConvert.SerializeObject(frame, JsonSettings));
+			object output = compactOutput ? CompactSemanticRecordingFrame.Create(frame) : frame;
+			writer.WriteLine(JsonConvert.SerializeObject(output, JsonSettings));
 			writer.Flush();
 			Interlocked.Increment(ref framesWritten);
 		}

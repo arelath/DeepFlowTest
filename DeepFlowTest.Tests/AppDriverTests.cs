@@ -700,6 +700,9 @@ public sealed class AppDriverTests
 		Assert.That(exception.Message, Does.Contain("Header=\"File\""));
 		Assert.That(exception.Message, Does.Contain("Path=StackPanel[Name=\"rootPanel\"] > MenuItem[Header=\"File\"]"));
 		Assert.That(session.SentCommands.OfType<GetVisualTreeCommandRequest>().Single().RootTargetId, Is.EqualTo("root"));
+		Assert.That(
+			session.SentCommands.OfType<GetVisualTreeCommandRequest>().Single().MaxNodeCount,
+			Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 	}
 
 	[Test]

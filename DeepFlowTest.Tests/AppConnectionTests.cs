@@ -124,6 +124,7 @@ public sealed class AppConnectionTests
 
 		Assert.That(connection.InjectorState, Is.EqualTo(AppConnectionInjectorState.Failed));
 		Assert.That(connection.LastStartupLog, Is.EqualTo("payload crash tail"));
+		Assert.That(exception!.Message, Does.Contain("Target injection failed: inject failed"));
 		Assert.That(exception!.StartupLogTail, Is.EqualTo("payload crash tail"));
 	}
 

@@ -27,7 +27,10 @@ public sealed class StreamCommandHandlerTests
 		Assert.That(result.Stdout, Does.Contain("\"status\":\"started\""));
 		Assert.That(result.Stdout, Does.Contain("\"messageKind\":\"stream\""));
 		Assert.That(result.Stdout, Does.Contain("\"status\":\"stopped\""));
-		Assert.That(session.Session.Commands.OfType<StartSendingCommandRequest>().Single().StreamKind, Is.EqualTo(streamKind));
+		var start = session.Session.Commands.OfType<StartSendingCommandRequest>().Single();
+		Assert.That(start.StreamKind, Is.EqualTo(streamKind));
+		if (streamKind == ProtocolConstants.StreamKinds.SemanticRecording)
+			Assert.That(start.SemanticRecording!.MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 		Assert.That(session.Session.Commands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
 	}
 
@@ -147,6 +150,7 @@ public sealed class StreamCommandHandlerTests
 		var start = session.Session.Commands.OfType<StartSendingCommandRequest>().Single();
 		Assert.That(start.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.SemanticRecording));
 		Assert.That(start.SemanticRecording!.TextIdleMs, Is.EqualTo(200));
+		Assert.That(start.SemanticRecording.MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 		Assert.That(session.Session.Commands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
 	}
 }

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
 internal sealed class ElementQueryService(
@@ -13,7 +14,7 @@ internal sealed class ElementQueryService(
 	VisualTreeClient visualTreeClient,
 	ElementFactory elementFactory)
 {
-	private const int NoMatchDiagnosticMaxNodeCount = 200;
+	private const int NoMatchDiagnosticMaxNodeCount = VisualTreeDefaults.DefaultMaxNodeCount;
 	private const int NoMatchDiagnosticMaxElements = 25;
 
 	private readonly ElementFinder elementFinder = elementFinder ?? throw new ArgumentNullException(nameof(elementFinder));

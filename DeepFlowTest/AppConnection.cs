@@ -71,7 +71,7 @@ public sealed class AppConnection : IDisposable
 		{
 			InjectorState = AppConnectionInjectorState.Failed;
 			LastStartupLog = injector.TryReadStartupLog(this);
-			throw new AppConnectionException("Target injection failed.", ex, LastStartupLog);
+			throw new AppConnectionException(BuildInjectionFailureMessage(ex), ex, LastStartupLog);
 		}
 	}
 
@@ -97,6 +97,25 @@ public sealed class AppConnection : IDisposable
 	{
 		if (process is TargetProcess targetProcess)
 			ProcessCloseOnParentClose.Add(targetProcess.Process);
+	}
+
+	private static string BuildInjectionFailureMessage(Exception exception)
+	{
+		var detail = FirstNonEmptyLine(exception.Message);
+		return string.IsNullOrWhiteSpace(detail)
+			? "Target injection failed."
+			: $"Target injection failed: {detail}";
+	}
+
+	private static string FirstNonEmptyLine(string value)
+	{
+		using var reader = new System.IO.StringReader(value);
+		string? line;
+		while ((line = reader.ReadLine()) is not null)
+			if (!string.IsNullOrWhiteSpace(line))
+				return line.Trim();
+
+		return string.Empty;
 	}
 
 	public static AppConnection ForLaunch(ITargetProcess process, string pipeName, string payloadFrameworkFamily = "") =>

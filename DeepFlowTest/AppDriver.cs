@@ -24,6 +24,7 @@ public sealed class AppDriver : IDisposable
 	private readonly Keyboard keyboard;
 	private readonly BindingFailureMonitor bindingFailureMonitor;
 	private IDisposable? automaticBindingFailureCapture;
+	private SemanticRecordingSession? automaticSemanticRecording;
 	private bool disposed;
 
 	private AppDriver(
@@ -53,8 +54,21 @@ public sealed class AppDriver : IDisposable
 		mediaCaptureService = new MediaCaptureService(commandClient);
 		elementCommandExecutor = new ElementCommandExecutor(commandClient, elementRepairService);
 		keyboard = new Keyboard(this);
-		if (Options.FailOnBindingFailures)
-			automaticBindingFailureCapture = StartBindingFailureCapture();
+		try
+		{
+			if (Options.FailOnBindingFailures)
+				automaticBindingFailureCapture = StartBindingFailureCapture();
+			var autoSemanticRecordingOutputPath = Options.AutoSemanticRecordingOutputPath;
+			if (autoSemanticRecordingOutputPath is not null && !string.IsNullOrWhiteSpace(autoSemanticRecordingOutputPath))
+				automaticSemanticRecording = StartSemanticRecording(autoSemanticRecordingOutputPath, Options.AutoSemanticRecordingOptions);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			DisposeQuietly(automaticSemanticRecording);
+			DisposeQuietly(automaticBindingFailureCapture);
+			DisposeQuietly(Connection);
+			throw;
+		}
 	}
 
 	public string ProductName => ProductInfo.Name;
@@ -274,6 +288,17 @@ public sealed class AppDriver : IDisposable
 	internal void MoveElementRegistration(Element element, string oldTargetId, string newTargetId) =>
 		elementRegistry.Move(element, oldTargetId, newTargetId);
 
+	private static void DisposeQuietly(IDisposable? disposable)
+	{
+		try
+		{
+			disposable?.Dispose();
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+		}
+	}
+
 	public void Dispose()
 	{
 		if (disposed)
@@ -283,15 +308,25 @@ public sealed class AppDriver : IDisposable
 		Exception? pendingException = null;
 		try
 		{
-			if (Options.FailOnBindingFailures && Options.BindingFailures.AssertOnDispose)
-				bindingFailureMonitor.AssertNoFailures(clear: true);
+			automaticSemanticRecording?.Dispose();
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
 			pendingException = ex;
 		}
+
+		try
+		{
+			if (Options.FailOnBindingFailures && Options.BindingFailures.AssertOnDispose)
+				bindingFailureMonitor.AssertNoFailures(clear: true);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			pendingException ??= ex;
+		}
 		finally
 		{
+			automaticSemanticRecording = null;
 			automaticBindingFailureCapture = null;
 			bindingFailureMonitor.Dispose();
 			Connection.Dispose();

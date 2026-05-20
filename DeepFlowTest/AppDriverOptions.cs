@@ -22,6 +22,10 @@ public class AppDriverOptions
 
 	public BindingFailureOptions BindingFailures { get; } = new();
 
+	public string? AutoSemanticRecordingOutputPath { get; set; }
+
+	public SemanticRecordingOptions AutoSemanticRecordingOptions { get; } = new();
+
 	private static string ResolveDefaultInjectorLauncherPath()
 	{
 		var architecture = Environment.Is64BitProcess ? "x64" : "x86";

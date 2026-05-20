@@ -164,7 +164,8 @@ public partial class MainWindow : Window
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
-			SetStatus(ex.Message);
+			var failure = RecorderFailureFormatter.Format(ex);
+			SetStatus(failure.Status, failure.Details);
 		}
 		finally
 		{
@@ -213,7 +214,29 @@ public partial class MainWindow : Window
 		StopButton.IsEnabled = !isBusy && isRecording;
 	}
 
-	private void SetStatus(string status) => StatusTextBlock.Text = status;
+	private void SetStatus(string status) => SetStatus(status, details: null);
+
+	private void SetStatus(string status, string? details)
+	{
+		StatusTextBlock.Text = status;
+		if (string.IsNullOrWhiteSpace(details))
+		{
+			FailureDetailsTextBox.Text = string.Empty;
+			FailureDetailsExpander.Visibility = Visibility.Collapsed;
+			FailureDetailsExpander.IsExpanded = false;
+			return;
+		}
+
+		FailureDetailsTextBox.Text = details;
+		FailureDetailsExpander.Visibility = Visibility.Visible;
+		FailureDetailsExpander.IsExpanded = true;
+	}
+
+	private void CopyFailureDetails_Click(object sender, RoutedEventArgs e)
+	{
+		if (!string.IsNullOrWhiteSpace(FailureDetailsTextBox.Text))
+			Clipboard.SetText(FailureDetailsTextBox.Text);
+	}
 
 	private string ResolveInitialOutputDirectory()
 	{

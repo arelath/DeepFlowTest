@@ -147,8 +147,60 @@ public sealed class LibraryApiTests
 		Assert.That(start.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.SemanticRecording));
 		Assert.That(start.SemanticRecording!.TextIdleMs, Is.EqualTo(123));
 		Assert.That(start.SemanticRecording.MaxBatchFrames, Is.EqualTo(7));
+		Assert.That(start.SemanticRecording.MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 		Assert.That(session.SentCommands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
-		Assert.That(File.ReadAllText(path), Does.Contain("\"frameKind\":\"action\""));
+		var recordingText = File.ReadAllText(path);
+		Assert.That(recordingText, Does.Contain("\"kind\":\"action\""));
+		Assert.That(recordingText, Does.Not.Contain("\"frameKind\""));
+	}
+
+	[Test]
+	public void AutoSemanticRecordingOptionStartsStreamAndStopsWithDriver()
+	{
+		var session = new FakeSemanticRecordingCommandSession();
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-auto-semantic-recording.jsonl");
+		if (File.Exists(path))
+			File.Delete(path);
+		var options = new AppDriverOptions
+		{
+			AutoSemanticRecordingOutputPath = path,
+		};
+		options.AutoSemanticRecordingOptions.IntervalMs = 75;
+		options.AutoSemanticRecordingOptions.TextIdleMs = 25;
+
+		using (AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			session,
+			options))
+		{
+			Assert.That(session.StartRequest, Is.Not.Null);
+			Assert.That(session.StartRequest!.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.SemanticRecording));
+			Assert.That(session.StartRequest.IntervalMs, Is.EqualTo(75));
+			Assert.That(session.StartRequest.SemanticRecording!.TextIdleMs, Is.EqualTo(25));
+			Assert.That(session.StartRequest.SemanticRecording.MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
+			Assert.That(SpinWait.SpinUntil(() => File.Exists(path) && ReadAllTextShared(path).Contains("\"kind\":\"action\"", StringComparison.Ordinal), TimeSpan.FromSeconds(2)), Is.True);
+		}
+
+		Assert.That(File.ReadAllText(path), Does.Not.Contain("\"frameKind\""));
+		Assert.That(session.SentCommands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
+	}
+
+	[Test]
+	public void AutoSemanticRecordingStartFailureDisposesConnection()
+	{
+		var process = new FakeTargetProcess();
+		using var connection = AppConnection.ForAttach(process, "pipe");
+		var options = new AppDriverOptions
+		{
+			AutoSemanticRecordingOutputPath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-auto-semantic-recording-failure.jsonl"),
+		};
+
+		var exception = Assert.Throws<AppDriverException>(() =>
+			AppDriver.CreateForTests(connection, new FakeSession(), options));
+
+		Assert.That(exception!.Message, Does.Contain("does not support streaming recording"));
+		Assert.That(connection.IsDisposed, Is.True);
+		Assert.That(process.DisposeCount, Is.EqualTo(1));
 	}
 
 	[Test]
@@ -317,6 +369,13 @@ public sealed class LibraryApiTests
 			},
 			MatchCount = 1,
 		};
+	}
+
+	private static string ReadAllTextShared(string path)
+	{
+		using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+		using var reader = new StreamReader(stream);
+		return reader.ReadToEnd();
 	}
 
 	private sealed class FakeBackend : IAppDriverBackend

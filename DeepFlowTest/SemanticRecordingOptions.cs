@@ -22,4 +22,6 @@ public sealed class SemanticRecordingOptions
 	public int MaxNodeCount { get; set; } = VisualTreeDefaults.DefaultMaxNodeCount;
 
 	public int? TimeoutMs { get; set; }
+
+	public bool CompactOutput { get; set; } = true;
 }
