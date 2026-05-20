@@ -204,10 +204,9 @@ public sealed class RepositoryConfigurationTests
 
 		Assert.That(buildDoc, Does.Contain("fastbuild.ps1"));
 		Assert.That(buildDoc, Does.Contain("fasttest.ps1"));
-		Assert.That(buildDoc, Does.Contain("DEEPFLOWTEST_RECORD_TESTS"));
-		Assert.That(buildDoc, Does.Contain("DEEPFLOWTEST_TEST_RECORDINGS_DIR"));
-		Assert.That(readme, Does.Contain("DEEPFLOWTEST_RECORD_TESTS"));
-		Assert.That(readme, Does.Contain("DEEPFLOWTEST_TEST_RECORDINGS_DIR"));
+		Assert.That(buildDoc, Does.Contain("NoTestRecordings"));
+		Assert.That(buildDoc, Does.Contain("DeepFlowTestTestRecordings"));
+		Assert.That(readme, Does.Contain("no-test-recordings"));
 		Assert.That(buildDoc, Does.Contain("Packaging Workflow"));
 		Assert.That(payloadDoc, Does.Contain("output/payloads/"));
 		Assert.That(payloadDoc, Does.Contain("ILRepack"));

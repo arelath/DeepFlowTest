@@ -8,8 +8,8 @@ using NUnit.Framework;
 
 internal static class TestSemanticRecording
 {
-	public const string EnabledEnvironmentVariable = "DEEPFLOWTEST_RECORD_TESTS";
-	public const string OutputDirectoryEnvironmentVariable = "DEEPFLOWTEST_TEST_RECORDINGS_DIR";
+	public const string EnabledParameterName = "DeepFlowTestTestRecordings";
+	public const string OutputDirectoryParameterName = "DeepFlowTestTestRecordingsDir";
 
 	private static readonly IReadOnlyList<string> DefaultPropertyNames =
 	[
@@ -27,6 +27,9 @@ internal static class TestSemanticRecording
 		KnownProperties.IsVisible,
 		KnownProperties.Visibility,
 	];
+
+	internal static Func<string, string?> ParameterProvider { get; set; } =
+		static name => TestContext.Parameters.Get(name, null);
 
 	public static void Configure(AppDriverOptions options, string? label = null)
 	{
@@ -46,20 +49,16 @@ internal static class TestSemanticRecording
 
 	public static bool IsEnabled()
 	{
-		var value = Environment.GetEnvironmentVariable(EnabledEnvironmentVariable);
-		return value is not null
-			&& (value.Equals("1", StringComparison.OrdinalIgnoreCase)
-				|| value.Equals("true", StringComparison.OrdinalIgnoreCase)
-				|| value.Equals("yes", StringComparison.OrdinalIgnoreCase)
-				|| value.Equals("on", StringComparison.OrdinalIgnoreCase));
+		var value = ParameterProvider(EnabledParameterName);
+		return !IsFalse(value);
 	}
 
 	private static string CreateOutputPath(string? label)
 	{
-		var configuredDirectory = Environment.GetEnvironmentVariable(OutputDirectoryEnvironmentVariable);
+		var configuredDirectory = ParameterProvider(OutputDirectoryParameterName);
 		var directory = string.IsNullOrWhiteSpace(configuredDirectory)
 			? Path.Combine(TestContext.CurrentContext.WorkDirectory, "semantic-recordings")
-			: Environment.ExpandEnvironmentVariables(configuredDirectory);
+			: Path.GetFullPath(configuredDirectory);
 		Directory.CreateDirectory(directory);
 
 		var testName = TestContext.CurrentContext.Test.FullName;
@@ -73,6 +72,16 @@ internal static class TestSemanticRecording
 
 		return Path.Combine(directory, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{name}.jsonl");
 	}
+
+	internal static void ResetParameterProviderForTests() =>
+		ParameterProvider = static name => TestContext.Parameters.Get(name, null);
+
+	private static bool IsFalse(string? value) =>
+		value is not null
+		&& (value.Equals("0", StringComparison.OrdinalIgnoreCase)
+			|| value.Equals("false", StringComparison.OrdinalIgnoreCase)
+			|| value.Equals("no", StringComparison.OrdinalIgnoreCase)
+			|| value.Equals("off", StringComparison.OrdinalIgnoreCase));
 
 	private static string SanitizeFileName(string value)
 	{

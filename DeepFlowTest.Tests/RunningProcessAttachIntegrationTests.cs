@@ -123,6 +123,7 @@ public sealed class RunningProcessAttachIntegrationTests
 		var normalizedHeader = NormalizeMenuHeader("MenuItemOne");
 		var menuItem = driver.GetElement(
 			element => string.Equals(element.TypeName, "MenuItem", StringComparison.Ordinal)
+				&& ElementTextMatches(element, normalizedHeader)
 				&& ElementOrDescendantTextMatches(element, normalizedHeader, 4),
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);

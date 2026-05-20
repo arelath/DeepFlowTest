@@ -78,6 +78,8 @@ public sealed class CompactSemanticRecordingFrameTests
 		Assert.That(json, Does.Contain("\"text\":\"Finished\""));
 		Assert.That(json, Does.Contain("\"visible\":false"));
 		Assert.That(json, Does.Contain("\"removedCount\":1"));
+		Assert.That(json, Does.Not.Contain("\"recordingId\""));
+		Assert.That(json, Does.Not.Contain("\"depth\""));
 		Assert.That(json, Does.Not.Contain("missing-property"));
 		Assert.That(json, Does.Not.Contain("frameworkTypeName"));
 		Assert.That(json, Does.Not.Contain("childIds"));
@@ -138,5 +140,39 @@ public sealed class CompactSemanticRecordingFrameTests
 		Assert.That(json, Does.Contain("\"id\":\"dft-target-root\""));
 		Assert.That(json, Does.Contain("\"text\":\"Ready\""));
 		Assert.That(json, Does.Not.Contain("layout-only"));
+	}
+
+	[Test]
+	public void RecordingStartedOutputKeepsRecordingIdForFileCorrelation()
+	{
+		var frame = new SemanticRecordingFrame
+		{
+			RecordingId = "recording",
+			FrameKind = "recording-started",
+			SequenceNumber = 1,
+		};
+
+		var json = JsonConvert.SerializeObject(CompactSemanticRecordingFrame.Create(frame));
+
+		Assert.That(json, Does.Contain("\"kind\":\"recording-started\""));
+		Assert.That(json, Does.Contain("\"recordingId\":\"recording\""));
+	}
+
+	[TestCase("action")]
+	[TestCase("snapshot")]
+	[TestCase("delta")]
+	public void NonStartedOutputOmitsRecordingIdBecauseTheFileAlreadyScopesIt(string frameKind)
+	{
+		var frame = new SemanticRecordingFrame
+		{
+			RecordingId = "recording",
+			FrameKind = frameKind,
+			SequenceNumber = 2,
+		};
+
+		var json = JsonConvert.SerializeObject(CompactSemanticRecordingFrame.Create(frame));
+
+		Assert.That(json, Does.Contain($"\"kind\":\"{frameKind}\""));
+		Assert.That(json, Does.Not.Contain("\"recordingId\""));
 	}
 }

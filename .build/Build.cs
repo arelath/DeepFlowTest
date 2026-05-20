@@ -10,6 +10,7 @@ internal sealed class Build
 {
 	private readonly string configuration;
 	private readonly string dotnet;
+	private readonly bool noTestRecordings;
 	private readonly IReadOnlyList<string> requestedTargets;
 	private readonly string rootDirectory;
 	private readonly Dictionary<string, BuildTarget> targets;
@@ -19,6 +20,7 @@ internal sealed class Build
 	{
 		var options = Parse(args);
 		configuration = options.Configuration;
+		noTestRecordings = options.NoTestRecordings;
 		requestedTargets = options.Targets;
 		dotnet = Environment.GetEnvironmentVariable("DOTNET_EXE") ?? "dotnet";
 		rootDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
@@ -223,18 +225,18 @@ internal sealed class Build
 
 	private void TestFast()
 	{
-		RunDotNet("test", CoreTestsProject, "--configuration", configuration, "--no-restore");
-		RunDotNet("test", CliTestsProject, "--configuration", configuration, "--no-restore");
+		RunDotNetTest(CoreTestsProject, "--configuration", configuration, "--no-restore");
+		RunDotNetTest(CliTestsProject, "--configuration", configuration, "--no-restore");
 	}
 
 	private void TestCore()
 	{
-		RunDotNet("test", CoreTestsProject, "--configuration", configuration, "--no-restore");
+		RunDotNetTest(CoreTestsProject, "--configuration", configuration, "--no-restore");
 	}
 
 	private void TestCli()
 	{
-		RunDotNet("test", CliTestsProject, "--configuration", configuration, "--no-restore");
+		RunDotNetTest(CliTestsProject, "--configuration", configuration, "--no-restore");
 	}
 
 	private void CompileTestHarnesses()
@@ -244,8 +246,7 @@ internal sealed class Build
 
 	private void TestIntegration()
 	{
-		RunDotNet(
-			"test",
+		RunDotNetTest(
 			CoreTestsProject,
 			"--configuration",
 			configuration,
@@ -520,6 +521,19 @@ internal sealed class Build
 		RunProcess(dotnet, args);
 	}
 
+	private void RunDotNetTest(string project, params string[] args)
+	{
+		var fullArgs = new List<string> { "test", project };
+		fullArgs.AddRange(args);
+		if (noTestRecordings)
+		{
+			fullArgs.Add("--");
+			fullArgs.Add("TestRunParameters.Parameter(name=\"DeepFlowTestTestRecordings\",value=\"off\")");
+		}
+
+		RunDotNet(fullArgs.ToArray());
+	}
+
 	private void RunProcess(string fileName, params string[] args)
 	{
 		var startInfo = new ProcessStartInfo(fileName)
@@ -581,6 +595,7 @@ internal sealed class Build
 	private static BuildOptions Parse(string[] args)
 	{
 		var configuration = "Debug";
+		var noTestRecordings = false;
 		var targets = new List<string>();
 
 		for (var index = 0; index < args.Length; index++)
@@ -601,6 +616,11 @@ internal sealed class Build
 			{
 				configuration = arg.Substring("Configuration=".Length);
 			}
+			else if (arg.Equals("--no-test-recordings", StringComparison.OrdinalIgnoreCase)
+				|| arg.Equals("NoTestRecordings=true", StringComparison.OrdinalIgnoreCase))
+			{
+				noTestRecordings = true;
+			}
 			else if (!string.IsNullOrWhiteSpace(arg))
 			{
 				targets.Add(arg);
@@ -610,7 +630,7 @@ internal sealed class Build
 		if (targets.Count == 0)
 			targets.Add("Compile");
 
-		return new BuildOptions(configuration, targets);
+		return new BuildOptions(configuration, noTestRecordings, targets);
 	}
 
 	private string ReadCentralPackageVersion(string packageName)
@@ -658,7 +678,7 @@ internal sealed class Build
 		public IReadOnlyList<string> Dependencies { get; }
 	}
 
-	private sealed record BuildOptions(string Configuration, IReadOnlyList<string> Targets);
+	private sealed record BuildOptions(string Configuration, bool NoTestRecordings, IReadOnlyList<string> Targets);
 
 	private sealed record PayloadMapping(string TargetFramework, string PayloadFamily);
 }

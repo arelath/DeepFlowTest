@@ -155,6 +155,31 @@ public sealed class LibraryApiTests
 	}
 
 	[Test]
+	public void SemanticRecordingDisposeWaitsForInitialFrameSoShortTestsStillLeaveALog()
+	{
+		var session = new FakeSemanticRecordingCommandSession(firstFrameDelayMs: 100);
+		using var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			session);
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-short-semantic-recording.jsonl");
+		if (File.Exists(path))
+			File.Delete(path);
+
+		using (driver.StartSemanticRecording(path, new SemanticRecordingOptions
+		{
+			IntervalMs = 60,
+			TextIdleMs = 123,
+			MaxBatchFrames = 7,
+		}))
+		{
+		}
+
+		var recordingText = File.ReadAllText(path);
+		Assert.That(recordingText, Does.Contain("\"kind\":\"action\""));
+		Assert.That(recordingText, Does.Not.Contain("\"frameKind\""));
+	}
+
+	[Test]
 	public void AutoSemanticRecordingOptionStartsStreamAndStopsWithDriver()
 	{
 		var session = new FakeSemanticRecordingCommandSession();
@@ -470,6 +495,13 @@ public sealed class LibraryApiTests
 
 	private sealed class FakeSemanticRecordingCommandSession : IAppDriverCommandSession, IAppDriverStreamingSession
 	{
+		private readonly int firstFrameDelayMs;
+
+		public FakeSemanticRecordingCommandSession(int firstFrameDelayMs = 0)
+		{
+			this.firstFrameDelayMs = firstFrameDelayMs;
+		}
+
 		public List<IpcCommand> SentCommands { get; } = [];
 
 		public StartSendingCommandRequest? StartRequest { get; private set; }
@@ -487,16 +519,18 @@ public sealed class LibraryApiTests
 		{
 			StartRequest = command;
 			SentCommands.Add(command);
-			return new FakeSemanticRecordingStreamSession(command);
+			return new FakeSemanticRecordingStreamSession(command, firstFrameDelayMs);
 		}
 	}
 
 	private sealed class FakeSemanticRecordingStreamSession : IAppDriverStreamSession
 	{
+		private readonly int firstFrameDelayMs;
 		private int readCount;
 
-		public FakeSemanticRecordingStreamSession(StartSendingCommandRequest command)
+		public FakeSemanticRecordingStreamSession(StartSendingCommandRequest command, int firstFrameDelayMs)
 		{
+			this.firstFrameDelayMs = firstFrameDelayMs;
 			Start = new StartSendingCommandResponse("sub-1", command.StreamKind, ProtocolConstants.Statuses.Started)
 			{
 				IntervalMs = command.IntervalMs,
@@ -512,6 +546,9 @@ public sealed class LibraryApiTests
 				Thread.Sleep(10);
 				return null;
 			}
+
+			if (firstFrameDelayMs > 0 && cancellationToken.WaitHandle.WaitOne(firstFrameDelayMs))
+				throw new OperationCanceledException(cancellationToken);
 
 			return new StreamMessage(Start.SubscriptionId, Start.StreamKind, 1, new SemanticRecordingBatch
 			{

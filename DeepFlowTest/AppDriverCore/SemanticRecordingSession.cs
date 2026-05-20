@@ -99,6 +99,7 @@ public sealed class SemanticRecordingSession : IDisposable
 			return;
 
 		disposed = true;
+		WaitForFramesBeforeStop(minFrames: 1);
 		cancellation.Cancel();
 		try
 		{
@@ -175,6 +176,17 @@ public sealed class SemanticRecordingSession : IDisposable
 			writer.Flush();
 			Interlocked.Increment(ref framesWritten);
 		}
+	}
+
+	private void WaitForFramesBeforeStop(int minFrames)
+	{
+		if (FramesWritten >= minFrames || backgroundError is not null || readerTask.IsCompleted)
+			return;
+
+		var timeout = TimeSpan.FromMilliseconds(Math.Min(timeoutMs, TimeoutDefaults.StreamStopTimeoutMs));
+		SpinWait.SpinUntil(
+			() => FramesWritten >= minFrames || backgroundError is not null || readerTask.IsCompleted,
+			timeout);
 	}
 
 	private static string NormalizeOutputPath(string outputPath)

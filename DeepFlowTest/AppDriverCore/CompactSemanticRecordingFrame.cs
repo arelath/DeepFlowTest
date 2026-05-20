@@ -46,8 +46,11 @@ internal static class CompactSemanticRecordingFrame
 			["at"] = frame.TimestampUtc,
 		};
 
-		if (!string.IsNullOrWhiteSpace(frame.RecordingId))
+		if (string.Equals(frame.FrameKind, "recording-started", StringComparison.Ordinal)
+			&& !string.IsNullOrWhiteSpace(frame.RecordingId))
+		{
 			output["recordingId"] = frame.RecordingId;
+		}
 		if (frame.Action is not null)
 			output["action"] = CompactAction(frame.Action);
 		if (frame.Snapshot is not null)
@@ -193,8 +196,6 @@ internal static class CompactSemanticRecordingFrame
 		AddIfNotEmpty(output, "parent", node.ParentId);
 		if (node.IsRoot)
 			output["root"] = true;
-		if (node.Depth != 0)
-			output["depth"] = node.Depth;
 		foreach (var property in properties)
 			output[property.Key] = property.Value;
 		return output;

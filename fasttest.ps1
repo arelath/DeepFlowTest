@@ -13,6 +13,8 @@ param(
 
   [switch]$NoBuild,
 
+  [switch]$NoTestRecordings,
+
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$DotNetArguments
 )
@@ -66,6 +68,9 @@ if ($Filter) {
 }
 if ($DotNetArguments) {
   $arguments += $DotNetArguments
+}
+if ($NoTestRecordings) {
+  $arguments += @("--", 'TestRunParameters.Parameter(name="DeepFlowTestTestRecordings",value="off")')
 }
 
 Push-Location $root
