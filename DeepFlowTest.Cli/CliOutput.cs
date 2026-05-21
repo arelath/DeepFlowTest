@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Interop;
 
 public static class CliOutput
 {
@@ -53,6 +54,23 @@ public static class CliOutput
 		}
 
 		WriteJson(envelope, options, writer);
+	}
+
+	public static void Write(CliResponseSequence sequence, CliCommonOptions options, TextWriter writer)
+	{
+		_ = sequence ?? throw new ArgumentNullException(nameof(sequence));
+		_ = options ?? throw new ArgumentNullException(nameof(options));
+		_ = writer ?? throw new ArgumentNullException(nameof(writer));
+
+		if (string.Equals(options.Format, "text", StringComparison.OrdinalIgnoreCase)
+			&& IsSemanticRecordingStreamSequence(sequence))
+		{
+			WriteSemanticRecordingStreamText(sequence, writer);
+			return;
+		}
+
+		foreach (var envelope in sequence.Envelopes)
+			Write(envelope, options, writer);
 	}
 
 	public static string ToJson(CliResponseEnvelope envelope, bool pretty = false, bool hideEmpty = true)
@@ -110,6 +128,40 @@ public static class CliOutput
 			default:
 				writer.WriteLine(ToJson(envelope, pretty: true, hideEmpty: true));
 				break;
+		}
+	}
+
+	private static bool IsSemanticRecordingStreamSequence(CliResponseSequence sequence) =>
+		sequence.Envelopes.Any(static envelope =>
+			envelope.Data is StreamMessage { StreamKind: ProtocolConstants.StreamKinds.SemanticRecording }
+			|| string.Equals(envelope.Command, "stream semantic-recording frame", StringComparison.Ordinal));
+
+	private static void WriteSemanticRecordingStreamText(CliResponseSequence sequence, TextWriter writer)
+	{
+		using var recordingWriter = SemanticRecordingFrameWriter.Create(writer, SemanticRecordingOutputFormat.CondensedAgent);
+		foreach (var envelope in sequence.Envelopes)
+		{
+			if (!envelope.Ok)
+			{
+				writer.WriteLine($"{envelope.Error?.Code ?? CliErrorCodes.UnexpectedError}: {envelope.Error?.Message}");
+				continue;
+			}
+
+			if (envelope.Data is not StreamMessage { StreamKind: ProtocolConstants.StreamKinds.SemanticRecording } message)
+				continue;
+			if (message.Error is not null)
+			{
+				writer.WriteLine($"{message.Error.Code}: {message.Error.Message}");
+				continue;
+			}
+
+			if (message.Data is null)
+				continue;
+
+			var batch = MessagePacker.ConvertTo<SemanticRecordingBatch>(message.Data);
+			recordingWriter.WriteDroppedActionCount(batch.DroppedActionCount);
+			foreach (var frame in batch.Frames ?? [])
+				recordingWriter.WriteFrame(frame);
 		}
 	}
 

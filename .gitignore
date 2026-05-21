@@ -61,3 +61,4 @@ MegaContext.txt
 MegaContext-files.txt
 MegaContext-files.txt
 *.lscache
+/isolated-nuget-packages

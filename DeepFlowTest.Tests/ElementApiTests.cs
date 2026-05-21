@@ -400,6 +400,7 @@ public sealed class ElementApiTests
 			SourceAnchorY = 0.2,
 			DestinationAnchorX = 0.8,
 			DestinationAnchorY = 0.9,
+			UseInjectedEvents = true,
 			EnsureForeground = false,
 			ValidateSameProcess = false,
 			TimeoutMs = 1234,
@@ -421,6 +422,7 @@ public sealed class ElementApiTests
 		Assert.That(drag.SourceAnchorY, Is.EqualTo(0.2));
 		Assert.That(drag.DestinationAnchorX, Is.EqualTo(0.8));
 		Assert.That(drag.DestinationAnchorY, Is.EqualTo(0.9));
+		Assert.That(drag.UseInjectedEvents, Is.True);
 		Assert.That(drag.EnsureForeground, Is.False);
 		Assert.That(drag.ValidateSameProcess, Is.False);
 		Assert.That(drag.TimeoutMs, Is.EqualTo(1234));

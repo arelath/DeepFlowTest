@@ -52,7 +52,7 @@
         </GroupBox>
 
         <GroupBox Header="Buttons"
-                  Grid.Row="1"
+                  Grid.Row="2"
                   Margin="0,0,12,12"
                   AutomationProperties.AutomationId="ButtonControls"
                   AutomationProperties.Name="Button Controls">
@@ -139,7 +139,7 @@
         </GroupBox>
 
         <GroupBox Header="Input"
-                  Grid.Row="1"
+                  Grid.Row="2"
                   Grid.Column="1"
                   Margin="0,0,0,12"
                   AutomationProperties.AutomationId="InputControls"
@@ -171,7 +171,7 @@
         </GroupBox>
 
         <GroupBox Header="Popup"
-                  Grid.Row="2"
+                  Grid.Row="3"
                   Margin="0,0,12,12"
                   AutomationProperties.AutomationId="PopupControls"
                   AutomationProperties.Name="Popup Controls">
@@ -209,7 +209,7 @@
         </GroupBox>
 
         <GroupBox Header="Selection"
-                  Grid.Row="2"
+                  Grid.Row="3"
                   Grid.Column="1"
                   Margin="0,0,0,12"
                   AutomationProperties.AutomationId="SelectionControls"
@@ -237,7 +237,7 @@
         </GroupBox>
 
         <GroupBox Header="Expander"
-                  Grid.Row="3"
+                  Grid.Row="4"
                   Grid.ColumnSpan="2"
                   Margin="0,0,0,12"
                   AutomationProperties.AutomationId="ExpanderControls"
@@ -282,7 +282,7 @@
         </GroupBox>
 
         <GroupBox Header="Hosted WinForms"
-                  Grid.Row="4"
+                  Grid.Row="5"
                   Grid.ColumnSpan="2"
                   AutomationProperties.AutomationId="HostedWinFormsControls"
                   AutomationProperties.Name="Hosted WinForms Controls">
@@ -292,6 +292,80 @@
                 Visibility="Collapsed"
                 AutomationProperties.AutomationId="HostedWinFormsContainer"
                 AutomationProperties.Name="HostedWinFormsContainer" />
+        </GroupBox>
+
+        <GroupBox Header="Drag and Drop"
+                  Grid.Row="1"
+                  Grid.ColumnSpan="2"
+                  Margin="0,0,0,12"
+                  AutomationProperties.AutomationId="DragDropControls"
+                  AutomationProperties.Name="Drag and Drop Controls">
+          <StackPanel Margin="8">
+            <StackPanel Orientation="Horizontal">
+              <Border x:Name="DragDropSource"
+                      Width="120"
+                      Height="72"
+                      BorderThickness="2"
+                      BorderBrush="SteelBlue"
+                      Background="#FFE8F4FF"
+                      PreviewMouseLeftButtonDown="DragDropSource_PreviewMouseLeftButtonDown"
+                      MouseMove="DragDropSource_MouseMove"
+                      AutomationProperties.AutomationId="DragDropSource"
+                      AutomationProperties.Name="Drag Drop Source">
+                <TextBlock HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Text="Drag Source" />
+              </Border>
+
+              <Border x:Name="DragDropTransitTarget"
+                      Width="140"
+                      Height="72"
+                      Margin="24,0,0,0"
+                      BorderThickness="2"
+                      BorderBrush="DarkGoldenrod"
+                      Background="#FFFFF7DD"
+                      AllowDrop="True"
+                      MouseEnter="DragDropZone_MouseEnter"
+                      MouseLeave="DragDropZone_MouseLeave"
+                      DragEnter="DragDropZone_DragEnter"
+                      DragLeave="DragDropZone_DragLeave"
+                      Drop="DragDropZone_Drop"
+                      AutomationProperties.AutomationId="DragDropTransitTarget"
+                      AutomationProperties.Name="Drag Drop Transit Target">
+                <TextBlock HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Text="Transit Target" />
+              </Border>
+
+              <Border x:Name="DragDropFinalTarget"
+                      Width="140"
+                      Height="72"
+                      Margin="24,0,0,0"
+                      BorderThickness="2"
+                      BorderBrush="SeaGreen"
+                      Background="#FFE9F8EA"
+                      AllowDrop="True"
+                      MouseEnter="DragDropZone_MouseEnter"
+                      MouseLeave="DragDropZone_MouseLeave"
+                      DragEnter="DragDropZone_DragEnter"
+                      DragLeave="DragDropZone_DragLeave"
+                      Drop="DragDropZone_Drop"
+                      AutomationProperties.AutomationId="DragDropFinalTarget"
+                      AutomationProperties.Name="Drag Drop Final Target">
+                <TextBlock HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Text="Final Target" />
+              </Border>
+            </StackPanel>
+
+            <TextBox x:Name="DragDropEventLog"
+                     Height="56"
+                     Margin="0,8,0,0"
+                     IsReadOnly="True"
+                     TextWrapping="Wrap"
+                     AutomationProperties.AutomationId="DragDropEventLog"
+                     AutomationProperties.Name="Drag Drop Event Log" />
+          </StackPanel>
         </GroupBox>
       </Grid>
     </ScrollViewer>

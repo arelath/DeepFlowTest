@@ -43,6 +43,18 @@ internal static partial class TargetActionCommand
 		if (request.EnsureForeground)
 			EnsureForegroundTarget(sourceTarget);
 
+		if (request.UseInjectedEvents)
+		{
+			var injectedResult = WpfTargetAdapter.PerformInjectedDragAndDrop(
+				sourceTarget,
+				destinationTarget,
+				new PointerAnchor(request.SourceAnchorX, request.SourceAnchorY),
+				new PointerAnchor(request.DestinationAnchorX, request.DestinationAnchorY),
+				request.DurationMs,
+				request.StepIntervalMs);
+			return ToResponse(injectedResult, ProtocolConstants.Commands.DragAndDrop, request.TargetId);
+		}
+
 		var sourcePoint = GetPointerTarget(sourceTarget, new PointerAnchor(request.SourceAnchorX, request.SourceAnchorY));
 		if (!sourcePoint.Success || sourcePoint.Value is null)
 			return UnsupportedTarget($"DragAndDropCommand: source target '{request.TargetId}': {sourcePoint.Error ?? "Screen coordinates could not be resolved."}");

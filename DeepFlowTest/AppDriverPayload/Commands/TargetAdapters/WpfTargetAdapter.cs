@@ -121,6 +121,63 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		}
 	}
 
+	internal static ActionResult PerformInjectedDragAndDrop(
+		object sourceTarget,
+		object destinationTarget,
+		PointerAnchor sourceAnchor,
+		PointerAnchor destinationAnchor,
+		int durationMs,
+		int stepIntervalMs)
+	{
+		if (sourceTarget is not UIElement source || destinationTarget is not UIElement destination)
+			return ActionResult.Unsupported("Injected drag events require WPF UIElement source and destination targets.");
+		if (!source.IsVisible)
+			return ActionResult.Unsupported("WPF source target is not visible.");
+		if (!source.IsEnabled)
+			return ActionResult.Unsupported("WPF source target is not enabled.");
+		if (!destination.IsVisible)
+			return ActionResult.Unsupported("WPF destination target is not visible.");
+		if (!destination.IsEnabled)
+			return ActionResult.Unsupported("WPF destination target is not enabled.");
+
+		if (!TryGetScreenPoint(source, sourceAnchor, out var sourceScreen, out var error))
+			return ActionResult.Unsupported($"WPF source target screen coordinates could not be resolved: {error}");
+		if (!TryGetScreenPoint(destination, destinationAnchor, out var destinationScreen, out error))
+			return ActionResult.Unsupported($"WPF destination target screen coordinates could not be resolved: {error}");
+
+		TryEnsureAppHooks();
+		using var syntheticMouseInput = AppHooks.BeginSyntheticMouseInput();
+		try
+		{
+			AppHooks.SetSyntheticMouseScreenPosition(sourceScreen);
+			AppHooks.SetButton(MouseButton.Left, isPressed: true);
+			var sourceTargets = GetAscendingVisualTree(source);
+			RaiseMouseButtonEvent(source, UIElement.PreviewMouseDownEvent, MouseButton.Left, sourceTargets);
+			RaiseMouseButtonEvent(source, UIElement.MouseDownEvent, MouseButton.Left, sourceTargets);
+
+			var steps = Math.Max(1, durationMs / Math.Max(1, stepIntervalMs));
+			for (var i = 1; i <= steps; i++)
+			{
+				var progress = (double)i / steps;
+				AppHooks.SetSyntheticMouseScreenPosition(Interpolate(sourceScreen, destinationScreen, progress));
+				RaiseMouseMoveEvent(source);
+			}
+
+			AppHooks.SetSyntheticMouseScreenPosition(destinationScreen);
+			RaiseMouseMoveEvent(destination);
+			AppHooks.SetButton(MouseButton.Left, isPressed: false);
+			var destinationTargets = GetAscendingVisualTree(destination);
+			RaiseMouseButtonEvent(destination, UIElement.PreviewMouseUpEvent, MouseButton.Left, destinationTargets);
+			RaiseMouseButtonEvent(destination, UIElement.MouseUpEvent, MouseButton.Left, destinationTargets);
+		}
+		finally
+		{
+			AppHooks.ResetMouseState();
+		}
+
+		return ActionResult.Ok();
+	}
+
 	public override ActionResult SetProperty(object target, string propertyName, object? value)
 	{
 		if (TrySetClrProperty(target, propertyName, value, out var result))
@@ -525,12 +582,58 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		foreach (var hoveredTarget in targets)
 			AppHooks.WriteElementOverElement?.Invoke(hoveredTarget, new object[] { AppHooks.CoreFlags.IsMouseOverCache, true });
 
-		if (TryRaiseTrustedEvent(target, args))
-			return true;
-
-		target.RaiseEvent(args);
-		return false;
+		AppHooks.SetSyntheticMouseHitTarget(target);
+		if (!TryRaiseTrustedEvent(target, args))
+			target.RaiseEvent(args);
+		return args.Handled;
 	}
+
+	private static bool RaiseMouseMoveEvent(UIElement target)
+	{
+		var args = new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)
+		{
+			RoutedEvent = UIElement.MouseMoveEvent,
+			Source = target,
+		};
+
+		AppHooks.MouseOverElement?.SetValue(Mouse.PrimaryDevice, target);
+		foreach (var hoveredTarget in GetAscendingVisualTree(target))
+			AppHooks.WriteElementOverElement?.Invoke(hoveredTarget, new object[] { AppHooks.CoreFlags.IsMouseOverCache, true });
+
+		AppHooks.SetSyntheticMouseHitTarget(target);
+		if (!TryRaiseTrustedEvent(target, args))
+			target.RaiseEvent(args);
+		return args.Handled;
+	}
+
+	private static bool TryGetScreenPoint(UIElement target, PointerAnchor anchor, out Point screen, out string? error)
+	{
+		screen = default;
+		error = null;
+		var width = target.RenderSize.Width;
+		var height = target.RenderSize.Height;
+		if (!IsPositiveFinite(width) || !IsPositiveFinite(height))
+		{
+			error = "target has no renderable size.";
+			return false;
+		}
+
+		try
+		{
+			screen = target.PointToScreen(new Point(width * anchor.X, height * anchor.Y));
+			return true;
+		}
+		catch (InvalidOperationException ex)
+		{
+			error = ex.Message;
+			return false;
+		}
+	}
+
+	private static Point Interpolate(Point start, Point end, double progress) =>
+		new(
+			start.X + (end.X - start.X) * progress,
+			start.Y + (end.Y - start.Y) * progress);
 
 	private static bool TryRaiseTrustedEvent(UIElement target, RoutedEventArgs args)
 	{

@@ -297,7 +297,8 @@ public static class CliRootCommand
 	private static void AddRecordSemanticOptions(Command command)
 	{
 		AddSemanticRecordingStreamOptions(command);
-		command.Add(CreateOption<string>("--output", "JSON recording output path.", "--out"));
+		command.Add(CreateOption<string>("--output", "Recording output path.", "--out"));
+		command.Add(CreateOption<string>("--recording-format", "Recording file format: condensed-agent, condensed-diagnostic, compact-json, or raw-json."));
 	}
 
 	private static void AddWaitOptions(Command command)
@@ -340,6 +341,7 @@ public static class CliRootCommand
 		command.Add(CreateOption<double>("--source-anchor-y", "Normalized source Y anchor."));
 		command.Add(CreateOption<double>("--destination-anchor-x", "Normalized destination X anchor."));
 		command.Add(CreateOption<double>("--destination-anchor-y", "Normalized destination Y anchor."));
+		command.Add(CreateOption<bool>("--injected-events", "Use injected WPF mouse events instead of physical cursor movement when possible."));
 		command.Add(CreateOption<bool>("--foreground", "Bring the source target main window to foreground first."));
 		command.Add(CreateOption<bool>("--validate-same-process", "Require drag points to remain over the target process."));
 	}
@@ -505,6 +507,7 @@ public static class CliRootCommand
 			or "--text-idle-ms"
 			or "--max-queued-actions"
 			or "--max-batch-frames"
+			or "--recording-format"
 			or "--match-count"
 			or "--subtree-depth"
 			or "--button"
@@ -516,6 +519,7 @@ public static class CliRootCommand
 			or "--source-anchor-y"
 			or "--destination-anchor-x"
 			or "--destination-anchor-y"
+			or "--injected-events"
 			or "--to-target"
 			or "--to-target-id"
 			or "--to-name"

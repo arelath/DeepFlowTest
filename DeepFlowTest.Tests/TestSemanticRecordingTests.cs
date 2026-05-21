@@ -38,7 +38,7 @@ public sealed class TestSemanticRecordingTests
 		Assert.That(options.AutoSemanticRecordingOutputPath, Does.Contain("hello_world"));
 		Assert.That(Path.GetFileName(options.AutoSemanticRecordingOutputPath!), Does.Contain("hello_world"));
 		Assert.That(options.AutoSemanticRecordingOptions.IntervalMs, Is.EqualTo(100));
-		Assert.That(options.AutoSemanticRecordingOptions.CompactOutput, Is.True);
+		Assert.That(options.AutoSemanticRecordingOptions.OutputFormat, Is.EqualTo(SemanticRecordingOutputFormat.CondensedAgent));
 		Assert.That(options.AutoSemanticRecordingOptions.MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 		Assert.That(options.AutoSemanticRecordingOptions.PropNames, Does.Contain(KnownProperties.AutomationId));
 	}
@@ -114,6 +114,6 @@ public sealed class TestSemanticRecordingTests
 		var fileName = Path.GetFileName(options.AutoSemanticRecordingOutputPath!);
 		Assert.That(fileName, Does.Contain("bad_name_with_spaces"));
 		Assert.That(fileName, Does.Not.Contain(" "));
-		Assert.That(fileName, Does.EndWith(".json"));
+		Assert.That(fileName, Does.EndWith(".dft.txt"));
 	}
 }

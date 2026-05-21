@@ -13,20 +13,6 @@ using DeepFlowTest.Interop;
 
 public static class Program
 {
-	private static readonly JsonSerializerOptions RecordingJsonOptions = new()
-	{
-		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-		DictionaryKeyPolicy = null,
-		WriteIndented = false,
-		Converters =
-		{
-			new CliImageFormatJsonConverter(),
-			new CliTreeShapeJsonConverter(),
-			new CliMouseButtonJsonConverter(),
-			new CliBindingFailureSeverityJsonConverter(),
-		},
-	};
-
 	public static int Main(string[] args)
 	{
 		return Run(args);
@@ -469,16 +455,15 @@ public static class Program
 		if (!string.IsNullOrEmpty(directory))
 			Directory.CreateDirectory(directory);
 
+		var outputFormat = GetSemanticRecordingOutputFormat(args);
 		var properties = CliArgumentReader.GetStringList(args, "--props", defaults.Commands.Stream.Props);
 		using var session = OpenSession(services, commonOptions);
 		ICliStreamSession? stream = null;
-		var framesWritten = 0L;
 		var droppedActions = 0;
 		StopSendingCommandResponse? stop = null;
 		using var cancellation = CreateConsoleCancellationSource();
 		using var writer = new StreamWriter(new FileStream(fullOutputPath, FileMode.Create, FileAccess.Write, FileShare.Read));
-		var wroteFrame = false;
-		writer.WriteLine("[");
+		using var recordingWriter = SemanticRecordingFrameWriter.Create(writer, outputFormat);
 
 		try
 		{
@@ -510,17 +495,9 @@ public static class Program
 
 				var batch = MessagePacker.ConvertTo<SemanticRecordingBatch>(frame.Data);
 				droppedActions += Math.Max(0, batch.DroppedActionCount);
+				recordingWriter.WriteDroppedActionCount(batch.DroppedActionCount);
 				foreach (var recordingFrame in batch.Frames ?? [])
-				{
-					if (wroteFrame)
-						writer.WriteLine(",");
-
-					writer.Write(JsonSerializer.Serialize(recordingFrame, RecordingJsonOptions));
-					wroteFrame = true;
-					framesWritten++;
-				}
-
-				writer.Flush();
+					recordingWriter.WriteFrame(recordingFrame);
 			}
 		}
 		catch (OperationCanceledException)
@@ -539,17 +516,13 @@ public static class Program
 					Math.Min(commonOptions.TimeoutMs, TimeoutDefaults.StreamStopTimeoutMs));
 				stream.Dispose();
 			}
-
-			if (wroteFrame)
-				writer.WriteLine();
-			writer.WriteLine("]");
-			writer.Flush();
 		}
 
 		return new SemanticRecordingFileData
 		{
 			OutputPath = fullOutputPath,
-			FramesWritten = framesWritten,
+			RecordingFormat = FormatSemanticRecordingOutputFormat(outputFormat),
+			FramesWritten = recordingWriter.FramesWritten,
 			DroppedActionCount = droppedActions,
 			Stop = stop,
 		};
@@ -562,6 +535,32 @@ public static class Program
 			MaxQueuedActions = CliArgumentReader.GetInt(args, "--max-queued-actions", 1000),
 			MaxBatchFrames = CliArgumentReader.GetInt(args, "--max-batch-frames", 100),
 			MaxNodeCount = CliArgumentReader.GetInt(args, "--limit", VisualTreeDefaults.DefaultMaxNodeCount),
+		};
+
+	private static SemanticRecordingOutputFormat GetSemanticRecordingOutputFormat(IReadOnlyList<string> args)
+	{
+		var rawValue = CliArgumentReader.GetOption(args, "--recording-format");
+		if (string.IsNullOrWhiteSpace(rawValue))
+			return SemanticRecordingOutputFormat.CondensedAgent;
+
+		return rawValue.Trim().ToLowerInvariant() switch
+		{
+			"condensed-agent" or "agent" or "text" => SemanticRecordingOutputFormat.CondensedAgent,
+			"condensed-diagnostic" or "diagnostic" => SemanticRecordingOutputFormat.CondensedDiagnostic,
+			"compact-json" or "json" => SemanticRecordingOutputFormat.CompactJson,
+			"raw-json" => SemanticRecordingOutputFormat.RawJson,
+			_ => throw new CliException(CliErrorCodes.InvalidArguments, "Recording format must be condensed-agent, condensed-diagnostic, compact-json, or raw-json."),
+		};
+	}
+
+	private static string FormatSemanticRecordingOutputFormat(SemanticRecordingOutputFormat outputFormat) =>
+		outputFormat switch
+		{
+			SemanticRecordingOutputFormat.CondensedAgent => "condensed-agent",
+			SemanticRecordingOutputFormat.CondensedDiagnostic => "condensed-diagnostic",
+			SemanticRecordingOutputFormat.CompactJson => "compact-json",
+			SemanticRecordingOutputFormat.RawJson => "raw-json",
+			_ => outputFormat.ToString(),
 		};
 
 	private static ICliAppSession OpenSession(CliServices services, CliCommonOptions commonOptions)
@@ -779,6 +778,7 @@ public static class Program
 		var sourceAnchorY = CliArgumentReader.GetDouble(args, "--source-anchor-y", dragDefaults.SourceAnchorY);
 		var destinationAnchorX = CliArgumentReader.GetDouble(args, "--destination-anchor-x", dragDefaults.DestinationAnchorX);
 		var destinationAnchorY = CliArgumentReader.GetDouble(args, "--destination-anchor-y", dragDefaults.DestinationAnchorY);
+		var useInjectedEvents = CliArgumentReader.GetBool(args, "--injected-events", dragDefaults.UseInjectedEvents);
 		var foreground = CliArgumentReader.GetBool(args, "--foreground", dragDefaults.Foreground);
 		var validateSameProcess = CliArgumentReader.GetBool(args, "--validate-same-process", dragDefaults.ValidateSameProcess);
 
@@ -802,6 +802,7 @@ public static class Program
 				SourceAnchorY = sourceAnchorY,
 				DestinationAnchorX = destinationAnchorX,
 				DestinationAnchorY = destinationAnchorY,
+				UseInjectedEvents = useInjectedEvents,
 				EnsureForeground = foreground,
 				ValidateSameProcess = validateSameProcess,
 				TimeoutMs = commonOptions.TimeoutMs,
@@ -1173,6 +1174,8 @@ public sealed class CliResponseSequence
 public sealed class SemanticRecordingFileData
 {
 	public string OutputPath { get; set; } = string.Empty;
+
+	public string RecordingFormat { get; set; } = "condensed-agent";
 
 	public long FramesWritten { get; set; }
 

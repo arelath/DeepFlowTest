@@ -2,6 +2,7 @@ namespace HelloWorld;
 
 using System;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Forms.Integration;
@@ -14,6 +15,7 @@ using WinForms = System.Windows.Forms;
 public partial class MainWindow : Window
 {
 	private readonly DispatcherTimer delayedRevealTimer;
+	private Point? dragStartPoint;
 
 	public static Func<Window, MessageBoxResult>? ShowMessageBoxForTests { get; set; }
 
@@ -130,6 +132,137 @@ public partial class MainWindow : Window
 	private void CtrlA_Shortcut(object sender, ExecutedRoutedEventArgs e)
 	{
 		EventDisplay.Text = "Ctrl+A shortcut triggered.";
+	}
+
+	private void DragDropSource_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+	{
+		dragStartPoint = e.GetPosition(null);
+		AppendDragDropEvent("DragDropSource:MouseDown");
+	}
+
+	private void DragDropSource_MouseMove(object sender, MouseEventArgs e)
+	{
+		if (sender is not DependencyObject source || e.LeftButton != MouseButtonState.Pressed || dragStartPoint is not { } start)
+			return;
+
+		var current = e.GetPosition(null);
+		if (Math.Abs(current.X - start.X) < SystemParameters.MinimumHorizontalDragDistance
+			&& Math.Abs(current.Y - start.Y) < SystemParameters.MinimumVerticalDragDistance)
+		{
+			return;
+		}
+
+		dragStartPoint = null;
+		AppendDragDropEvent("DragDropSource:DragStart");
+		DragDrop.DoDragDrop(source, "DeepFlowTestDragPayload", DragDropEffects.Move);
+	}
+
+	private void DragDropZone_MouseEnter(object sender, MouseEventArgs e)
+	{
+		AppendDragDropEvent($"{DragDropZoneName(sender)}:MouseEnter");
+	}
+
+	private void DragDropZone_MouseLeave(object sender, MouseEventArgs e)
+	{
+		AppendDragDropEvent($"{DragDropZoneName(sender)}:MouseLeave");
+	}
+
+	private void DragDropZone_DragEnter(object sender, DragEventArgs e)
+	{
+		e.Effects = IsHarnessDragPayload(e) ? DragDropEffects.Move : DragDropEffects.None;
+		AppendDragDropEvent($"{DragDropZoneName(sender)}:DragEnter");
+		e.Handled = true;
+	}
+
+	private void DragDropZone_DragLeave(object sender, DragEventArgs e)
+	{
+		AppendDragDropEvent($"{DragDropZoneName(sender)}:DragLeave");
+		e.Handled = true;
+	}
+
+	private void DragDropZone_Drop(object sender, DragEventArgs e)
+	{
+		var zoneName = DragDropZoneName(sender);
+		AppendDragDropEvent($"{zoneName}:Drop");
+		EventDisplay.Text = $"{zoneName}_Drop event triggered.";
+		if (sender is Border { Child: TextBlock label })
+			label.Text = $"{zoneName} received drop";
+
+		e.Effects = IsHarnessDragPayload(e) ? DragDropEffects.Move : DragDropEffects.None;
+		e.Handled = true;
+	}
+
+	public void RunInjectedDragDropProbe()
+	{
+		DragDropEventLog.Text = string.Empty;
+		AppendDragDropEvent("DragDropSource:InjectedStart");
+
+		RaiseMouseEvent(DragDropTransitTarget, Mouse.MouseEnterEvent);
+		RaiseDragEvent(DragDropTransitTarget, DragDrop.DragEnterEvent);
+		RaiseMouseEvent(DragDropTransitTarget, Mouse.MouseLeaveEvent);
+		RaiseDragEvent(DragDropTransitTarget, DragDrop.DragLeaveEvent);
+
+		RaiseMouseEvent(DragDropFinalTarget, Mouse.MouseEnterEvent);
+		RaiseDragEvent(DragDropFinalTarget, DragDrop.DragEnterEvent);
+		RaiseDragEvent(DragDropFinalTarget, DragDrop.DropEvent);
+		RaiseMouseEvent(DragDropFinalTarget, Mouse.MouseLeaveEvent);
+	}
+
+	private static bool IsHarnessDragPayload(DragEventArgs e) =>
+		e.Data.GetDataPresent(DataFormats.StringFormat)
+		&& string.Equals(e.Data.GetData(DataFormats.StringFormat) as string, "DeepFlowTestDragPayload", StringComparison.Ordinal);
+
+	private static void RaiseMouseEvent(UIElement target, RoutedEvent routedEvent)
+	{
+		target.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)
+		{
+			RoutedEvent = routedEvent,
+			Source = target,
+		});
+	}
+
+	private static void RaiseDragEvent(UIElement target, RoutedEvent routedEvent)
+	{
+		var data = new DataObject(DataFormats.StringFormat, "DeepFlowTestDragPayload");
+		var args = CreateDragEventArgs(data, target);
+		args.RoutedEvent = routedEvent;
+		args.Source = target;
+		target.RaiseEvent(args);
+	}
+
+	private static DragEventArgs CreateDragEventArgs(IDataObject data, DependencyObject target)
+	{
+		var constructor = typeof(DragEventArgs).GetConstructor(
+			BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+			binder: null,
+			types: new[]
+			{
+				typeof(IDataObject),
+				typeof(DragDropKeyStates),
+				typeof(DragDropEffects),
+				typeof(DependencyObject),
+				typeof(Point),
+			},
+			modifiers: null) ?? throw new InvalidOperationException("Could not find the WPF DragEventArgs constructor.");
+
+		return (DragEventArgs)constructor.Invoke(new object[]
+		{
+			data,
+			DragDropKeyStates.LeftMouseButton,
+			DragDropEffects.Move,
+			target,
+			new Point(1, 1),
+		});
+	}
+
+	private static string DragDropZoneName(object sender) =>
+		sender is FrameworkElement { Name.Length: > 0 } element ? element.Name : "UnknownDragDropZone";
+
+	private void AppendDragDropEvent(string eventName)
+	{
+		DragDropEventLog.Text = string.IsNullOrWhiteSpace(DragDropEventLog.Text)
+			? eventName
+			: $"{DragDropEventLog.Text}|{eventName}";
 	}
 
 	private void OpenOtherWindow_Click(object sender, RoutedEventArgs e)

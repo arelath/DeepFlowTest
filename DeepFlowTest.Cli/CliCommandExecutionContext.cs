@@ -61,8 +61,7 @@ internal sealed class CliCommandExecutionContext
 			var data = execute();
 			if (data is CliResponseSequence sequence)
 			{
-				foreach (var envelope in sequence.Envelopes)
-					CliOutput.Write(envelope, options, Stdout);
+				CliOutput.Write(sequence, options, Stdout);
 				return 0;
 			}
 

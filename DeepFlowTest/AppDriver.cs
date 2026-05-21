@@ -275,18 +275,18 @@ public sealed class AppDriver : IDisposable
 		if (Session is not IAppDriverStreamingSession)
 			return null;
 
-		var outputPath = CreateDefaultSemanticRecordingOutputPath(Connection);
+		var outputPath = CreateDefaultSemanticRecordingOutputPath(Connection, Options.AutoSemanticRecordingOptions.OutputFormat);
 		Options.AutoSemanticRecordingOutputPath = outputPath;
 		return outputPath;
 	}
 
-	private static string CreateDefaultSemanticRecordingOutputPath(AppConnection connection)
+	private static string CreateDefaultSemanticRecordingOutputPath(AppConnection connection, SemanticRecordingOutputFormat outputFormat)
 	{
 		var directory = Path.Combine(AppContext.BaseDirectory, "semantic-recordings");
 		Directory.CreateDirectory(directory);
 		var processName = SafeGetProcessName(connection.TargetProcess);
 		var label = SanitizeFileName($"{processName}-{connection.TargetProcess.Id}");
-		return Path.Combine(directory, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{label}.json");
+		return Path.Combine(directory, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{label}{SemanticRecordingFrameWriter.GetDefaultExtension(outputFormat)}");
 	}
 
 	private static string SafeGetProcessName(ITargetProcess process)

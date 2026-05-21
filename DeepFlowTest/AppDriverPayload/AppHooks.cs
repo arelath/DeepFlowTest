@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Controls.Ribbon;
 using System.Windows.Input;
+using System.Windows.Media;
 using DeepFlowTest.AppDriverPayload.Patching;
 using HarmonyLib;
 using Microsoft.Win32;
@@ -22,6 +23,9 @@ public static class AppHooks
 	private static volatile bool showDialogCalled;
 	private static int syntheticMouseInputDepth;
 	private static int syntheticInputDepth;
+	private static Point? syntheticMouseScreenPosition;
+	private static IInputElement? syntheticCapturedMouseElement;
+	private static IInputElement? syntheticMouseHitTarget;
 
 	public static WpfPatchResult LastResult
 	{
@@ -66,7 +70,16 @@ public static class AppHooks
 	{
 		IsLeftMousePressed = null;
 		IsRightMousePressed = null;
+		syntheticMouseScreenPosition = null;
+		syntheticCapturedMouseElement = null;
+		syntheticMouseHitTarget = null;
 	}
+
+	public static void SetSyntheticMouseScreenPosition(Point? screenPosition) =>
+		syntheticMouseScreenPosition = screenPosition;
+
+	public static void SetSyntheticMouseHitTarget(IInputElement? target) =>
+		syntheticMouseHitTarget = target;
 
 	public static bool IsSyntheticMouseInputActive => Volatile.Read(ref syntheticMouseInputDepth) > 0;
 
@@ -263,6 +276,161 @@ public static class AppHooks
 
 			return true;
 		}
+	}
+
+	[HarmonyPatch(typeof(MouseDevice), nameof(MouseDevice.GetPosition), new[] { typeof(IInputElement) })]
+	public static class PatchMouseDeviceGetPosition
+	{
+		public static bool Prefix(IInputElement relativeTo, ref Point __result)
+		{
+			if (TryGetSyntheticMousePosition(relativeTo, out var position))
+			{
+				__result = position;
+				return false;
+			}
+
+			return true;
+		}
+	}
+
+	[HarmonyPatch(typeof(MouseEventArgs), nameof(MouseEventArgs.GetPosition), new[] { typeof(IInputElement) })]
+	public static class PatchMouseEventArgsGetPosition
+	{
+		public static bool Prefix(IInputElement relativeTo, ref Point __result)
+		{
+			if (TryGetSyntheticMousePosition(relativeTo, out var position))
+			{
+				__result = position;
+				return false;
+			}
+
+			return true;
+		}
+	}
+
+	[HarmonyPatch(typeof(Mouse), nameof(Mouse.GetPosition), new[] { typeof(IInputElement) })]
+	public static class PatchMouseGetPosition
+	{
+		public static bool Prefix(IInputElement relativeTo, ref Point __result)
+		{
+			if (TryGetSyntheticMousePosition(relativeTo, out var position))
+			{
+				__result = position;
+				return false;
+			}
+
+			return true;
+		}
+	}
+
+	[HarmonyPatch(typeof(UIElement), nameof(UIElement.CaptureMouse), new Type[] { })]
+	public static class PatchUIElementCaptureMouse
+	{
+		public static bool Prefix(UIElement __instance, ref bool __result)
+		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
+			syntheticCapturedMouseElement = __instance;
+			__result = true;
+			return false;
+		}
+	}
+
+	[HarmonyPatch(typeof(UIElement), nameof(UIElement.ReleaseMouseCapture), new Type[] { })]
+	public static class PatchUIElementReleaseMouseCapture
+	{
+		public static bool Prefix(UIElement __instance)
+		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
+			if (ReferenceEquals(syntheticCapturedMouseElement, __instance))
+				syntheticCapturedMouseElement = null;
+			return false;
+		}
+	}
+
+	[HarmonyPatch(typeof(Mouse), nameof(Mouse.Capture), new[] { typeof(IInputElement) })]
+	public static class PatchMouseCapture
+	{
+		public static bool Prefix(IInputElement element, ref bool __result)
+		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
+			syntheticCapturedMouseElement = element;
+			__result = true;
+			return false;
+		}
+	}
+
+	[HarmonyPatch(typeof(Mouse), "get_Captured")]
+	public static class PatchMouseCaptured
+	{
+		public static bool Prefix(ref IInputElement? __result)
+		{
+			if (!IsSyntheticMouseInputActive || syntheticCapturedMouseElement is null)
+				return true;
+
+			__result = syntheticCapturedMouseElement;
+			return false;
+		}
+	}
+
+	[HarmonyPatch(typeof(UIElement), nameof(UIElement.InputHitTest), new[] { typeof(Point) })]
+	public static class PatchUIElementInputHitTest
+	{
+		public static bool Prefix(UIElement __instance, ref IInputElement? __result)
+		{
+			if (!IsSyntheticMouseInputActive || syntheticMouseHitTarget is not { } target)
+				return true;
+			if (!ContainsSyntheticHitTarget(__instance, target))
+				return true;
+
+			__result = target;
+			return false;
+		}
+	}
+
+	private static bool TryGetSyntheticMousePosition(IInputElement relativeTo, out Point position)
+	{
+		position = default;
+		if (!IsSyntheticMouseInputActive || syntheticMouseScreenPosition is not { } screenPosition)
+			return false;
+
+		if (relativeTo is not Visual visual)
+			return false;
+
+		position = visual.PointFromScreen(screenPosition);
+		return true;
+	}
+
+	private static bool ContainsSyntheticHitTarget(UIElement ancestor, IInputElement target)
+	{
+		if (ReferenceEquals(ancestor, target))
+			return true;
+		if (target is not DependencyObject current)
+			return false;
+
+		while (current is not null)
+		{
+			if (ReferenceEquals(current, ancestor))
+				return true;
+
+			var parent = default(DependencyObject);
+			try
+			{
+				parent = VisualTreeHelper.GetParent(current);
+			}
+			catch (InvalidOperationException)
+			{
+			}
+
+			current = parent ?? LogicalTreeHelper.GetParent(current);
+		}
+
+		return false;
 	}
 
 	[HarmonyPatch(typeof(ButtonBase), "UpdateIsPressed")]

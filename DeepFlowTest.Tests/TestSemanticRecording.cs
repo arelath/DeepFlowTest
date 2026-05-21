@@ -74,7 +74,7 @@ internal static class TestSemanticRecording
 		if (name.Length > 150)
 			name = name.Substring(0, 150);
 
-		return Path.Combine(directory, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{name}.json");
+		return Path.Combine(directory, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{name}.dft.txt");
 	}
 
 	internal static void ResetParameterProviderForTests() =>

@@ -139,6 +139,7 @@ public sealed class LibraryApiTests
 			IntervalMs = 60,
 			TextIdleMs = 123,
 			MaxBatchFrames = 7,
+			OutputFormat = SemanticRecordingOutputFormat.CompactJson,
 		}))
 		{
 			Assert.That(SpinWait.SpinUntil(() => recording.FramesWritten > 0, TimeSpan.FromSeconds(2)), Is.True);
@@ -173,6 +174,7 @@ public sealed class LibraryApiTests
 			IntervalMs = 60,
 			TextIdleMs = 123,
 			MaxBatchFrames = 7,
+			OutputFormat = SemanticRecordingOutputFormat.CompactJson,
 		}))
 		{
 		}
@@ -197,13 +199,13 @@ public sealed class LibraryApiTests
 		{
 			Assert.That(session.StartRequest, Is.Not.Null);
 			Assert.That(options.AutoSemanticRecordingOutputPath, Is.Not.Null);
-			Assert.That(Path.GetFileName(options.AutoSemanticRecordingOutputPath!), Does.EndWith(".json"));
-			Assert.That(SpinWait.SpinUntil(() => File.Exists(options.AutoSemanticRecordingOutputPath!) && ReadAllTextShared(options.AutoSemanticRecordingOutputPath!).Contains("\"kind\": \"action\"", StringComparison.Ordinal), TimeSpan.FromSeconds(2)), Is.True);
+			Assert.That(Path.GetFileName(options.AutoSemanticRecordingOutputPath!), Does.EndWith(".dft.txt"));
+			Assert.That(SpinWait.SpinUntil(() => File.Exists(options.AutoSemanticRecordingOutputPath!) && ReadAllTextShared(options.AutoSemanticRecordingOutputPath!).Contains("@1 action", StringComparison.Ordinal), TimeSpan.FromSeconds(2)), Is.True);
 		}
 
 		var recordingText = File.ReadAllText(options.AutoSemanticRecordingOutputPath!);
-		Assert.That(JArray.Parse(recordingText), Has.Count.GreaterThan(0));
-		Assert.That(recordingText, Does.Not.Contain("\"frameKind\""));
+		Assert.That(recordingText, Does.StartWith("dft-condensed/1 profile=agent source=compact-json"));
+		Assert.That(recordingText, Does.Contain("@1 action"));
 		Assert.That(session.SentCommands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
 	}
 
@@ -250,7 +252,7 @@ public sealed class LibraryApiTests
 	public void AutoSemanticRecordingOptionStartsStreamAndStopsWithDriver()
 	{
 		var session = new FakeSemanticRecordingCommandSession();
-		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-auto-semantic-recording.json");
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-auto-semantic-recording.dft.txt");
 		if (File.Exists(path))
 			File.Delete(path);
 		var options = new AppDriverOptions
@@ -270,10 +272,10 @@ public sealed class LibraryApiTests
 			Assert.That(session.StartRequest.IntervalMs, Is.EqualTo(75));
 			Assert.That(session.StartRequest.SemanticRecording!.TextIdleMs, Is.EqualTo(25));
 			Assert.That(session.StartRequest.SemanticRecording.MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
-			Assert.That(SpinWait.SpinUntil(() => File.Exists(path) && ReadAllTextShared(path).Contains("\"kind\": \"action\"", StringComparison.Ordinal), TimeSpan.FromSeconds(2)), Is.True);
+			Assert.That(SpinWait.SpinUntil(() => File.Exists(path) && ReadAllTextShared(path).Contains("@1 action", StringComparison.Ordinal), TimeSpan.FromSeconds(2)), Is.True);
 		}
 
-		Assert.That(File.ReadAllText(path), Does.Not.Contain("\"frameKind\""));
+		Assert.That(File.ReadAllText(path), Does.StartWith("dft-condensed/1 profile=agent source=compact-json"));
 		Assert.That(session.SentCommands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
 	}
 

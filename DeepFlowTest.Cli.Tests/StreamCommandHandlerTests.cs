@@ -134,11 +134,11 @@ public sealed class StreamCommandHandlerTests
 	}
 
 	[Test]
-	public void RecordSemanticWritesJsonArrayFramesAndStops()
+	public void RecordSemanticDefaultsToCondensedAgentFormatAndStops()
 	{
 		var session = new FakeAppSessionService();
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
-		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "semantic-recording.json");
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "semantic-recording.dft.txt");
 		if (File.Exists(path))
 			File.Delete(path);
 
@@ -146,15 +146,52 @@ public sealed class StreamCommandHandlerTests
 
 		Assert.That(result.ExitCode, Is.EqualTo(0));
 		Assert.That(result.Stdout, Does.Contain("\"framesWritten\""));
+		Assert.That(result.Stdout, Does.Contain("\"recordingFormat\":\"condensed-agent\""));
 		Assert.That(File.Exists(path), Is.True);
 		var recordingText = File.ReadAllText(path);
-		using var recordingJson = JsonDocument.Parse(recordingText);
-		Assert.That(recordingJson.RootElement.ValueKind, Is.EqualTo(JsonValueKind.Array));
-		Assert.That(recordingText, Does.Contain("\"frameKind\":\"recording-started\""));
+		Assert.That(recordingText, Does.StartWith("dft-condensed/1 profile=agent source=compact-json"));
+		Assert.That(recordingText, Does.Contain("@1 started"));
+		Assert.That(recordingText, Does.Contain("@2 action"));
+		Assert.That(recordingText, Does.Contain("> target Button [0002]"));
 		var start = session.Session.Commands.OfType<StartSendingCommandRequest>().Single();
 		Assert.That(start.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.SemanticRecording));
 		Assert.That(start.SemanticRecording!.TextIdleMs, Is.EqualTo(200));
 		Assert.That(start.SemanticRecording.MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 		Assert.That(session.Session.Commands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
+	}
+
+	[Test]
+	public void RecordSemanticCanStillWriteCompactJsonWhenRequested()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "semantic-recording.json");
+		if (File.Exists(path))
+			File.Delete(path);
+
+		var result = CliTestHost.Run(new[] { "record", "semantic", "--pid", "1234", "--out", path, "--recording-format", "compact-json", "--duration-ms", "120", "--interval-ms", "60" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("\"recordingFormat\":\"compact-json\""));
+		var recordingText = File.ReadAllText(path);
+		using var recordingJson = JsonDocument.Parse(recordingText);
+		Assert.That(recordingJson.RootElement.ValueKind, Is.EqualTo(JsonValueKind.Array));
+		Assert.That(recordingText, Does.Contain("\"kind\""));
+		Assert.That(recordingText, Does.Contain("recording-started"));
+	}
+
+	[Test]
+	public void StreamSemanticRecordingTextOutputUsesCondensedFormat()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "stream", "semantic-recording", "--pid", "1234", "--format", "text", "--duration-ms", "120", "--interval-ms", "60" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.StartWith("dft-condensed/1 profile=agent source=compact-json"));
+		Assert.That(result.Stdout, Does.Contain("@1 started"));
+		Assert.That(result.Stdout, Does.Contain("@2 action"));
+		Assert.That(result.Stdout, Does.Not.Contain("\"messageKind\""));
 	}
 }

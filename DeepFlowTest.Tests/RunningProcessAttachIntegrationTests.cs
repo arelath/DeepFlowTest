@@ -3,6 +3,7 @@ namespace DeepFlowTest.Tests;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -28,8 +29,11 @@ public sealed class RunningProcessAttachIntegrationTests
 		KnownProperties.Header,
 		KnownProperties.IsChecked,
 		KnownProperties.IsEnabled,
+		KnownProperties.IsExpanded,
+		KnownProperties.IsOpen,
 		KnownProperties.IsSubmenuOpen,
 		KnownProperties.IsVisible,
+		KnownProperties.Visibility,
 	];
 
 	[Test]
@@ -251,6 +255,114 @@ public sealed class RunningProcessAttachIntegrationTests
 	}
 
 	[Test]
+	public void InjectedDragDropProbeRoutesEnterLeaveAndDropToFinalTarget()
+	{
+		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
+		using var driver = AttachToHarness(harness.Process.Id, nameof(InjectedDragDropProbeRoutesEnterLeaveAndDropToFinalTarget));
+
+		FindByAutomationId(driver, "HelloWorldWindow").Invoke("RunInjectedDragDropProbe", allowUnsafeCode: true);
+
+		var log = WaitForElementTextContains(driver, "DragDropEventLog", "DragDropFinalTarget:Drop");
+		var logText = log.GetProperty<string>(KnownProperties.Text);
+		Assert.That(logText, Does.Contain("DragDropSource:InjectedStart"));
+		Assert.That(logText, Does.Contain("DragDropTransitTarget:MouseEnter"));
+		Assert.That(logText, Does.Contain("DragDropTransitTarget:DragEnter"));
+		Assert.That(logText, Does.Contain("DragDropTransitTarget:MouseLeave"));
+		Assert.That(logText, Does.Contain("DragDropTransitTarget:DragLeave"));
+		Assert.That(logText, Does.Contain("DragDropFinalTarget:MouseEnter"));
+		Assert.That(logText, Does.Contain("DragDropFinalTarget:DragEnter"));
+		Assert.That(logText, Does.Contain("DragDropFinalTarget:Drop"));
+		Assert.That(logText, Does.Contain("DragDropFinalTarget:MouseLeave"));
+		Assert.That(logText, Does.Not.Contain("DragDropTransitTarget:Drop"));
+		WaitForElementText(driver, "HelloWorldInput", "DragDropFinalTarget_Drop event triggered.");
+	}
+
+	[Test]
+	public void CliStreamSemanticRecordingTextUsesCondensedFormatInAttachedHarness()
+	{
+		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
+		var result = RunCli(
+			"stream",
+			"semantic-recording",
+			"--pid",
+			harness.Process.Id.ToString(CultureInfo.InvariantCulture),
+			"--format",
+			"text",
+			"--duration-ms",
+			"350",
+			"--interval-ms",
+			"100",
+			"--text-idle-ms",
+			"25",
+			"--max-batch-frames",
+			"20",
+			"--props",
+			string.Join(",", MatcherPropertyNames));
+
+		Assert.That(result.ExitCode, Is.EqualTo(0), result.Stderr);
+		Assert.That(result.Stdout, Does.StartWith("dft-condensed/1 profile=agent source=compact-json"));
+		Assert.That(result.Stdout, Does.Contain("@1 started"));
+		Assert.That(result.Stdout, Does.Contain("@2 snapshot"));
+		Assert.That(result.Stdout, Does.Match(@"(?m)^\s+Button \[[0-9a-f]+\] #HelloWorldButton\b"));
+		Assert.That(result.Stdout, Does.Contain(" checked"));
+		Assert.That(result.Stdout, Does.Contain(" !checked"));
+		Assert.That(result.Stdout, Does.Contain(" !expanded"));
+		Assert.That(result.Stdout, Does.Contain(" !open"));
+		Assert.That(result.Stdout, Does.Not.Contain("\"messageKind\""));
+		Assert.That(result.Stdout, Does.Not.Contain("checked=false"));
+	}
+
+	[Test]
+	public void SemanticRecordingWritesCondensedSnapshotAndDeltaInAttachedHarness()
+	{
+		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
+		var outputPath = Path.Combine(TestContext.CurrentContext.WorkDirectory, $"semantic-recording-{Guid.NewGuid():N}.dft.txt");
+		if (File.Exists(outputPath))
+			File.Delete(outputPath);
+
+		using var driver = AttachToHarness(harness.Process.Id, nameof(SemanticRecordingWritesCondensedSnapshotAndDeltaInAttachedHarness), enableTestRecording: false);
+		const string expectedEventText = "HelloWorldButton_Click event triggered.";
+
+		using (driver.StartSemanticRecording(outputPath, new SemanticRecordingOptions
+		{
+			IntervalMs = 100,
+			TextIdleMs = 25,
+			MaxBatchFrames = 20,
+			PropNames = MatcherPropertyNames,
+			TimeoutMs = 30_000,
+		}))
+		{
+			Assert.That(
+				SpinWait.SpinUntil(() => RecordingTextContains(outputPath, "dft-condensed/1", "@2 snapshot", "#HelloWorldButton"), TimeSpan.FromSeconds(10)),
+				Is.True,
+				"Semantic recording did not write the initial condensed harness snapshot.");
+
+			FindByAutomationId(driver, "HelloWorldButton").Click();
+			WaitForElementText(driver, "HelloWorldInput", expectedEventText);
+
+			Assert.That(
+				SpinWait.SpinUntil(() => RecordingTextContains(outputPath, "delta", "#HelloWorldInput", expectedEventText), TimeSpan.FromSeconds(10)),
+				Is.True,
+				"Semantic recording did not write a condensed delta after the harness UI changed.");
+		}
+
+		var text = ReadRecordingTextShared(outputPath);
+		Assert.That(text, Does.StartWith("dft-condensed/1 profile=agent source=compact-json"));
+		Assert.That(text, Does.Contain("@1 started"));
+		Assert.That(text, Does.Match(@"(?m)^\s+Button \[[0-9a-f]+\] #HelloWorldButton\b"));
+		Assert.That(text, Does.Match(@"(?m)^@\d+ delta\b"));
+		Assert.That(text, Does.Match(@"(?m)^\* TextBox \[[0-9a-f]+\] #HelloWorldInput\b.*text=""HelloWorldButton_Click event triggered\."""));
+		Assert.That(text, Does.Contain(" checked"));
+		Assert.That(text, Does.Contain(" !checked"));
+		Assert.That(text, Does.Contain(" !expanded"));
+		Assert.That(text, Does.Contain(" !open"));
+		Assert.That(text, Does.Not.Contain("[3e=dft-target-3e]"));
+		Assert.That(text, Does.Not.Contain("checked=true"));
+		Assert.That(text, Does.Not.Contain("checked=false"));
+		Assert.That(text, Does.Not.Contain("expanded=false"));
+	}
+
+	[Test]
 	public void SemanticRecordingWritesJsonSnapshotAndDeltaInAttachedHarness()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
@@ -268,6 +380,7 @@ public sealed class RunningProcessAttachIntegrationTests
 			MaxBatchFrames = 20,
 			PropNames = MatcherPropertyNames,
 			TimeoutMs = 30_000,
+			OutputFormat = SemanticRecordingOutputFormat.CompactJson,
 		}))
 		{
 			Assert.That(
@@ -366,6 +479,13 @@ public sealed class RunningProcessAttachIntegrationTests
 			timeoutMs: 30_000,
 			propNames: MatcherPropertyNames);
 
+	private static Element WaitForElementTextContains(AppDriver driver, string automationId, string expectedTextPart) =>
+		driver.GetElement(
+			element => element[KnownProperties.AutomationId] == automationId
+				&& element[KnownProperties.Text].ToString().Contains(expectedTextPart),
+			timeoutMs: 30_000,
+			propNames: MatcherPropertyNames);
+
 	private static Element WaitForMenuHeaderOpen(AppDriver driver) =>
 		driver.GetElement(
 			element => element[KnownProperties.AutomationId] == "MenuHeader" && element[KnownProperties.IsSubmenuOpen] == true,
@@ -386,6 +506,22 @@ public sealed class RunningProcessAttachIntegrationTests
 		catch (JsonException)
 		{
 			return false;
+		}
+		catch (IOException)
+		{
+			return false;
+		}
+	}
+
+	private static bool RecordingTextContains(string outputPath, params string[] expectedParts)
+	{
+		if (!File.Exists(outputPath))
+			return false;
+
+		try
+		{
+			var text = ReadRecordingTextShared(outputPath);
+			return expectedParts.All(part => text.Contains(part, StringComparison.Ordinal));
 		}
 		catch (IOException)
 		{
@@ -418,9 +554,7 @@ public sealed class RunningProcessAttachIntegrationTests
 
 	private static IEnumerable<JObject> ReadRecordingFramesShared(string outputPath, bool allowPartial = false)
 	{
-		using var stream = new FileStream(outputPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-		using var reader = new StreamReader(stream);
-		var text = reader.ReadToEnd();
+		var text = ReadRecordingTextShared(outputPath);
 		if (string.IsNullOrWhiteSpace(text))
 			return [];
 		if (allowPartial && !text.TrimEnd().EndsWith("]", StringComparison.Ordinal))
@@ -429,6 +563,13 @@ public sealed class RunningProcessAttachIntegrationTests
 		return JArray.Parse(text)
 			.OfType<JObject>()
 			.ToArray();
+	}
+
+	private static string ReadRecordingTextShared(string outputPath)
+	{
+		using var stream = new FileStream(outputPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+		using var reader = new StreamReader(stream);
+		return reader.ReadToEnd();
 	}
 
 	private static string? RecordingKind(JObject frame) =>
@@ -526,6 +667,52 @@ public sealed class RunningProcessAttachIntegrationTests
 			"HelloWorld.exe");
 
 		Assert.That(File.Exists(path), Is.True, $"HelloWorld harness was not found at '{path}'. Build CompileTestHarnesses first.");
+		return path;
+	}
+
+	private static (int ExitCode, string Stdout, string Stderr) RunCli(params string[] args)
+	{
+		var cliPath = ResolveCliDllPath();
+		var startInfo = new ProcessStartInfo("dotnet")
+		{
+			UseShellExecute = false,
+			RedirectStandardOutput = true,
+			RedirectStandardError = true,
+			WorkingDirectory = Path.GetDirectoryName(cliPath)!,
+		};
+		startInfo.ArgumentList.Add(cliPath);
+		foreach (var arg in args)
+			startInfo.ArgumentList.Add(arg);
+
+		using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start '{cliPath}'.");
+		var stdout = process.StandardOutput.ReadToEndAsync();
+		var stderr = process.StandardError.ReadToEndAsync();
+		if (!process.WaitForExit(60_000))
+		{
+			try
+			{
+				process.Kill(entireProcessTree: true);
+			}
+			catch (InvalidOperationException)
+			{
+			}
+
+			Assert.Fail($"CLI did not exit within 60 seconds. Stderr so far: {stderr.GetAwaiter().GetResult()}");
+		}
+
+		return (process.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
+	}
+
+	private static string ResolveCliDllPath()
+	{
+		var path = Path.Combine(
+			FindRepositoryRoot(),
+			"bin",
+			"Debug",
+			"net8.0-windows",
+			"DeepFlowTest.Cli.dll");
+
+		Assert.That(File.Exists(path), Is.True, $"DeepFlowTest CLI was not found at '{path}'. Run '.\\build.ps1 Compile' before integration tests.");
 		return path;
 	}
 

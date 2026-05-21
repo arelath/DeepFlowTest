@@ -14,6 +14,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using DeepFlowTest.AppDriverPayload;
+using DeepFlowTest.AppDriverPayload.Commands.TargetAdapters;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using NUnit.Framework;
@@ -768,6 +769,382 @@ public sealed class TargetActionCommandTests
 			Assert.That(response.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.UnsupportedTarget));
 			Assert.That(response.Error, Does.Contain("source target"));
 			Assert.That(response.Error, Does.Contain("not enabled"));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void WpfPointerTargetAppliesAncestorScaleTransform()
+	{
+		var dropTarget = new Border
+		{
+			Name = "scaledDropTarget",
+			Width = 40,
+			Height = 20,
+			Background = Brushes.SteelBlue,
+		};
+		var graphArea = new Canvas
+		{
+			Width = 200,
+			Height = 100,
+			RenderTransform = new ScaleTransform(0.5, 0.5),
+		};
+		Canvas.SetLeft(dropTarget, 20);
+		Canvas.SetTop(dropTarget, 10);
+		graphArea.Children.Add(dropTarget);
+
+		var graphContainer = new Canvas
+		{
+			Width = 300,
+			Height = 200,
+		};
+		graphContainer.Children.Add(graphArea);
+		var window = CreateWindow("Scaled drag target", graphContainer, width: 360, height: 260);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			DoEvents();
+
+			var result = new WpfTargetAdapter().GetPointerTarget(dropTarget, new PointerAnchor(0.5, 0.5));
+
+			Assert.That(result.Success, Is.True, result.Error);
+			Assert.That(result.Value, Is.Not.Null);
+			var actualContainerPoint = graphContainer.PointFromScreen(new Point(result.Value!.ScreenX, result.Value.ScreenY));
+			Assert.That(actualContainerPoint.X, Is.EqualTo((20 + 40 * 0.5) * 0.5).Within(1.0));
+			Assert.That(actualContainerPoint.Y, Is.EqualTo((10 + 20 * 0.5) * 0.5).Within(1.0));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void InjectedDragAndDropUsesScaledWpfHitTesting()
+	{
+		var source = new Border
+		{
+			Name = "scaledGraphSource",
+			Width = 40,
+			Height = 20,
+			Background = Brushes.SteelBlue,
+		};
+		var destination = new Border
+		{
+			Name = "scaledGraphDestination",
+			Width = 60,
+			Height = 30,
+			Background = Brushes.SeaGreen,
+		};
+		var graphArea = new Canvas
+		{
+			Width = 300,
+			Height = 200,
+			RenderTransform = new ScaleTransform(0.5, 0.5),
+		};
+		Canvas.SetLeft(source, 20);
+		Canvas.SetTop(source, 10);
+		Canvas.SetLeft(destination, 160);
+		Canvas.SetTop(destination, 80);
+		graphArea.Children.Add(source);
+		graphArea.Children.Add(destination);
+
+		var graphContainer = new Canvas
+		{
+			Name = "scaledGraphContainer",
+			Width = 300,
+			Height = 200,
+			Background = Brushes.Transparent,
+		};
+		graphContainer.Children.Add(graphArea);
+
+		var active = false;
+		var candidateDestination = false;
+		var completed = false;
+		var mouseCaptureSucceeded = false;
+		var lastMove = default(Point);
+		graphContainer.MouseDown += (_, e) =>
+		{
+			mouseCaptureSucceeded = graphContainer.CaptureMouse();
+			active = mouseCaptureSucceeded && ReferenceEquals(graphContainer.InputHitTest(e.GetPosition(graphContainer)), source);
+			e.Handled = active;
+		};
+		graphContainer.MouseMove += (_, e) =>
+		{
+			if (!active)
+				return;
+
+			lastMove = e.GetPosition(graphContainer);
+			candidateDestination = ReferenceEquals(graphContainer.InputHitTest(lastMove), destination);
+			e.Handled = true;
+		};
+		graphContainer.MouseUp += (_, e) =>
+		{
+			if (!active || e.ChangedButton != MouseButton.Left)
+				return;
+
+			completed = candidateDestination;
+			active = false;
+			graphContainer.ReleaseMouseCapture();
+			e.Handled = true;
+		};
+
+		var window = CreateWindow("Injected scaled graph drag", graphContainer, width: 360, height: 260);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			DoEvents();
+			var sourceId = FindTargetId("scaledGraphSource");
+			var destinationId = FindTargetId("scaledGraphDestination");
+
+			AssertOk(CaptureResponse(new DragAndDropCommandRequest
+			{
+				TargetId = sourceId,
+				DestinationTargetId = destinationId,
+				DurationMs = 120,
+				StepIntervalMs = 20,
+				UseInjectedEvents = true,
+				EnsureForeground = false,
+				ValidateSameProcess = false,
+			}));
+
+			Assert.That(mouseCaptureSucceeded, Is.True);
+			Assert.That(completed, Is.True);
+			Assert.That(lastMove.X, Is.EqualTo((160 + 60 * 0.5) * 0.5).Within(1.0));
+			Assert.That(lastMove.Y, Is.EqualTo((80 + 30 * 0.5) * 0.5).Within(1.0));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void InjectedDragAndDropUsesTransformedDestinationInWideScaledGraph()
+	{
+		var source = new Border
+		{
+			Name = "wideScaledGraphSource",
+			Width = 160,
+			Height = 80,
+			Background = Brushes.SteelBlue,
+		};
+		var destination = new Border
+		{
+			Name = "wideScaledGraphDestination",
+			Width = 100,
+			Height = 80,
+			Background = Brushes.SeaGreen,
+		};
+		var graphArea = new Canvas
+		{
+			Width = 2_000,
+			Height = 1_200,
+			RenderTransform = new ScaleTransform(0.5, 0.5),
+		};
+		Canvas.SetLeft(source, 0);
+		Canvas.SetTop(source, 120);
+		Canvas.SetLeft(destination, 1_400);
+		Canvas.SetTop(destination, 600);
+		graphArea.Children.Add(source);
+		graphArea.Children.Add(destination);
+
+		var graphContainer = new Canvas
+		{
+			Name = "wideScaledGraphContainer",
+			Width = 800,
+			Height = 700,
+			Background = Brushes.Transparent,
+			ClipToBounds = true,
+		};
+		graphContainer.Children.Add(graphArea);
+
+		var siblingPanel = new Border
+		{
+			Name = "siblingPanel",
+			Width = 700,
+			Height = 700,
+			Background = Brushes.IndianRed,
+		};
+		var root = new StackPanel { Orientation = Orientation.Horizontal };
+		root.Children.Add(graphContainer);
+		root.Children.Add(siblingPanel);
+
+		var active = false;
+		var completed = false;
+		var candidateDestination = false;
+		var lastMove = default(Point);
+		graphContainer.MouseDown += (_, e) =>
+		{
+			active = graphContainer.CaptureMouse()
+				&& ReferenceEquals(graphContainer.InputHitTest(e.GetPosition(graphContainer)), source);
+			e.Handled = active;
+		};
+		graphContainer.MouseMove += (_, e) =>
+		{
+			if (!active)
+				return;
+
+			lastMove = e.GetPosition(graphContainer);
+			candidateDestination = ReferenceEquals(graphContainer.InputHitTest(lastMove), destination);
+			e.Handled = true;
+		};
+		graphContainer.MouseUp += (_, e) =>
+		{
+			if (!active || e.ChangedButton != MouseButton.Left)
+				return;
+
+			completed = candidateDestination;
+			active = false;
+			graphContainer.ReleaseMouseCapture();
+			e.Handled = true;
+		};
+
+		var window = CreateWindow("Wide scaled graph drag", root, width: 1_600, height: 760);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			DoEvents();
+			var sourceId = FindTargetId("wideScaledGraphSource");
+			var destinationId = FindTargetId("wideScaledGraphDestination");
+			var destinationPointer = new WpfTargetAdapter().GetPointerTarget(destination, new PointerAnchor(0.5, 0.5));
+
+			Assert.That(destinationPointer.Success, Is.True, destinationPointer.Error);
+			Assert.That(destinationPointer.Value, Is.Not.Null);
+			var rootHit = root.InputHitTest(root.PointFromScreen(new Point(destinationPointer.Value!.ScreenX, destinationPointer.Value.ScreenY)));
+			Assert.That(rootHit, Is.SameAs(destination));
+
+			AssertOk(CaptureResponse(new DragAndDropCommandRequest
+			{
+				TargetId = sourceId,
+				DestinationTargetId = destinationId,
+				DurationMs = 120,
+				StepIntervalMs = 20,
+				SourceAnchorX = 0.25,
+				SourceAnchorY = 0.5,
+				DestinationAnchorX = 0.5,
+				DestinationAnchorY = 0.5,
+				UseInjectedEvents = true,
+				EnsureForeground = false,
+				ValidateSameProcess = false,
+			}));
+
+			var untransformedDestinationPoint = Canvas.GetLeft(destination) + destination.Width * 0.5;
+			Assert.That(untransformedDestinationPoint, Is.GreaterThan(graphContainer.Width), "An unscaled graph coordinate would have dropped outside the graph.");
+			Assert.That(completed, Is.True);
+			Assert.That(lastMove.X, Is.EqualTo((1_400 + 100 * 0.5) * 0.5).Within(1.0));
+			Assert.That(lastMove.Y, Is.EqualTo((600 + 80 * 0.5) * 0.5).Within(1.0));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void InjectedDragAndDropUsesTargetElementForAncestorHitTesting()
+	{
+		var source = new Border
+		{
+			Name = "targetHitTestDragSource",
+			Width = 40,
+			Height = 40,
+			Background = Brushes.SteelBlue,
+		};
+		var destination = new Border
+		{
+			Name = "targetHitTestDragDestination",
+			Width = 60,
+			Height = 60,
+			Background = Brushes.SeaGreen,
+		};
+		var overlay = new Border
+		{
+			Name = "targetHitTestOverlay",
+			Width = 90,
+			Height = 90,
+			Background = Brushes.IndianRed,
+		};
+		var graphContainer = new Canvas
+		{
+			Name = "targetHitTestGraphContainer",
+			Width = 360,
+			Height = 220,
+			Background = Brushes.Transparent,
+		};
+		Canvas.SetLeft(source, 20);
+		Canvas.SetTop(source, 20);
+		Canvas.SetLeft(destination, 200);
+		Canvas.SetTop(destination, 80);
+		Canvas.SetLeft(overlay, 185);
+		Canvas.SetTop(overlay, 65);
+		graphContainer.Children.Add(source);
+		graphContainer.Children.Add(destination);
+		graphContainer.Children.Add(overlay);
+
+		var active = false;
+		var candidateDestination = false;
+		var completed = false;
+		graphContainer.MouseDown += (_, e) =>
+		{
+			active = graphContainer.CaptureMouse()
+				&& ReferenceEquals(graphContainer.InputHitTest(e.GetPosition(graphContainer)), source);
+			e.Handled = active;
+		};
+		graphContainer.MouseMove += (_, e) =>
+		{
+			if (!active)
+				return;
+
+			candidateDestination = ReferenceEquals(graphContainer.InputHitTest(e.GetPosition(graphContainer)), destination);
+			e.Handled = true;
+		};
+		graphContainer.MouseUp += (_, e) =>
+		{
+			if (!active || e.ChangedButton != MouseButton.Left)
+				return;
+
+			completed = candidateDestination;
+			active = false;
+			graphContainer.ReleaseMouseCapture();
+			e.Handled = true;
+		};
+
+		var window = CreateWindow("Target-directed injected graph drag", graphContainer, width: 420, height: 280);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			DoEvents();
+
+			var nativeDestinationPoint = destination.TranslatePoint(new Point(destination.Width * 0.5, destination.Height * 0.5), graphContainer);
+			Assert.That(graphContainer.InputHitTest(nativeDestinationPoint), Is.SameAs(overlay), "The local repro should prove normal hit-testing would select the wrong visual.");
+
+			var sourceId = FindTargetId("targetHitTestDragSource");
+			var destinationId = FindTargetId("targetHitTestDragDestination");
+
+			AssertOk(CaptureResponse(new DragAndDropCommandRequest
+			{
+				TargetId = sourceId,
+				DestinationTargetId = destinationId,
+				DurationMs = 120,
+				StepIntervalMs = 20,
+				UseInjectedEvents = true,
+				EnsureForeground = false,
+				ValidateSameProcess = false,
+			}));
+
+			Assert.That(completed, Is.True);
 		}
 		finally
 		{

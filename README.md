@@ -9,7 +9,7 @@ local build and test commands.
 
 ## Semantic Recordings for Tests
 
-`AppDriver` writes semantic recording JSON files automatically while it is
+`AppDriver` writes condensed semantic recording files automatically while it is
 attached to a target. This is on by default so a failing run leaves a readable
 UX trace without needing to remember an opt-in switch.
 
@@ -26,10 +26,10 @@ dotnet test .\DeepFlowTest.Tests\DeepFlowTest.Tests.csproj --filter "FullyQualif
 .\fasttest.ps1 core -Filter "FullyQualifiedName~RunningProcessAttachIntegrationTests" -NoTestRecordings
 ```
 
-Each generated `.json` file is a JSON array containing a `recording-started` frame, the initial
-visual tree snapshot, and later UI deltas or recorded input actions. Semantic
-recordings are compact by default for both `StartSemanticRecording(...)` and
-test recordings: missing-property entries, empty values, layout-only nodes,
-framework/runtime internals, child ID lists, HWNDs, and default `enabled: true`
-/ `visible: true` state are omitted. Snapshot nodes are nested under `children`,
-and changed delta nodes report only their changed properties under `changes`.
+Each generated `.dft.txt` file uses the condensed agent format: a line-oriented
+recording with short target IDs, user actions, selector hints, the initial
+visual tree snapshot, and later UI deltas. Missing-property entries, empty
+values, layout-only nodes, framework/runtime internals, child ID lists, HWNDs,
+and default visible/enabled state are omitted so the trace stays compact. Set
+`SemanticRecordingOptions.OutputFormat = SemanticRecordingOutputFormat.CompactJson`
+or use `record semantic --recording-format compact-json` when JSON is needed.

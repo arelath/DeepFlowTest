@@ -5,6 +5,8 @@ using DeepFlowTest.Contracts;
 
 public sealed class SemanticRecordingOptions
 {
+	private SemanticRecordingOutputFormat outputFormat = SemanticRecordingOutputFormat.CondensedAgent;
+
 	public int IntervalMs { get; set; } = TimeoutDefaults.StreamIntervalMs;
 
 	public IReadOnlyList<string>? PropNames { get; set; }
@@ -23,5 +25,15 @@ public sealed class SemanticRecordingOptions
 
 	public int? TimeoutMs { get; set; }
 
-	public bool CompactOutput { get; set; } = true;
+	public SemanticRecordingOutputFormat OutputFormat
+	{
+		get => outputFormat;
+		set => outputFormat = value;
+	}
+
+	public bool CompactOutput
+	{
+		get => outputFormat == SemanticRecordingOutputFormat.CompactJson;
+		set => outputFormat = value ? SemanticRecordingOutputFormat.CompactJson : SemanticRecordingOutputFormat.RawJson;
+	}
 }

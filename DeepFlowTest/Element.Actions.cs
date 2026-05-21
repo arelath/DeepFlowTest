@@ -182,6 +182,7 @@ public partial class Element
 		request.SourceAnchorY = options.SourceAnchorY;
 		request.DestinationAnchorX = options.DestinationAnchorX;
 		request.DestinationAnchorY = options.DestinationAnchorY;
+		request.UseInjectedEvents = options.UseInjectedEvents;
 		request.EnsureForeground = options.EnsureForeground;
 		request.ValidateSameProcess = options.ValidateSameProcess;
 		request.TimeoutMs = options.TimeoutMs;

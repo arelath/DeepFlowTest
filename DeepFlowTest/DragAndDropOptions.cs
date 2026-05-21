@@ -18,6 +18,8 @@ public sealed class DragAndDropOptions
 
 	public double DestinationAnchorY { get; set; } = 0.5;
 
+	public bool UseInjectedEvents { get; set; }
+
 	public bool EnsureForeground { get; set; } = true;
 
 	public bool ValidateSameProcess { get; set; } = true;
