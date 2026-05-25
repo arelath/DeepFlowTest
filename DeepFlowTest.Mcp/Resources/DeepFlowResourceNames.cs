@@ -9,4 +9,5 @@ internal static class DeepFlowResourceNames
 	public const string LatestScreenshot = "deepflow://latest/screenshot";
 	public const string LatestBindingFailures = "deepflow://latest/binding-failures";
 	public const string RecentLogs = "deepflow://logs/recent";
+	public const string RecentActivity = "deepflow://activity/recent";
 }

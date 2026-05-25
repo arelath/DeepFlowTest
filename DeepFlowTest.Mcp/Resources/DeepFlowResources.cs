@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -98,4 +99,9 @@ internal static class DeepFlowResources
 	[Description("Recent MCP tool failures captured in memory.")]
 	public static string RecentLogs(IServiceProvider services) =>
 		services.GetRequiredService<DeepFlowResourceStore>().ReadText(DeepFlowResourceNames.RecentLogs);
+
+	[McpServerResource(Name = "deepflow_recent_activity", UriTemplate = DeepFlowResourceNames.RecentActivity, MimeType = "application/json")]
+	[Description("Recent MCP server, target, tool, stream, and resource activity captured in memory.")]
+	public static string RecentActivity(IServiceProvider services) =>
+		JsonSerializer.Serialize(services.GetRequiredService<McpActivityStore>().Snapshot(), JsonOptions);
 }

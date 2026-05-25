@@ -2,88 +2,103 @@ namespace DeepFlowTest.Mcp.Tests;
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Threading;
+using System.Net;
+using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
 using DeepFlowTest.Mcp.Resources;
-using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 using NUnit.Framework;
 
 [TestFixture]
 public sealed class McpServerProcessTests
 {
 	[Test]
-	public void ServerStartupDoesNotWriteDiagnosticsToStdout()
+	public async Task ServerStartsAsDesktopHttpAppAndWritesEndpointFile()
 	{
-		var executablePath = Path.Combine(TestContext.CurrentContext.TestDirectory, "DeepFlowTest.Mcp.exe");
-		Assert.That(File.Exists(executablePath), Is.True, "The MCP apphost must be present in the test output directory.");
+		await using var mcp = await McpEndToEndHarness.StartAsync();
+		await mcp.PingAsync();
 
-		using var process = Process.Start(new ProcessStartInfo
-		{
-			FileName = executablePath,
-			UseShellExecute = false,
-			RedirectStandardInput = true,
-			RedirectStandardOutput = true,
-			RedirectStandardError = true,
-			CreateNoWindow = true,
-		});
-		Assert.That(process, Is.Not.Null);
-
-		process!.StandardInput.Close();
-		if (!process.WaitForExit(3_000))
-		{
-			process.Kill(entireProcessTree: true);
-			Assert.Fail("MCP server did not exit after stdin was closed.");
-		}
-
-		var stdout = process.StandardOutput.ReadToEnd();
-		Assert.That(stdout, Is.Empty);
+		using var document = JsonDocument.Parse(File.ReadAllText(mcp.EndpointFilePath));
+		var root = document.RootElement;
+		Assert.That(root.GetProperty("streamableHttpUrl").GetString(), Is.EqualTo(mcp.Endpoint.ToString().TrimEnd('/')));
+		Assert.That(root.GetProperty("legacySseUrl").ValueKind, Is.EqualTo(JsonValueKind.Null));
+		Assert.That(root.GetProperty("processId").GetInt32(), Is.EqualTo(mcp.ServerProcessId));
+		Assert.That(root.GetProperty("startedAtUtc").GetDateTimeOffset(), Is.LessThanOrEqualTo(DateTimeOffset.UtcNow));
 	}
 
 	[Test]
 	public async Task ServerInitializesThroughMcpClient()
 	{
-		var executablePath = Path.Combine(TestContext.CurrentContext.TestDirectory, "DeepFlowTest.Mcp.exe");
-		Assert.That(File.Exists(executablePath), Is.True, "The MCP apphost must be present in the test output directory.");
+		await using var mcp = await McpEndToEndHarness.StartAsync();
 
-		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-		await using var client = await McpClient.CreateAsync(
-			new StdioClientTransport(
-				new StdioClientTransportOptions
-				{
-					Command = executablePath,
-					WorkingDirectory = TestContext.CurrentContext.TestDirectory,
-					ShutdownTimeout = TimeSpan.FromSeconds(2),
-				},
-				NullLoggerFactory.Instance),
-			clientOptions: null,
-			loggerFactory: NullLoggerFactory.Instance,
-			cancellationToken: cts.Token);
+		await mcp.PingAsync();
 
-		await client.PingAsync(cancellationToken: cts.Token);
-
-		var tools = await client.ListToolsAsync(cancellationToken: cts.Token);
+		var tools = await mcp.ListToolsAsync();
 		Assert.That(tools.Select(static tool => tool.Name), Does.Contain("deepflow_target_status"));
+		Assert.That(tools.Select(static tool => tool.Name), Does.Contain("deepflow_configure_diagnostics"));
 		AssertTargetToolSchemasAreClientFriendly(tools);
 
-		var status = await client.CallToolAsync("deepflow_target_status", cancellationToken: cts.Token);
-		Assert.That(status.IsError, Is.Not.True);
-		await AssertTargetToolsCanBeCalled(client, cts.Token);
+		var status = await mcp.CallAsync("deepflow_target_status");
+		Assert.That(status.Success, Is.True);
+		await AssertTargetToolsCanBeCalled(mcp);
 
-		var prompts = await client.ListPromptsAsync(cancellationToken: cts.Token);
+		var prompts = await mcp.ListPromptsAsync();
 		Assert.That(prompts.Select(static prompt => prompt.Name), Does.Contain("inspect_ui"));
 
-		var promptResult = await client.GetPromptAsync("inspect_ui", cancellationToken: cts.Token);
+		var promptResult = await mcp.GetPromptAsync("inspect_ui");
 		Assert.That(promptResult.Messages, Is.Not.Empty);
 
-		var resources = await client.ListResourcesAsync(cancellationToken: cts.Token);
+		var resources = await mcp.ListResourcesAsync();
 		Assert.That(resources.Select(static resource => resource.Uri?.ToString()), Does.Contain(DeepFlowResourceNames.TargetStatus));
+		Assert.That(resources.Select(static resource => resource.Uri?.ToString()), Does.Contain(DeepFlowResourceNames.RecentActivity));
 
-		var resourceResult = await client.ReadResourceAsync(DeepFlowResourceNames.TargetStatus, cancellationToken: cts.Token);
+		var resourceResult = await mcp.ReadResourceAsync(DeepFlowResourceNames.TargetStatus);
 		Assert.That(resourceResult.Contents, Is.Not.Empty);
+	}
+
+	[Test]
+	public async Task RecentActivityResourceCapturesHttpToolCalls()
+	{
+		await using var mcp = await McpEndToEndHarness.StartAsync();
+
+		await mcp.CallOkAsync("deepflow_target_status");
+		var resourceResult = await mcp.ReadResourceAsync(DeepFlowResourceNames.RecentActivity);
+		var text = ReadResourceText(resourceResult);
+
+		Assert.That(text, Does.Contain("tool.start"));
+		Assert.That(text, Does.Contain("tool.success"));
+		Assert.That(text, Does.Contain("TargetStatus"));
+	}
+
+	[Test]
+	public async Task HttpServerRejectsNonLoopbackHostHeader()
+	{
+		await using var mcp = await McpEndToEndHarness.StartAsync();
+		using var client = new HttpClient();
+		using var request = new HttpRequestMessage(HttpMethod.Get, mcp.Endpoint);
+		request.Headers.Host = "example.com";
+
+		using var response = await client.SendAsync(request);
+
+		Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+	}
+
+	[Test]
+	public async Task HttpServerRejectsDisallowedBrowserOrigin()
+	{
+		await using var mcp = await McpEndToEndHarness.StartAsync();
+		using var client = new HttpClient();
+		using var request = new HttpRequestMessage(HttpMethod.Get, mcp.Endpoint);
+		request.Headers.Add("Origin", "https://example.com");
+
+		using var response = await client.SendAsync(request);
+
+		Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+		Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("Origin is not allowed"));
 	}
 
 	private static void AssertTargetToolSchemasAreClientFriendly(IList<McpClientTool> tools)
@@ -112,7 +127,7 @@ public sealed class McpServerProcessTests
 		}
 	}
 
-	private static async Task AssertTargetToolsCanBeCalled(McpClient client, CancellationToken cancellationToken)
+	private static async Task AssertTargetToolsCanBeCalled(McpEndToEndHarness mcp)
 	{
 		var calls = new (string Name, IReadOnlyDictionary<string, object?> Arguments)[]
 		{
@@ -126,8 +141,20 @@ public sealed class McpServerProcessTests
 
 		foreach (var call in calls)
 		{
-			var result = await client.CallToolAsync(call.Name, call.Arguments, cancellationToken: cancellationToken);
-			Assert.That(result.IsError, Is.Not.True, $"Tool '{call.Name}' should return a structured DeepFlowTest result instead of an MCP-level error.");
+			var result = await mcp.CallAsync(call.Name, call.Arguments);
+			Assert.That(result.Payload.ValueKind, Is.Not.EqualTo(System.Text.Json.JsonValueKind.Undefined), $"Tool '{call.Name}' should return a structured DeepFlowTest result instead of an MCP-level error.");
 		}
+	}
+
+	private static string ReadResourceText(ReadResourceResult result)
+	{
+		foreach (var content in result.Contents)
+		{
+			if (content is TextResourceContents textContent)
+				return textContent.Text;
+		}
+
+		Assert.Fail("Expected a text resource result.");
+		return string.Empty;
 	}
 }

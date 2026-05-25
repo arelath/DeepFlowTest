@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -17,13 +18,20 @@ internal sealed class DeepFlowResourceStore
 
 	private readonly object gate = new();
 	private readonly IOptions<McpServerOptions> options;
+	private readonly IMcpActivitySink? activity;
 	private readonly Dictionary<string, ResourceEntry> entries = [];
 	private readonly Queue<ResourceLogEntry> logs = [];
 	private long sequence;
 
 	public DeepFlowResourceStore(IOptions<McpServerOptions> options)
+		: this(options, activity: null)
+	{
+	}
+
+	public DeepFlowResourceStore(IOptions<McpServerOptions> options, IMcpActivitySink? activity)
 	{
 		this.options = options ?? throw new ArgumentNullException(nameof(options));
+		this.activity = activity;
 	}
 
 	public DeepFlowResourceReference StoreJson(string uri, object? data, string mimeType = "application/json") =>
@@ -53,6 +61,15 @@ internal sealed class DeepFlowResourceStore
 		{
 			var reference = new DeepFlowResourceReference(uri, mimeType, DateTimeOffset.UtcNow);
 			entries[uri] = new ResourceEntry(reference, text);
+			activity?.Publish(new McpActivityEvent
+			{
+				Source = "server",
+				Kind = "resource.store",
+				Name = uri,
+				Status = "success",
+				Summary = mimeType,
+				Details = new { uri, mimeType, byteCount = text.Length },
+			});
 			return reference;
 		}
 	}
@@ -110,6 +127,7 @@ internal sealed class DeepFlowResourceStore
 		"deepflow_invoke_operation",
 		"deepflow_raise_event",
 		"deepflow_capture_screenshot",
+		"deepflow_configure_diagnostics",
 		"deepflow_start_stream",
 		"deepflow_read_stream",
 		"deepflow_stop_stream",

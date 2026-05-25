@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <RootNamespace>DeepFlowTest.Mcp</RootNamespace>
     <AssemblyName>DeepFlowTest.Mcp</AssemblyName>
     <IsPackable>false</IsPackable>
@@ -11,9 +12,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" />
     <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <ProjectReference Include="..\DeepFlowTest\DeepFlowTest.csproj" />
     <ProjectReference Include="..\DeepFlowTest.Cli\DeepFlowTest.Cli.csproj" />
   </ItemGroup>

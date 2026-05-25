@@ -1,9 +1,12 @@
 namespace DeepFlowTest.Mcp.Hosting;
 
 using System;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Contracts;
 using DeepFlowTest.Mcp.Resources;
 using Microsoft.Extensions.Logging;
@@ -13,30 +16,56 @@ internal sealed class McpToolRunner
 	private readonly McpSessionHost sessionHost;
 	private readonly DeepFlowResourceStore resources;
 	private readonly ILogger<McpToolRunner> logger;
+	private readonly IMcpActivitySink? activity;
 
 	public McpToolRunner(McpSessionHost sessionHost, DeepFlowResourceStore resources, ILogger<McpToolRunner> logger)
+		: this(sessionHost, resources, logger, activity: null)
+	{
+	}
+
+	public McpToolRunner(McpSessionHost sessionHost, DeepFlowResourceStore resources, ILogger<McpToolRunner> logger, IMcpActivitySink? activity)
 	{
 		this.sessionHost = sessionHost ?? throw new ArgumentNullException(nameof(sessionHost));
 		this.resources = resources ?? throw new ArgumentNullException(nameof(resources));
 		this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+		this.activity = activity;
 	}
 
-	public McpToolResponse Run(Func<object?> action)
+	public McpToolResponse Run(Func<object?> action, [CallerMemberName] string toolName = "")
 	{
 		ArgumentNullException.ThrowIfNull(action);
+		var stopwatch = Stopwatch.StartNew();
+		activity?.Publish(new McpActivityEvent
+		{
+			Source = "client",
+			Kind = "tool.start",
+			Name = toolName,
+			Status = "started",
+		});
 		try
 		{
-			return McpToolResponse.Ok(action(), sessionHost.Status);
+			var response = McpToolResponse.Ok(action(), sessionHost.Status);
+			activity?.Publish(new McpActivityEvent
+			{
+				Source = "client",
+				Kind = "tool.success",
+				Name = toolName,
+				Status = "success",
+				Duration = stopwatch.Elapsed,
+			});
+			return response;
 		}
 		catch (CliException ex)
 		{
 			resources.AddLog("warning", ex.ErrorCode, ex.Message);
+			PublishFailure(toolName, stopwatch.Elapsed, ex.ErrorCode, ex.Message);
 			return McpToolResponse.Fail(ex.ErrorCode, ex.Message, ex.Details, RecoveryFor(ex.ErrorCode), sessionHost.Status);
 		}
 		catch (NamedPipeSessionException ex)
 		{
 			var errorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
 			resources.AddLog("warning", errorCode, ex.Message);
+			PublishFailure(toolName, stopwatch.Elapsed, errorCode, ex.Message);
 			return McpToolResponse.Fail(
 				errorCode,
 				ex.Message,
@@ -48,15 +77,29 @@ internal sealed class McpToolRunner
 		{
 			var errorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
 			resources.AddLog("warning", errorCode, ex.Message);
+			PublishFailure(toolName, stopwatch.Elapsed, errorCode, ex.Message);
 			return McpToolResponse.Fail(errorCode, ex.Message, new { protocolErrorCode = ex.ErrorCode }, RecoveryFor(errorCode), sessionHost.Status);
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
 			logger.LogError(ex, "MCP tool failed.");
 			resources.AddLog("error", CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.");
+			PublishFailure(toolName, stopwatch.Elapsed, CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.");
 			return McpToolResponse.Fail(CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", recovery: "Check the MCP server stderr log for details.", target: sessionHost.Status);
 		}
 	}
+
+	private void PublishFailure(string toolName, TimeSpan duration, string errorCode, string message) =>
+		activity?.Publish(new McpActivityEvent
+		{
+			Source = "client",
+			Kind = "tool.failure",
+			Name = toolName,
+			Status = "failure",
+			Duration = duration,
+			Summary = message,
+			Details = new { errorCode },
+		});
 
 	private static string? RecoveryFor(string errorCode) =>
 		errorCode switch

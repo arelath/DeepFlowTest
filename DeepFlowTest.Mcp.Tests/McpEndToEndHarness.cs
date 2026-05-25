@@ -21,10 +21,15 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 	private readonly List<string> stderr = [];
 	private readonly object stderrGate = new();
 	private readonly McpClient client;
+	private readonly Process process;
+	private readonly string endpointFile;
 
-	private McpEndToEndHarness(McpClient client, CancellationTokenSource timeout)
+	private McpEndToEndHarness(McpClient client, Uri endpoint, Process process, string endpointFile, CancellationTokenSource timeout)
 	{
 		this.client = client;
+		Endpoint = endpoint;
+		this.process = process;
+		this.endpointFile = endpointFile;
 		this.timeout = timeout;
 	}
 
@@ -33,28 +38,35 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 		var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
 		var stderr = new List<string>();
 		var stderrGate = new object();
+		var endpointFile = Path.Combine(Path.GetTempPath(), "DeepFlowTest.Mcp.Tests", Guid.NewGuid().ToString("N"), "endpoint.json");
+		Process? process = null;
 		try
 		{
+			var arguments = new List<string>
+			{
+				"--http-port",
+				"0",
+				"--endpoint-file",
+				endpointFile,
+				"--start-minimized",
+			};
+			arguments.AddRange(serverArguments);
+			process = StartServerProcess(arguments, stderr, stderrGate);
+			var endpoint = await WaitForEndpointAsync(endpointFile, process, timeout.Token);
+
 			var client = await McpClient.CreateAsync(
-				new StdioClientTransport(
-					new StdioClientTransportOptions
+				new HttpClientTransport(
+					new HttpClientTransportOptions
 					{
-						Command = ResolveMcpExecutablePath(),
-						Arguments = serverArguments,
-						WorkingDirectory = TestContext.CurrentContext.TestDirectory,
-						ShutdownTimeout = TimeSpan.FromSeconds(5),
-						StandardErrorLines = line =>
-						{
-							lock (stderrGate)
-								stderr.Add(line);
-						},
+						Endpoint = endpoint,
+						TransportMode = HttpTransportMode.StreamableHttp,
 					},
 					NullLoggerFactory.Instance),
 				clientOptions: null,
 				loggerFactory: NullLoggerFactory.Instance,
 				cancellationToken: timeout.Token);
 
-			var harness = new McpEndToEndHarness(client, timeout);
+			var harness = new McpEndToEndHarness(client, endpoint, process, endpointFile, timeout);
 			lock (stderrGate)
 			{
 				harness.stderr.AddRange(stderr);
@@ -64,12 +76,21 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 		}
 		catch
 		{
+			if (process is not null)
+				StopServerProcess(process);
+
 			timeout.Dispose();
 			throw;
 		}
 	}
 
 	public CancellationToken CancellationToken => timeout.Token;
+
+	public Uri Endpoint { get; }
+
+	public string EndpointFilePath => endpointFile;
+
+	public int ServerProcessId => process.Id;
 
 	public async Task<McpToolJsonResult> CallOkAsync(string toolName, IReadOnlyDictionary<string, object?>? arguments = null)
 	{
@@ -83,6 +104,24 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 		var result = await client.CallToolAsync(toolName, arguments ?? EmptyArguments, cancellationToken: timeout.Token);
 		return McpToolJsonResult.From(toolName, result, ReadStderrTail());
 	}
+
+	public async Task<IList<McpClientTool>> ListToolsAsync() =>
+		await client.ListToolsAsync(cancellationToken: timeout.Token);
+
+	public async Task<IList<McpClientPrompt>> ListPromptsAsync() =>
+		await client.ListPromptsAsync(cancellationToken: timeout.Token);
+
+	public async Task<GetPromptResult> GetPromptAsync(string name) =>
+		await client.GetPromptAsync(name, cancellationToken: timeout.Token);
+
+	public async Task<IList<McpClientResource>> ListResourcesAsync() =>
+		await client.ListResourcesAsync(cancellationToken: timeout.Token);
+
+	public async Task<ReadResourceResult> ReadResourceAsync(string uri) =>
+		await client.ReadResourceAsync(uri, cancellationToken: timeout.Token);
+
+	public async Task PingAsync() =>
+		await client.PingAsync(cancellationToken: timeout.Token);
 
 	public async Task<McpToolJsonResult> WaitForElementTextAsync(string automationId, string expectedText, int timeoutMs = 30_000) =>
 		await CallOkAsync("deepflow_wait_for_element", new Dictionary<string, object?>
@@ -142,6 +181,8 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 		}
 
 		await client.DisposeAsync();
+		StopServerProcess(process);
+		TryDeleteEndpointFile(endpointFile);
 		timeout.Dispose();
 	}
 
@@ -171,6 +212,99 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 		var path = Path.Combine(TestContext.CurrentContext.TestDirectory, "DeepFlowTest.Mcp.exe");
 		Assert.That(File.Exists(path), Is.True, "The MCP apphost must be present in the test output directory.");
 		return path;
+	}
+
+	private static Process StartServerProcess(
+		IReadOnlyList<string> arguments,
+		List<string> stderr,
+		object stderrGate)
+	{
+		var startInfo = new ProcessStartInfo
+		{
+			FileName = ResolveMcpExecutablePath(),
+			WorkingDirectory = TestContext.CurrentContext.TestDirectory,
+			UseShellExecute = false,
+			RedirectStandardError = true,
+			CreateNoWindow = true,
+		};
+		foreach (var argument in arguments)
+			startInfo.ArgumentList.Add(argument);
+
+		var process = new Process
+		{
+			StartInfo = startInfo,
+			EnableRaisingEvents = true,
+		};
+		process.ErrorDataReceived += (_, e) =>
+		{
+			if (e.Data is null)
+				return;
+
+			lock (stderrGate)
+				stderr.Add(e.Data);
+		};
+		Assert.That(process.Start(), Is.True, "Failed to start MCP server process.");
+		process.BeginErrorReadLine();
+		return process;
+	}
+
+	private static async Task<Uri> WaitForEndpointAsync(string endpointFile, Process process, CancellationToken cancellationToken)
+	{
+		var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+		while (DateTimeOffset.UtcNow < deadline)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			if (process.HasExited)
+				Assert.Fail($"MCP server exited before writing endpoint file. Exit code: {process.ExitCode}");
+
+			if (File.Exists(endpointFile))
+			{
+				using var stream = File.OpenRead(endpointFile);
+				var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+				var endpoint = json.RootElement.GetProperty("streamableHttpUrl").GetString();
+				Assert.That(endpoint, Is.Not.Null.And.Not.Empty);
+				return new Uri(endpoint!);
+			}
+
+			await Task.Delay(100, cancellationToken);
+		}
+
+		Assert.Fail($"MCP server did not write endpoint file '{endpointFile}' within 30 seconds.");
+		return new Uri("http://127.0.0.1/");
+	}
+
+	private static void TryDeleteEndpointFile(string endpointFile)
+	{
+		try
+		{
+			File.Delete(endpointFile);
+		}
+		catch (IOException)
+		{
+		}
+		catch (UnauthorizedAccessException)
+		{
+		}
+	}
+
+	private static void StopServerProcess(Process process)
+	{
+		if (process.HasExited)
+			return;
+
+		try
+		{
+			process.CloseMainWindow();
+			if (process.WaitForExit(5_000))
+				return;
+		}
+		catch (InvalidOperationException)
+		{
+			return;
+		}
+
+		if (!process.HasExited)
+			process.Kill(entireProcessTree: true);
 	}
 
 	private static string FindRepositoryRoot()

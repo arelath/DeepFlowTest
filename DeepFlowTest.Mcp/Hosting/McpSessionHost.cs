@@ -4,6 +4,7 @@ using System;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Contracts;
 using Newtonsoft.Json;
 
@@ -13,16 +14,27 @@ internal sealed class McpSessionHost : IDisposable
 	private readonly McpTargetSessionFactory sessionFactory;
 	private readonly McpSnapshotCache snapshotCache;
 	private readonly McpStreamRegistry streamRegistry;
+	private readonly IMcpActivitySink? activity;
 	private McpSession? current;
 
 	public McpSessionHost(
 		McpTargetSessionFactory sessionFactory,
 		McpSnapshotCache snapshotCache,
 		McpStreamRegistry streamRegistry)
+		: this(sessionFactory, snapshotCache, streamRegistry, activity: null)
+	{
+	}
+
+	public McpSessionHost(
+		McpTargetSessionFactory sessionFactory,
+		McpSnapshotCache snapshotCache,
+		McpStreamRegistry streamRegistry,
+		IMcpActivitySink? activity)
 	{
 		this.sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
 		this.snapshotCache = snapshotCache ?? throw new ArgumentNullException(nameof(snapshotCache));
 		this.streamRegistry = streamRegistry ?? throw new ArgumentNullException(nameof(streamRegistry));
+		this.activity = activity;
 	}
 
 	public McpTargetStatus Status
@@ -54,13 +66,17 @@ internal sealed class McpSessionHost : IDisposable
 	public McpTargetStatus Attach(McpTargetSelector selector, int? timeoutMs = null, bool noInject = false, string? pipeId = null)
 	{
 		var session = sessionFactory.Attach(selector, timeoutMs, noInject, pipeId);
-		return ReplaceCurrent(session);
+		var status = ReplaceCurrent(session);
+		PublishTarget("target.attach", "attach", status);
+		return status;
 	}
 
 	public McpTargetStatus Launch(McpLaunchOptions launchOptions)
 	{
 		var session = sessionFactory.Launch(launchOptions);
-		return ReplaceCurrent(session);
+		var status = ReplaceCurrent(session);
+		PublishTarget("target.launch", "launch", status);
+		return status;
 	}
 
 	public McpTargetStatus Detach()
@@ -71,7 +87,9 @@ internal sealed class McpSessionHost : IDisposable
 			snapshotCache.Invalidate();
 			current?.Dispose();
 			current = null;
-			return ToStatus(null);
+			var status = ToStatus(null);
+			PublishTarget("target.detach", "detach", status);
+			return status;
 		}
 	}
 
@@ -184,4 +202,15 @@ internal sealed class McpSessionHost : IDisposable
 			return false;
 		}
 	}
+
+	private void PublishTarget(string kind, string name, McpTargetStatus status) =>
+		activity?.Publish(new McpActivityEvent
+		{
+			Source = "server",
+			Kind = kind,
+			Name = name,
+			Status = "success",
+			Summary = status.Attached ? $"{status.ProcessName} ({status.ProcessId})" : "No target attached.",
+			Details = status,
+		});
 }

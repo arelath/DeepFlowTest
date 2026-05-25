@@ -2,10 +2,12 @@ namespace DeepFlowTest.Mcp.Hosting;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -13,11 +15,18 @@ internal sealed class McpStreamRegistry : IDisposable
 {
 	private readonly object gate = new();
 	private readonly IOptions<McpServerOptions> options;
+	private readonly IMcpActivitySink? activity;
 	private readonly Dictionary<string, StreamState> streams = new(StringComparer.Ordinal);
 
 	public McpStreamRegistry(IOptions<McpServerOptions> options)
+		: this(options, activity: null)
+	{
+	}
+
+	public McpStreamRegistry(IOptions<McpServerOptions> options, IMcpActivitySink? activity)
 	{
 		this.options = options ?? throw new ArgumentNullException(nameof(options));
+		this.activity = activity;
 	}
 
 	public StreamStartResult Start(
@@ -34,6 +43,14 @@ internal sealed class McpStreamRegistry : IDisposable
 			streams[state.StreamId] = state;
 
 		state.Start();
+		activity?.Publish(new McpActivityEvent
+		{
+			Source = "server",
+			Kind = "stream.start",
+			Name = stream.Start.StreamKind,
+			Status = "success",
+			Details = new { state.StreamId, request.IntervalMs },
+		});
 		return new StreamStartResult
 		{
 			StreamId = state.StreamId,
@@ -45,7 +62,17 @@ internal sealed class McpStreamRegistry : IDisposable
 	public StreamReadResult Read(string streamId, int maxFrames)
 	{
 		var state = Get(streamId);
-		return state.Read(Math.Max(1, maxFrames));
+		var result = state.Read(Math.Max(1, maxFrames));
+		activity?.Publish(new McpActivityEvent
+		{
+			Source = "server",
+			Kind = "stream.read",
+			Name = state.StreamKind,
+			Status = "success",
+			Summary = $"{result.FrameCount} frame(s)",
+			Details = new { streamId, result.FrameCount, result.DroppedFrames },
+		});
+		return result;
 	}
 
 	public StreamStopResult Stop(string streamId)
@@ -58,6 +85,14 @@ internal sealed class McpStreamRegistry : IDisposable
 		}
 
 		state.Dispose();
+		activity?.Publish(new McpActivityEvent
+		{
+			Source = "server",
+			Kind = "stream.stop",
+			Name = state.StreamKind,
+			Status = "success",
+			Details = new { state.StreamId, state.DroppedFrames },
+		});
 		return new StreamStopResult
 		{
 			StreamId = state.StreamId,
@@ -77,6 +112,14 @@ internal sealed class McpStreamRegistry : IDisposable
 
 		foreach (var stream in current)
 			stream.Dispose();
+	}
+
+	public IReadOnlyList<string> ListActiveStreams()
+	{
+		lock (gate)
+			return streams.Values
+				.Select(static stream => $"{stream.StreamKind} | {stream.StreamId} | dropped {stream.DroppedFrames}")
+				.ToArray();
 	}
 
 	public void Dispose()
@@ -125,6 +168,8 @@ internal sealed class McpStreamRegistry : IDisposable
 		public string StreamId { get; } = Guid.NewGuid().ToString("N");
 
 		public string SubscriptionId => stream.Start.SubscriptionId;
+
+		public string StreamKind => stream.Start.StreamKind;
 
 		public int DroppedFrames { get; private set; }
 

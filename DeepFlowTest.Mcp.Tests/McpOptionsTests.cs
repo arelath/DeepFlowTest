@@ -19,6 +19,9 @@ public sealed class McpOptionsTests
 		Assert.That(options.Policy.AllowArbitraryInvoke, Is.False);
 		Assert.That(options.Policy.AllowFileWrites, Is.False);
 		Assert.That(options.ResourceRetentionLimit, Is.GreaterThan(0));
+		Assert.That(options.Http.Host, Is.EqualTo("127.0.0.1"));
+		Assert.That(options.Http.Port, Is.EqualTo(4153));
+		Assert.That(options.Http.Path, Is.EqualTo("/mcp"));
 	}
 
 	[Test]
@@ -41,6 +44,16 @@ public sealed class McpOptionsTests
 				"--terminate-on-detach",
 				"--resource-retention-limit",
 				"3",
+				"--activity-retention-limit",
+				"7",
+				"--http-port",
+				"0",
+				"--http-path",
+				"mcp-test",
+				"--http-enable-legacy-sse",
+				"--endpoint-file",
+				"C:\\temp\\endpoint.json",
+				"--start-minimized",
 			});
 
 		Assert.That(options.Policy.AllowLaunch, Is.True);
@@ -50,6 +63,12 @@ public sealed class McpOptionsTests
 		Assert.That(options.Startup.WorkingDirectory, Is.EqualTo("C:\\apps"));
 		Assert.That(options.Startup.TerminateOnDetach, Is.True);
 		Assert.That(options.ResourceRetentionLimit, Is.EqualTo(3));
+		Assert.That(options.ActivityRetentionLimit, Is.EqualTo(7));
+		Assert.That(options.Http.Port, Is.EqualTo(0));
+		Assert.That(options.Http.Path, Is.EqualTo("/mcp-test"));
+		Assert.That(options.Http.EnableLegacySse, Is.True);
+		Assert.That(options.Http.EndpointFile, Is.EqualTo("C:\\temp\\endpoint.json"));
+		Assert.That(options.Http.StartMinimized, Is.True);
 	}
 
 	[Test]

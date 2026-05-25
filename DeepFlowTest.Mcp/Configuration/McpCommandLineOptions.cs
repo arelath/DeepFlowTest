@@ -59,6 +59,27 @@ internal static class McpCommandLineOptions
 				case "--resource-retention-limit":
 					options.ResourceRetentionLimit = ParseInt(ReadValue(args, ref i, optionName, inlineValue), optionName);
 					break;
+				case "--activity-retention-limit":
+					options.ActivityRetentionLimit = ParseInt(ReadValue(args, ref i, optionName, inlineValue), optionName);
+					break;
+				case "--http-host":
+					options.Http.Host = ReadValue(args, ref i, optionName, inlineValue);
+					break;
+				case "--http-port":
+					options.Http.Port = ParseInt(ReadValue(args, ref i, optionName, inlineValue), optionName);
+					break;
+				case "--http-path":
+					options.Http.Path = NormalizeHttpPath(ReadValue(args, ref i, optionName, inlineValue));
+					break;
+				case "--http-enable-legacy-sse":
+					options.Http.EnableLegacySse = true;
+					break;
+				case "--endpoint-file":
+					options.Http.EndpointFile = ReadValue(args, ref i, optionName, inlineValue);
+					break;
+				case "--start-minimized":
+					options.Http.StartMinimized = true;
+					break;
 				case "--no-inject":
 					options.Startup.NoInject = true;
 					break;
@@ -112,6 +133,15 @@ internal static class McpCommandLineOptions
 			throw new CliException(CliErrorCodes.InvalidArguments, $"Missing value for '{option}'.");
 
 		return value;
+	}
+
+	private static string NormalizeHttpPath(string path)
+	{
+		if (string.IsNullOrWhiteSpace(path))
+			throw new CliException(CliErrorCodes.InvalidArguments, "HTTP path cannot be empty.");
+
+		path = path.Trim();
+		return path.StartsWith("/", StringComparison.Ordinal) ? path : "/" + path;
 	}
 
 	private static int ParseInt(string value, string option)

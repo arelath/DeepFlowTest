@@ -17,11 +17,32 @@ internal sealed class McpServerOptions
 
 	public int ResourceRetentionLimit { get; set; } = 16;
 
+	public int ActivityRetentionLimit { get; set; } = 256;
+
 	public IReadOnlyList<string> DefaultProperties { get; set; } = KnownProperties.DefaultVisualTreePropertyNames;
+
+	public McpHttpOptions Http { get; set; } = new();
 
 	public McpPolicyOptions Policy { get; set; } = new();
 
 	public McpStartupOptions Startup { get; set; } = new();
+}
+
+internal sealed class McpHttpOptions
+{
+	public string Host { get; set; } = "127.0.0.1";
+
+	public int Port { get; set; } = 4153;
+
+	public string Path { get; set; } = "/mcp";
+
+	public bool EnableLegacySse { get; set; }
+
+	public string? EndpointFile { get; set; }
+
+	public bool StartMinimized { get; set; }
+
+	public string AllowedHosts => "localhost;127.0.0.1;[::1]";
 }
 
 internal sealed class McpPolicyOptions
