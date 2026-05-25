@@ -9,6 +9,7 @@ public static class ProtocolConstants
 	public static class Commands
 	{
 		public const string Click = "ClickCommand";
+		public const string ConfigureDiagnostics = "ConfigureDiagnosticsCommand";
 		public const string DragAndDrop = "DragAndDropCommand";
 		public const string FindElement = "FindElementCommand";
 		public const string GetBindingFailures = "GetBindingFailuresCommand";

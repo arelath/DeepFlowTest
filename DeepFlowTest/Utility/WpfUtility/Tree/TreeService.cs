@@ -11,6 +11,7 @@ using System.Windows.Automation;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
+using DeepFlowTest.AppDriverPayload.Diagnostics;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Shared;
@@ -339,6 +340,8 @@ public sealed partial class TreeService
 	{
 		if (target is SystemResourceRoot)
 			return false;
+		if (target is VirtualPointerWindow or VirtualPointerRoot)
+			return true;
 
 		var type = target.GetType();
 		var fullName = type.FullName ?? string.Empty;

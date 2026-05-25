@@ -18,6 +18,11 @@ public enum SemanticRecordingOutputFormat
 	CondensedDiagnostic,
 }
 
+public sealed class SemanticRecordingFormattingOptions
+{
+	public bool PruneStructuralLayoutNodes { get; set; }
+}
+
 public interface ISemanticRecordingFrameWriter : IDisposable
 {
 	long FramesWritten { get; }
@@ -29,15 +34,18 @@ public interface ISemanticRecordingFrameWriter : IDisposable
 
 public static class SemanticRecordingFrameWriter
 {
-	public static ISemanticRecordingFrameWriter Create(TextWriter writer, SemanticRecordingOutputFormat format)
+	public static ISemanticRecordingFrameWriter Create(
+		TextWriter writer,
+		SemanticRecordingOutputFormat format,
+		SemanticRecordingFormattingOptions? options = null)
 	{
 		_ = writer ?? throw new ArgumentNullException(nameof(writer));
 		return format switch
 		{
-			SemanticRecordingOutputFormat.RawJson => new JsonSemanticRecordingFrameWriter(writer, compact: false),
-			SemanticRecordingOutputFormat.CompactJson => new JsonSemanticRecordingFrameWriter(writer, compact: true),
-			SemanticRecordingOutputFormat.CondensedAgent => new CondensedSemanticRecordingFrameWriter(writer, "agent"),
-			SemanticRecordingOutputFormat.CondensedDiagnostic => new CondensedSemanticRecordingFrameWriter(writer, "diagnostic"),
+			SemanticRecordingOutputFormat.RawJson => new JsonSemanticRecordingFrameWriter(writer, compact: false, options),
+			SemanticRecordingOutputFormat.CompactJson => new JsonSemanticRecordingFrameWriter(writer, compact: true, options),
+			SemanticRecordingOutputFormat.CondensedAgent => new CondensedSemanticRecordingFrameWriter(writer, "agent", options),
+			SemanticRecordingOutputFormat.CondensedDiagnostic => new CondensedSemanticRecordingFrameWriter(writer, "diagnostic", options),
 			_ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported semantic recording output format."),
 		};
 	}
@@ -60,14 +68,16 @@ internal sealed class JsonSemanticRecordingFrameWriter : ISemanticRecordingFrame
 
 	private readonly TextWriter writer;
 	private readonly bool compact;
+	private readonly SemanticRecordingFormattingOptions? options;
 	private readonly CompactSemanticRecordingState? compactState;
 	private bool wroteFrame;
 	private bool disposed;
 
-	public JsonSemanticRecordingFrameWriter(TextWriter writer, bool compact)
+	public JsonSemanticRecordingFrameWriter(TextWriter writer, bool compact, SemanticRecordingFormattingOptions? options)
 	{
 		this.writer = writer ?? throw new ArgumentNullException(nameof(writer));
 		this.compact = compact;
+		this.options = options;
 		compactState = compact ? new CompactSemanticRecordingState() : null;
 		writer.WriteLine("[");
 		writer.Flush();
@@ -78,7 +88,7 @@ internal sealed class JsonSemanticRecordingFrameWriter : ISemanticRecordingFrame
 	public void WriteFrame(SemanticRecordingFrame frame)
 	{
 		_ = frame ?? throw new ArgumentNullException(nameof(frame));
-		var output = compact ? (object)CompactSemanticRecordingFrame.Create(frame, compactState) : frame;
+		var output = compact ? (object)CompactSemanticRecordingFrame.Create(frame, compactState, options) : frame;
 		if (wroteFrame)
 			writer.WriteLine(",");
 
@@ -135,12 +145,14 @@ internal sealed class CondensedSemanticRecordingFrameWriter : ISemanticRecording
 	private static readonly HashSet<string> StatePropertySet = new(StateProperties, StringComparer.Ordinal);
 
 	private readonly TextWriter writer;
+	private readonly SemanticRecordingFormattingOptions? options;
 	private readonly CompactSemanticRecordingState compactState = new();
 	private bool disposed;
 
-	public CondensedSemanticRecordingFrameWriter(TextWriter writer, string profile)
+	public CondensedSemanticRecordingFrameWriter(TextWriter writer, string profile, SemanticRecordingFormattingOptions? options)
 	{
 		this.writer = writer ?? throw new ArgumentNullException(nameof(writer));
+		this.options = options;
 		writer.WriteLine($"dft-condensed/1 profile={profile} source=compact-json");
 		writer.Flush();
 	}
@@ -150,7 +162,13 @@ internal sealed class CondensedSemanticRecordingFrameWriter : ISemanticRecording
 	public void WriteFrame(SemanticRecordingFrame frame)
 	{
 		_ = frame ?? throw new ArgumentNullException(nameof(frame));
-		var compact = CompactSemanticRecordingFrame.Create(frame, compactState);
+		var compact = CompactSemanticRecordingFrame.Create(frame, compactState, options);
+		if (IsEmptyDelta(compact))
+		{
+			writer.Flush();
+			return;
+		}
+
 		WriteCompactFrame(compact);
 		writer.Flush();
 		FramesWritten++;
@@ -201,6 +219,18 @@ internal sealed class CondensedSemanticRecordingFrameWriter : ISemanticRecording
 				writer.WriteLine();
 				break;
 		}
+	}
+
+	private static bool IsEmptyDelta(IReadOnlyDictionary<string, object?> frame)
+	{
+		if (!string.Equals(GetString(frame, "kind"), "delta", StringComparison.Ordinal))
+			return false;
+		if (!TryGetDictionary(frame, "delta", out var delta))
+			return false;
+
+		return GetLong(delta, "addedCount") == 0
+			&& GetLong(delta, "changedCount") == 0
+			&& GetLong(delta, "removedCount") == 0;
 	}
 
 	private void WriteRecordingStarted(IReadOnlyDictionary<string, object?> frame)

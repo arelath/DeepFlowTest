@@ -4,6 +4,28 @@ using System;
 using System.Diagnostics;
 using DeepFlowTest.Contracts;
 
+public sealed class VirtualPointerOptions
+{
+	internal const int DefaultHideDelayMs = 800;
+
+	public bool Enabled { get; set; }
+
+	public bool ShowClickRipples { get; set; } = true;
+
+	public bool ShowDragTrail { get; set; } = true;
+
+	public int HideDelayMs { get; set; } = DefaultHideDelayMs;
+
+	public bool IncludeInScreenshots { get; set; }
+
+	internal bool IsDefault =>
+		!Enabled
+		&& ShowClickRipples
+		&& ShowDragTrail
+		&& HideDelayMs == DefaultHideDelayMs
+		&& !IncludeInScreenshots;
+}
+
 public class AppDriverOptions
 {
 	public TimeSpan Timeout { get; set; } = TimeoutDefaults.AppDriverTimeout;
@@ -27,6 +49,8 @@ public class AppDriverOptions
 	public string? AutoSemanticRecordingOutputPath { get; set; }
 
 	public SemanticRecordingOptions AutoSemanticRecordingOptions { get; } = new();
+
+	public VirtualPointerOptions VirtualPointer { get; } = new();
 
 	private static string ResolveDefaultInjectorLauncherPath()
 	{

@@ -15,6 +15,10 @@ internal static partial class NativeMethods
 	public const uint KEYEVENTF_UNICODE = 0x0004;
 	public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
 	public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+	public const int GWL_EXSTYLE = -20;
+	public const int WS_EX_TRANSPARENT = 0x00000020;
+	public const int WS_EX_TOOLWINDOW = 0x00000080;
+	public const int WS_EX_NOACTIVATE = 0x08000000;
 	public const int SM_CXDRAG = 68;
 	public const int SM_CYDRAG = 69;
 
@@ -100,6 +104,16 @@ internal static partial class NativeMethods
 	[DllImport("user32.dll")]
 	public static extern int GetWindowLong(IntPtr hwnd, int index);
 
+	public static IntPtr GetWindowLongPtr(IntPtr hwnd, int index) =>
+		IntPtr.Size == 8
+			? GetWindowLongPtr64(hwnd, index)
+			: new IntPtr(GetWindowLong32(hwnd, index));
+
+	public static IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value) =>
+		IntPtr.Size == 8
+			? SetWindowLongPtr64(hwnd, index, value)
+			: new IntPtr(SetWindowLong32(hwnd, index, value.ToInt32()));
+
 	[DllImport("user32.dll")]
 	public static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
 
@@ -109,6 +123,18 @@ internal static partial class NativeMethods
 	public delegate bool EnumChildWindowsProc(IntPtr hwnd, IntPtr lParam);
 
 	public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+	[DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+	private static extern int GetWindowLong32(IntPtr hwnd, int index);
+
+	[DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")]
+	private static extern IntPtr GetWindowLongPtr64(IntPtr hwnd, int index);
+
+	[DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+	private static extern int SetWindowLong32(IntPtr hwnd, int index, int value);
+
+	[DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
+	private static extern IntPtr SetWindowLongPtr64(IntPtr hwnd, int index, IntPtr value);
 
 	[StructLayout(LayoutKind.Sequential)]
 	public struct Input

@@ -13,6 +13,7 @@ includedRegex: \.tsx$
 includedRegex: \.css$
 includedRegex: \.json$
 
+excludedRegex: output\\
 excludedRegex: InjectionDll\\
 excludedRegex: tools\\
 excludedRegex: artifacts\\

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using DeepFlowTest.AppDriverPayload.Commands;
+using DeepFlowTest.AppDriverPayload.Diagnostics;
 using DeepFlowTest.Shared;
 
 internal sealed class DragPlan
@@ -57,6 +58,7 @@ internal static class TargetMouseInput
 		try
 		{
 			AppHooks.ResetMouseState();
+			VirtualPointerService.Hide();
 			if (plan.EnsureForeground && plan.Source.OwnerHwnd != IntPtr.Zero)
 				NativeMethods.SetForegroundWindow(plan.Source.OwnerHwnd);
 

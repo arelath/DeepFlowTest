@@ -15,6 +15,8 @@ public sealed class SemanticRecordingSession : IDisposable
 	private readonly CancellationTokenSource cancellation = new();
 	private readonly StreamWriter writer;
 	private readonly ISemanticRecordingFrameWriter frameWriter;
+	private readonly Action<SemanticRecordingBatch>? batchReceived;
+	private readonly Action<Exception>? batchReceivedError;
 	private readonly int timeoutMs;
 	private readonly Task readerTask;
 	private long framesWritten;
@@ -27,12 +29,16 @@ public sealed class SemanticRecordingSession : IDisposable
 		IAppDriverStreamSession streamSession,
 		string outputPath,
 		int timeoutMs,
-		SemanticRecordingOutputFormat outputFormat)
+		SemanticRecordingOutputFormat outputFormat,
+		Action<SemanticRecordingBatch>? batchReceived,
+		Action<Exception>? batchReceivedError)
 	{
 		this.commandSession = commandSession ?? throw new ArgumentNullException(nameof(commandSession));
 		this.streamSession = streamSession ?? throw new ArgumentNullException(nameof(streamSession));
 		OutputPath = NormalizeOutputPath(outputPath);
 		this.timeoutMs = Math.Max(1, timeoutMs);
+		this.batchReceived = batchReceived;
+		this.batchReceivedError = batchReceivedError;
 		writer = new StreamWriter(new FileStream(OutputPath, FileMode.Create, FileAccess.Write, FileShare.Read));
 		frameWriter = SemanticRecordingFrameWriter.Create(writer, outputFormat);
 		writer.Flush();
@@ -82,7 +88,9 @@ public sealed class SemanticRecordingSession : IDisposable
 			streamingSession.StartStream(request, timeoutMs),
 			outputPath,
 			timeoutMs,
-			options.OutputFormat);
+			options.OutputFormat,
+			options.BatchReceived,
+			options.BatchReceivedError);
 	}
 
 	public void Dispose()
@@ -146,6 +154,7 @@ public sealed class SemanticRecordingSession : IDisposable
 
 				var batch = MessagePacker.ConvertTo<SemanticRecordingBatch>(frame.Data);
 				Interlocked.Add(ref droppedActionCount, Math.Max(0, batch.DroppedActionCount));
+				NotifyBatchReceived(batch);
 				WriteDroppedActionCount(batch.DroppedActionCount);
 				foreach (var recordingFrame in batch.Frames ?? [])
 					WriteFrame(recordingFrame);
@@ -158,6 +167,27 @@ public sealed class SemanticRecordingSession : IDisposable
 			{
 				backgroundError = ex;
 				return;
+			}
+		}
+	}
+
+	private void NotifyBatchReceived(SemanticRecordingBatch batch)
+	{
+		if (batchReceived is null)
+			return;
+
+		try
+		{
+			batchReceived(batch);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			try
+			{
+				batchReceivedError?.Invoke(ex);
+			}
+			catch (Exception callbackError) when (callbackError is not OutOfMemoryException && callbackError is not StackOverflowException)
+			{
 			}
 		}
 	}

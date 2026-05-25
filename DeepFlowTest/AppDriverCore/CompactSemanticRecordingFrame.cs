@@ -13,6 +13,15 @@ internal static class CompactSemanticRecordingFrame
 {
 	private const int MaxRemovedIds = 20;
 
+	private static readonly HashSet<string> StructuralLayoutTypeNames = new(StringComparer.Ordinal)
+	{
+		"Border",
+		"Canvas",
+		"ContentPresenter",
+		"Grid",
+		"Rectangle",
+	};
+
 	private static readonly IReadOnlyDictionary<string, string> PropertyAliases =
 		new Dictionary<string, string>(StringComparer.Ordinal)
 		{
@@ -37,7 +46,10 @@ internal static class CompactSemanticRecordingFrame
 			[KnownProperties.Visibility] = "visibility",
 		};
 
-	public static Dictionary<string, object?> Create(SemanticRecordingFrame frame, CompactSemanticRecordingState? state = null)
+	public static Dictionary<string, object?> Create(
+		SemanticRecordingFrame frame,
+		CompactSemanticRecordingState? state = null,
+		SemanticRecordingFormattingOptions? options = null)
 	{
 		_ = frame ?? throw new ArgumentNullException(nameof(frame));
 		var output = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -55,9 +67,9 @@ internal static class CompactSemanticRecordingFrame
 		if (frame.Action is not null)
 			output["action"] = CompactAction(frame.Action);
 		if (frame.Snapshot is not null)
-			output["snapshot"] = CompactSnapshot(frame.Snapshot);
+			output["snapshot"] = CompactSnapshot(frame.Snapshot, options);
 		if (frame.Delta is not null)
-			output["delta"] = CompactDelta(frame.Delta, state);
+			output["delta"] = CompactDelta(frame.Delta, state, options);
 		if (frame.Metadata.Count != 0)
 			output["metadata"] = CompactMetadata(frame.Metadata);
 
@@ -114,9 +126,11 @@ internal static class CompactSemanticRecordingFrame
 		return output;
 	}
 
-	private static Dictionary<string, object?> CompactSnapshot(VisualTreeSnapshot snapshot)
+	private static Dictionary<string, object?> CompactSnapshot(
+		VisualTreeSnapshot snapshot,
+		SemanticRecordingFormattingOptions? options)
 	{
-		var nodes = CompactNodeTree(snapshot.Nodes);
+		var nodes = CompactNodeTree(snapshot.Nodes, options);
 		var includedCount = CountNodes(nodes);
 		var output = new Dictionary<string, object?>(StringComparer.Ordinal)
 		{
@@ -135,33 +149,40 @@ internal static class CompactSemanticRecordingFrame
 		return output;
 	}
 
-	private static Dictionary<string, object?> CompactDelta(VisualTreeSnapshotDelta delta, CompactSemanticRecordingState? state)
+	private static Dictionary<string, object?> CompactDelta(
+		VisualTreeSnapshotDelta delta,
+		CompactSemanticRecordingState? state,
+		SemanticRecordingFormattingOptions? options)
 	{
-		var added = CompactNodeTree(delta.Added);
-		var changed = CompactChangedNodes(delta.Changed, state);
+		var added = CompactNodeTree(delta.Added, options);
+		var addedCount = CountNodes(added);
+		var changed = CompactChangedNodes(delta.Changed, state, options);
+		var removed = CompactRemovedIds(delta.RemovedTargetIds, state, options);
 		var output = new Dictionary<string, object?>(StringComparer.Ordinal)
 		{
 			["baseSeq"] = delta.BaseSequenceNumber,
 			["currentSeq"] = delta.CurrentSequenceNumber,
-			["addedCount"] = delta.Added.Count,
-			["changedCount"] = delta.Changed.Count,
-			["removedCount"] = delta.RemovedTargetIds.Count,
+			["addedCount"] = addedCount,
+			["changedCount"] = changed.Count,
+			["removedCount"] = removed.Count,
 		};
 		if (added.Count != 0)
 			output["added"] = added;
 		if (changed.Count != 0)
 			output["changed"] = changed;
-		if (delta.RemovedTargetIds.Count != 0)
+		if (removed.Count != 0)
 		{
-			output["removed"] = delta.RemovedTargetIds.Take(MaxRemovedIds).ToArray();
-			if (delta.RemovedTargetIds.Count > MaxRemovedIds)
-				output["removedOmittedCount"] = delta.RemovedTargetIds.Count - MaxRemovedIds;
+			output["removed"] = removed.Take(MaxRemovedIds).ToArray();
+			if (removed.Count > MaxRemovedIds)
+				output["removedOmittedCount"] = removed.Count - MaxRemovedIds;
 		}
 
 		return output;
 	}
 
-	private static List<Dictionary<string, object?>> CompactNodeTree(IReadOnlyList<VisualTreeNodeDto> nodes)
+	private static List<Dictionary<string, object?>> CompactNodeTree(
+		IReadOnlyList<VisualTreeNodeDto> nodes,
+		SemanticRecordingFormattingOptions? options)
 	{
 		var sourceById = new Dictionary<string, VisualTreeNodeDto>(StringComparer.Ordinal);
 		foreach (var node in nodes)
@@ -173,7 +194,7 @@ internal static class CompactSemanticRecordingFrame
 		var compacted = new List<CompactedNode>();
 		foreach (var node in nodes)
 		{
-			var output = CompactNode(node);
+			var output = CompactNode(node, options);
 			if (output.Count != 0)
 				compacted.Add(new CompactedNode(node, output));
 		}
@@ -252,8 +273,15 @@ internal static class CompactSemanticRecordingFrame
 
 	private static Dictionary<string, object?> CompactNode(VisualTreeNodeDto node)
 	{
+		return CompactNode(node, options: null);
+	}
+
+	private static Dictionary<string, object?> CompactNode(
+		VisualTreeNodeDto node,
+		SemanticRecordingFormattingOptions? options)
+	{
 		var properties = CompactProperties(node.Properties);
-		if (!ShouldIncludeNode(node, properties))
+		if (!ShouldIncludeNode(node, properties, options))
 			return [];
 
 		var output = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -270,7 +298,8 @@ internal static class CompactSemanticRecordingFrame
 
 	private static List<Dictionary<string, object?>> CompactChangedNodes(
 		IReadOnlyList<VisualTreeNodeDto> nodes,
-		CompactSemanticRecordingState? state)
+		CompactSemanticRecordingState? state,
+		SemanticRecordingFormattingOptions? options)
 	{
 		var output = new List<Dictionary<string, object?>>();
 		foreach (var node in nodes)
@@ -279,7 +308,7 @@ internal static class CompactSemanticRecordingFrame
 			if (state is not null && state.TryGetPreviousNode(node.TargetId, out var previousNode))
 				previous = previousNode;
 
-			var compacted = CompactChangedNode(node, previous);
+			var compacted = CompactChangedNode(node, previous, options);
 			if (compacted.Count != 0)
 				output.Add(compacted);
 		}
@@ -287,8 +316,15 @@ internal static class CompactSemanticRecordingFrame
 		return output;
 	}
 
-	private static Dictionary<string, object?> CompactChangedNode(VisualTreeNodeDto current, VisualTreeNodeDto? previous)
+	private static Dictionary<string, object?> CompactChangedNode(
+		VisualTreeNodeDto current,
+		VisualTreeNodeDto? previous,
+		SemanticRecordingFormattingOptions? options)
 	{
+		var compactProperties = CompactProperties(current.Properties);
+		if (!ShouldIncludeNode(current, compactProperties, options))
+			return [];
+
 		var changes = previous is null
 			? CompactProperties(current.Properties, includeDefaultStateValues: true)
 			: CompactPropertyChanges(previous.Properties, current.Properties);
@@ -319,8 +355,37 @@ internal static class CompactSemanticRecordingFrame
 		return output;
 	}
 
-	private static bool ShouldIncludeNode(VisualTreeNodeDto node, IReadOnlyDictionary<string, object?> compactProperties)
+	private static List<string> CompactRemovedIds(
+		IReadOnlyList<string> removedTargetIds,
+		CompactSemanticRecordingState? state,
+		SemanticRecordingFormattingOptions? options)
 	{
+		if (state is null)
+			return [.. removedTargetIds];
+
+		var output = new List<string>();
+		foreach (var targetId in removedTargetIds)
+		{
+			if (state.TryGetPreviousNode(targetId, out var previous)
+				&& !ShouldIncludeNode(previous, CompactProperties(previous.Properties), options))
+			{
+				continue;
+			}
+
+			output.Add(targetId);
+		}
+
+		return output;
+	}
+
+	internal static bool ShouldIncludeNode(
+		VisualTreeNodeDto node,
+		IReadOnlyDictionary<string, object?> compactProperties,
+		SemanticRecordingFormattingOptions? options)
+	{
+		if (ShouldPruneStructuralLayoutNode(node, compactProperties, options))
+			return false;
+
 		if (node.IsRoot)
 			return true;
 
@@ -338,10 +403,38 @@ internal static class CompactSemanticRecordingFrame
 			|| string.Equals(node.TypeName, "Dialog", StringComparison.Ordinal);
 	}
 
+	private static bool ShouldPruneStructuralLayoutNode(
+		VisualTreeNodeDto node,
+		IReadOnlyDictionary<string, object?> compactProperties,
+		SemanticRecordingFormattingOptions? options)
+	{
+		if (options?.PruneStructuralLayoutNodes != true)
+			return false;
+		if (compactProperties.TryGetValue("automationId", out var automationId)
+			&& !string.IsNullOrWhiteSpace(Convert.ToString(automationId, CultureInfo.InvariantCulture)))
+		{
+			return false;
+		}
+
+		return StructuralLayoutTypeNames.Contains(GetSimpleTypeName(node.TypeName));
+	}
+
+	private static string GetSimpleTypeName(string? typeName)
+	{
+		var effectiveTypeName = typeName ?? string.Empty;
+		if (string.IsNullOrWhiteSpace(effectiveTypeName))
+			return string.Empty;
+
+		var lastDot = effectiveTypeName.LastIndexOf('.');
+		return lastDot >= 0 && lastDot + 1 < effectiveTypeName.Length
+			? effectiveTypeName.Substring(lastDot + 1)
+			: effectiveTypeName;
+	}
+
 	private static bool IsIdentityProperty(string propertyName) =>
 		propertyName is "name" or "automationName" or "automationId" or "text" or "content" or "header" or "title" or "uid";
 
-	private static Dictionary<string, object?> CompactPropertyChanges(
+	internal static Dictionary<string, object?> CompactPropertyChanges(
 		IReadOnlyDictionary<string, object?> previous,
 		IReadOnlyDictionary<string, object?> current)
 	{
@@ -359,10 +452,10 @@ internal static class CompactSemanticRecordingFrame
 		return changes;
 	}
 
-	private static Dictionary<string, object?> CompactProperties(IReadOnlyDictionary<string, object?> properties) =>
+	internal static Dictionary<string, object?> CompactProperties(IReadOnlyDictionary<string, object?> properties) =>
 		CompactProperties(properties, includeDefaultStateValues: false);
 
-	private static Dictionary<string, object?> CompactProperties(IReadOnlyDictionary<string, object?> properties, bool includeDefaultStateValues)
+	internal static Dictionary<string, object?> CompactProperties(IReadOnlyDictionary<string, object?> properties, bool includeDefaultStateValues)
 	{
 		var output = new Dictionary<string, object?>(StringComparer.Ordinal);
 		foreach (var property in properties)

@@ -77,5 +77,6 @@ public static class AppDriverPayload
 		ReusablePipeSessionRegistry.ClearForTests();
 		AppHooks.ResetForTests();
 		BindingFailureCaptureService.Instance.ResetForTests();
+		VirtualPointerService.ResetForTests();
 	}
 }

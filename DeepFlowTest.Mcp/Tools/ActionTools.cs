@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Interop;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Contracts;
 using DeepFlowTest.Mcp.Hosting;
@@ -54,7 +55,7 @@ internal static class ActionTools
 		string? button = "left",
 		int clickCount = 1,
 		bool doubleClick = false,
-		string? after = "none")
+		string? after = "delta")
 	{
 		return ExecuteAction(runner, host, cache, options, "click", after, selector: CreateSelector(targetId, typeName, null, name, automationId, text, property), action =>
 		{
@@ -103,7 +104,7 @@ internal static class ActionTools
 		double destinationAnchorY = 0.5,
 		bool ensureForeground = true,
 		bool validateSameProcess = true,
-		string? after = "target")
+		string? after = "delta")
 	{
 		return runner.Run(() =>
 		{
@@ -111,7 +112,9 @@ internal static class ActionTools
 				throw new CliException(CliErrorCodes.ActionDenied, "Action 'drag' requires allowActions policy.");
 
 			var session = host.RequireSession();
-			var common = CreateCommonOptions(options.Value, after);
+			var afterMode = NormalizeAfterMode(after);
+			var beforeSnapshot = CaptureDeltaBaseline(host, cache, options.Value, afterMode);
+			var common = CreateCommonOptions(options.Value, afterMode);
 			var defaults = CreateDefaults(options.Value);
 			var sourceSelector = CreateSelector(targetId, typeName, null, name, automationId, text, property).ToCliSelector();
 			var destinationSelector = CreateSelector(destinationTargetId, destinationTypeName, null, destinationName, destinationAutomationId, destinationText, destinationProperty).ToCliSelector();
@@ -139,7 +142,14 @@ internal static class ActionTools
 					TimeoutMs = common.TimeoutMs,
 				});
 			cache.Invalidate();
-			return result;
+			return CreateMcpActionResult(
+				result.Action,
+				source: result.Source,
+				destination: result.Destination,
+				target: null,
+				payload: result.Payload,
+				after: result.After,
+				delta: CreateDeltaAfter(host, cache, options.Value, afterMode, beforeSnapshot));
 		});
 	}
 
@@ -155,7 +165,7 @@ internal static class ActionTools
 		string? automationId = null,
 		string? text = null,
 		string? property = null,
-		string? after = "target")
+		string? after = "delta")
 	{
 		return ExecuteAction(
 			runner,
@@ -185,7 +195,7 @@ internal static class ActionTools
 		string? selectorText = null,
 		string? property = null,
 		bool clearFirst = false,
-		string? after = "target")
+		string? after = "delta")
 	{
 		return ExecuteAction(
 			runner,
@@ -221,7 +231,7 @@ internal static class ActionTools
 		string? property = null,
 		int delayMs = TimeoutDefaults.KeyboardDelayMs,
 		bool ensureForeground = true,
-		string? after = "target")
+		string? after = "delta")
 	{
 		return ExecuteAction(
 			runner,
@@ -257,7 +267,7 @@ internal static class ActionTools
 		string? automationId = null,
 		string? text = null,
 		string? property = null,
-		string? after = "target")
+		string? after = "delta")
 	{
 		return ExecuteAction(
 			runner,
@@ -291,7 +301,7 @@ internal static class ActionTools
 		string? automationId = null,
 		string? text = null,
 		string? property = null,
-		string? after = "none")
+		string? after = "delta")
 	{
 		return ExecuteAction(runner, host, cache, options, "raise", after, CreateSelector(targetId, typeName, null, name, automationId, text, property), action =>
 		{
@@ -321,7 +331,7 @@ internal static class ActionTools
 		string? automationId = null,
 		string? text = null,
 		string? property = null,
-		string? after = "target")
+		string? after = "delta")
 	{
 		return ExecuteAction(runner, host, cache, options, "invoke", after, CreateSelector(targetId, typeName, null, name, automationId, text, property), action =>
 		{
@@ -354,28 +364,43 @@ internal static class ActionTools
 				throw new CliException(CliErrorCodes.ActionDenied, $"Action '{actionName}' requires allowActions policy.");
 
 			var session = host.RequireSession();
-			var common = CreateCommonOptions(options.Value, after);
+			var afterMode = NormalizeAfterMode(after);
+			var beforeSnapshot = CaptureDeltaBaseline(host, cache, options.Value, afterMode);
+			var common = CreateCommonOptions(options.Value, afterMode);
 			var defaults = CreateDefaults(options.Value);
 			var invocation = new ActionInvocation(actionName, session.AppSession, common, defaults, selector.ToCliSelector());
 			var result = execute(invocation);
 			cache.Invalidate();
-			return result;
+			return CreateMcpActionResult(
+				result.Action,
+				source: null,
+				destination: null,
+				target: result.Target,
+				payload: result.Payload,
+				after: result.After,
+				delta: CreateDeltaAfter(host, cache, options.Value, afterMode, beforeSnapshot));
 		});
 	}
 
-	private static CliCommonOptions CreateCommonOptions(DeepFlowMcpOptions options, string? after)
+	private static string NormalizeAfterMode(string? after)
 	{
 		var afterMode = string.IsNullOrWhiteSpace(after) ? "none" : after.Trim().ToLowerInvariant();
-		if (afterMode is not ("none" or "target" or "tree"))
+		if (afterMode is not ("none" or "target" or "tree" or "delta"))
 			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid after mode '{after}'.");
 
+		return afterMode;
+	}
+
+	private static CliCommonOptions CreateCommonOptions(DeepFlowMcpOptions options, string? afterMode)
+	{
+		var cliAfterMode = string.Equals(afterMode, "delta", StringComparison.Ordinal) ? "none" : afterMode ?? "none";
 		return new CliCommonOptions
 		{
 			TimeoutMs = options.DefaultTimeoutMs,
 			UseShortIds = true,
 			AllowActions = true,
 			AllowArbitraryInvoke = options.Policy.AllowArbitraryInvoke,
-			After = afterMode,
+			After = cliAfterMode,
 		};
 	}
 
@@ -406,6 +431,59 @@ internal static class ActionTools
 			Visible = true,
 			First = true,
 		};
+
+	private static VisualTreeSnapshot? CaptureDeltaBaseline(
+		McpSessionHost host,
+		McpSnapshotCache cache,
+		DeepFlowMcpOptions options,
+		string afterMode) =>
+		string.Equals(afterMode, "delta", StringComparison.Ordinal)
+			? cache.GetOrRefresh(
+				host,
+				McpSemanticRecordingFormatter.MergeSemanticProperties(options.DefaultProperties),
+				options.TreeLimit,
+				includeHidden: true,
+				refresh: true)
+			: null;
+
+	private static McpCondensedRecordingOutput? CreateDeltaAfter(
+		McpSessionHost host,
+		McpSnapshotCache cache,
+		DeepFlowMcpOptions options,
+		string afterMode,
+		VisualTreeSnapshot? beforeSnapshot)
+	{
+		if (!string.Equals(afterMode, "delta", StringComparison.Ordinal) || beforeSnapshot is null)
+			return null;
+
+		var afterSnapshot = cache.GetOrRefresh(
+			host,
+			McpSemanticRecordingFormatter.MergeSemanticProperties(options.DefaultProperties),
+			options.TreeLimit,
+			includeHidden: true,
+			refresh: true);
+		return McpSemanticRecordingFormatter.FormatDelta(beforeSnapshot, afterSnapshot);
+	}
+
+	private static McpActionCommandResult CreateMcpActionResult(
+		string action,
+		TreeNodeData? source,
+		TreeNodeData? destination,
+		TreeNodeData? target,
+		object? payload,
+		object? after,
+		McpCondensedRecordingOutput? delta)
+	{
+		return new McpActionCommandResult
+		{
+			Action = action,
+			Source = source,
+			Destination = destination,
+			Target = target,
+			Payload = payload,
+			After = delta ?? after,
+		};
+	}
 
 	private sealed class ActionInvocation
 	{

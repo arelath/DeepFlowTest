@@ -60,6 +60,29 @@ public sealed record class PipeStatusCommandRequest : IpcCommand
 	}
 }
 
+public sealed record class ConfigureDiagnosticsCommandRequest : IpcCommand
+{
+	public ConfigureDiagnosticsCommandRequest()
+		: base(ProtocolConstants.Commands.ConfigureDiagnostics)
+	{
+	}
+
+	public VirtualPointerOptionsDto? VirtualPointer { get; set; }
+}
+
+public sealed record class VirtualPointerOptionsDto
+{
+	public bool Enabled { get; set; }
+
+	public bool ShowClickRipples { get; set; } = true;
+
+	public bool ShowDragTrail { get; set; } = true;
+
+	public int HideDelayMs { get; set; } = 800;
+
+	public bool IncludeInScreenshots { get; set; }
+}
+
 public sealed record class GetVisualTreeCommandRequest : IpcCommand
 {
 	public GetVisualTreeCommandRequest()

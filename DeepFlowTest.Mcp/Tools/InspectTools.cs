@@ -32,12 +32,24 @@ internal static class InspectTools
 		[Description("Maximum traversal depth, or -1 for unlimited.")] int maxDepth = -1,
 		[Description("Include hidden nodes.")] bool includeHidden = false,
 		[Description("Optional root target ID or short ID.")] string? rootTargetId = null,
-		[Description("Force a fresh target snapshot.")] bool refresh = false)
+		[Description("Force a fresh target snapshot.")] bool refresh = false,
+		[Description("Output format: condensed-agent or json.")] string? outputFormat = McpSemanticRecordingFormatter.FormatName)
 	{
 		return runner.Run(() =>
 		{
+			var useCondensed = IsCondensedOutput(outputFormat);
 			var propertyNames = McpArgumentParsing.ParseProperties(properties, options.Value.DefaultProperties);
+			if (useCondensed)
+				propertyNames = McpSemanticRecordingFormatter.MergeSemanticProperties(propertyNames);
+
 			var snapshot = cache.GetOrRefresh(host, EnsureVisibilityProperty(propertyNames, includeHidden), Math.Max(options.Value.TreeLimit, limit ?? options.Value.TreeLimit), includeHidden: true, refresh, rootTargetId);
+			if (useCondensed)
+			{
+				var recording = McpSemanticRecordingFormatter.FormatSnapshot(snapshot);
+				resources.StoreText(DeepFlowResourceNames.LatestVisualTree, recording.Text, "text/plain");
+				return recording;
+			}
+
 			var tree = new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions
 			{
 				Shape = McpArgumentParsing.ParseTreeShape(shape, TreeShape.Flat),
@@ -272,5 +284,18 @@ internal static class InspectTools
 			return properties;
 
 		return [.. properties, KnownProperties.IsVisible];
+	}
+
+	private static bool IsCondensedOutput(string? outputFormat)
+	{
+		var normalized = string.IsNullOrWhiteSpace(outputFormat)
+			? McpSemanticRecordingFormatter.FormatName
+			: outputFormat.Trim().ToLowerInvariant();
+		return normalized switch
+		{
+			McpSemanticRecordingFormatter.FormatName or "condensed" or "text" => true,
+			"json" or "tree-json" => false,
+			_ => throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported outputFormat '{outputFormat}'."),
+		};
 	}
 }

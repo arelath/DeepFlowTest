@@ -55,8 +55,27 @@ internal static class ArchitectureRedirect
 	public static string GetLauncherPath(string currentExecutablePath, string targetArchitecture)
 	{
 		var directory = Path.GetDirectoryName(currentExecutablePath) ?? string.Empty;
-		return Path.Combine(directory, $"DeepFlowTest.InjectorLauncher.{ArchitectureDetector.Normalize(targetArchitecture)}.exe");
+		var normalizedTargetArchitecture = ArchitectureDetector.Normalize(targetArchitecture);
+		var executableName = $"DeepFlowTest.InjectorLauncher.{normalizedTargetArchitecture}.exe";
+		var sameDirectoryPath = Path.Combine(directory, executableName);
+		if (File.Exists(sameDirectoryPath))
+			return sameDirectoryPath;
+
+		var currentArchitectureDirectory = Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+		var resourceDirectory = Path.GetDirectoryName(directory);
+		if (IsArchitectureDirectory(currentArchitectureDirectory) &&
+			resourceDirectory is not null &&
+			Path.GetFileName(resourceDirectory).Equals(InjectorPathResolver.ResourceFolderName, StringComparison.OrdinalIgnoreCase))
+		{
+			return Path.Combine(resourceDirectory, normalizedTargetArchitecture, executableName);
+		}
+
+		return sameDirectoryPath;
 	}
+
+	private static bool IsArchitectureDirectory(string value) =>
+		value.Equals(ArchitectureDetector.X86, StringComparison.OrdinalIgnoreCase) ||
+		value.Equals(ArchitectureDetector.X64, StringComparison.OrdinalIgnoreCase);
 
 	public static string EscapeArguments(string[] args)
 	{

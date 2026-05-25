@@ -57,6 +57,7 @@ public sealed class AppDriver : IDisposable
 		keyboard = new Keyboard(this);
 		try
 		{
+			ConfigurePayloadDiagnostics();
 			if (Options.FailOnBindingFailures)
 				automaticBindingFailureCapture = StartBindingFailureCapture();
 			var autoSemanticRecordingOutputPath = ResolveAutomaticSemanticRecordingOutputPath();
@@ -259,6 +260,26 @@ public sealed class AppDriver : IDisposable
 			outputFilePath,
 			options ?? new SemanticRecordingOptions(),
 			(int)Math.Max(1, Options.Timeout.TotalMilliseconds));
+
+	private void ConfigurePayloadDiagnostics()
+	{
+		if (Options.VirtualPointer.IsDefault)
+			return;
+
+		var response = Session.Send<StandardIpcResponse>(new ConfigureDiagnosticsCommandRequest
+		{
+			TimeoutMs = (int)Math.Max(1, Options.Timeout.TotalMilliseconds),
+			VirtualPointer = new VirtualPointerOptionsDto
+			{
+				Enabled = Options.VirtualPointer.Enabled,
+				ShowClickRipples = Options.VirtualPointer.ShowClickRipples,
+				ShowDragTrail = Options.VirtualPointer.ShowDragTrail,
+				HideDelayMs = Options.VirtualPointer.HideDelayMs,
+				IncludeInScreenshots = Options.VirtualPointer.IncludeInScreenshots,
+			},
+		});
+		DriverCommandClient.ThrowIfStandardFailure(response, "Configure diagnostics failed.");
+	}
 
 	private string? ResolveAutomaticSemanticRecordingOutputPath()
 	{

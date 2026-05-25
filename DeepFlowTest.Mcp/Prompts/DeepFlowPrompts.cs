@@ -18,7 +18,7 @@ internal static class DeepFlowPrompts
 	public static string DriveUi() =>
 		"""
 		Check deepflow_target_status before acting. Use deepflow_find_elements to resolve the target, then call deepflow_click_element, deepflow_focus_element, deepflow_type_text, deepflow_press_keys, or deepflow_set_property.
-		After each action, request after=target or after=tree when verification matters. If actions are denied, explain that the server must be started with the allowActions policy.
+		Action tools return a condensed delta by default; request after=target, after=tree, or after=none only when that shape is more useful. If actions are denied, explain that the server must be started with the allowActions policy.
 		Keep selectors stable enough to reuse in automated tests.
 		""";
 

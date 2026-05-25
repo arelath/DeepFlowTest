@@ -230,11 +230,21 @@ public sealed class RepositoryConfigurationTests
 		var launcherProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.InjectorLauncher", "DeepFlowTest.InjectorLauncher.csproj"));
 		var nativeProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.GenericInjector", "DeepFlowTest.GenericInjector.vcxproj"));
 		var cliProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj"));
+		var solution = File.ReadAllText(Path.Combine(root, "DeepFlowTest.sln"));
 		var payloadLayoutTargets = File.ReadAllText(Path.Combine(root, "Shared", "DeepFlowTestPayloadLayout.targets"));
 
 		Assert.That(launcherProject, Does.Contain(@"DeepFlowTestResources\$(PlatformTarget)\"));
+		Assert.That(launcherProject, Does.Contain("CompileX86InjectorLauncher"));
+		Assert.That(launcherProject, Does.Contain("CompileX64InjectorLauncher"));
 		Assert.That(nativeProject, Does.Contain(@"DeepFlowTestResources\$(ArchitectureName)\"));
+		Assert.That(nativeProject, Does.Contain("CompileX86GenericInjector"));
+		Assert.That(nativeProject, Does.Contain("CompileX64GenericInjector"));
 		Assert.That(cliProject, Does.Contain("DeepFlowTestPayloadLayout.targets"));
+		Assert.That(solution, Does.Contain("ProjectDependencies"));
+		Assert.That(solution, Does.Contain("{126C2986-2493-4C81-9A8E-4E5E620AE10F} = {126C2986-2493-4C81-9A8E-4E5E620AE10F}"));
+		Assert.That(solution, Does.Contain("{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5} = {BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}"));
+		Assert.That(solution, Does.Contain("{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Debug|Any CPU.Build.0 = Debug|Win32"));
+		Assert.That(solution, Does.Contain("{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Release|Any CPU.Build.0 = Release|Win32"));
 		Assert.That(payloadLayoutTargets, Does.Contain(@"DeepFlowTestResources\x86"));
 		Assert.That(payloadLayoutTargets, Does.Contain(@"DeepFlowTestResources\x64"));
 		Assert.That(payloadLayoutTargets, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x86"));

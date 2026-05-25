@@ -16,14 +16,27 @@ public sealed class InjectorLauncherRedirectTests
 	}
 
 	[Test]
+	public void RedirectPathUsesSiblingArchitectureResourceFolder()
+	{
+		var path = ArchitectureRedirect.GetLauncherPath(
+			@"C:\tools\DeepFlowTestResources\x64\DeepFlowTest.InjectorLauncher.x64.exe",
+			"x86");
+
+		Assert.That(path, Is.EqualTo(@"C:\tools\DeepFlowTestResources\x86\DeepFlowTest.InjectorLauncher.x86.exe"));
+	}
+
+	[Test]
 	public void RedirectCommandPreservesOriginalArguments()
 	{
 		var root = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-		Directory.CreateDirectory(root);
+		var x86Root = Path.Combine(root, "DeepFlowTestResources", "x86");
+		var x64Root = Path.Combine(root, "DeepFlowTestResources", "x64");
+		Directory.CreateDirectory(x86Root);
+		Directory.CreateDirectory(x64Root);
 		try
 		{
-			var currentExe = Path.Combine(root, "DeepFlowTest.InjectorLauncher.x86.exe");
-			var targetExe = Path.Combine(root, "DeepFlowTest.InjectorLauncher.x64.exe");
+			var currentExe = Path.Combine(x86Root, "DeepFlowTest.InjectorLauncher.x86.exe");
+			var targetExe = Path.Combine(x64Root, "DeepFlowTest.InjectorLauncher.x64.exe");
 			File.WriteAllText(targetExe, string.Empty);
 
 			var startInfo = ArchitectureRedirect.CreateStartInfo(currentExe, "x86", "x64", new[] { "--assembly", @"C:\Program Files\DeepFlowTest.dll" });

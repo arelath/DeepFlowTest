@@ -72,3 +72,18 @@ internal sealed record class McpTargetStatus
 
 	public string? ExitReason { get; init; }
 }
+
+internal sealed record class McpActionCommandResult
+{
+	public string Action { get; init; } = string.Empty;
+
+	public DeepFlowTest.Cli.TreeNodeData? Target { get; init; }
+
+	public DeepFlowTest.Cli.TreeNodeData? Source { get; init; }
+
+	public DeepFlowTest.Cli.TreeNodeData? Destination { get; init; }
+
+	public object? Payload { get; init; }
+
+	public object? After { get; init; }
+}

@@ -15,6 +15,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Commands.TargetAdapters;
+using DeepFlowTest.AppDriverPayload.Diagnostics;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using NUnit.Framework;
@@ -56,6 +57,63 @@ public sealed class TargetActionCommandTests
 
 			AssertOk(CaptureResponse(new KnownRoutedEventCommandRequest { TargetId = targetId, EventName = "Click" }));
 			Assert.That(clickCount, Is.EqualTo(4));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void SyntheticClickReportsVirtualPointerTelemetryWhenEnabled()
+	{
+		var renderer = new RecordingVirtualPointerRenderer();
+		using var _ = VirtualPointerService.UseRendererFactoryForTests(_ => renderer);
+		VirtualPointerService.Configure(new VirtualPointerOptionsDto { Enabled = true, HideDelayMs = 0 });
+		var button = new Button { Name = "virtualPointerClickButton", Content = "Pointer" };
+		var window = CreateWindow("Virtual pointer click", button);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			DoEvents();
+			var targetId = FindTargetId("virtualPointerClickButton");
+			var expectedPoint = button.PointToScreen(new Point(button.RenderSize.Width / 2, button.RenderSize.Height / 2));
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId }));
+
+			Assert.That(renderer.MovePoints, Has.Count.EqualTo(1));
+			Assert.That(renderer.MovePoints[0].X, Is.EqualTo(expectedPoint.X).Within(1));
+			Assert.That(renderer.MovePoints[0].Y, Is.EqualTo(expectedPoint.Y).Within(1));
+			Assert.That(renderer.Clicks, Is.EqualTo(new[] { 1 }));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void KnownMouseDoubleClickReportsVirtualPointerTelemetryWhenEnabled()
+	{
+		var renderer = new RecordingVirtualPointerRenderer();
+		using var _ = VirtualPointerService.UseRendererFactoryForTests(_ => renderer);
+		VirtualPointerService.Configure(new VirtualPointerOptionsDto { Enabled = true, HideDelayMs = 0 });
+		var button = new Button { Name = "virtualPointerDoubleClickButton", Content = "Pointer" };
+		var window = CreateWindow("Virtual pointer double click", button);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			DoEvents();
+			var targetId = FindTargetId("virtualPointerDoubleClickButton");
+
+			AssertOk(CaptureResponse(new KnownRoutedEventCommandRequest { TargetId = targetId, EventName = "MouseDoubleClick" }));
+
+			Assert.That(renderer.MovePoints, Has.Count.EqualTo(1));
+			Assert.That(renderer.Clicks, Is.EqualTo(new[] { 2 }));
 		}
 		finally
 		{
@@ -150,6 +208,7 @@ public sealed class TargetActionCommandTests
 		var downCount = 0;
 		var upCount = 0;
 		var doubleClickCount = 0;
+		Point? lastMouseDownPosition = null;
 		var buttonEvents = new List<string>();
 		var panel = new StackPanel();
 		var border = new Border
@@ -161,7 +220,11 @@ public sealed class TargetActionCommandTests
 		};
 		var button = new Button { Name = "doubleClickButton", Content = "Double" };
 		border.PreviewMouseDown += (_, _) => previewDownCount++;
-		border.MouseDown += (_, _) => downCount++;
+		border.MouseDown += (_, args) =>
+		{
+			downCount++;
+			lastMouseDownPosition = args.GetPosition(border);
+		};
 		border.MouseUp += (_, _) => upCount++;
 		button.Click += (_, _) => buttonEvents.Add("Click");
 		button.MouseDoubleClick += (_, _) =>
@@ -183,6 +246,8 @@ public sealed class TargetActionCommandTests
 			Assert.That(previewDownCount, Is.EqualTo(1));
 			Assert.That(downCount, Is.EqualTo(1));
 			Assert.That(upCount, Is.EqualTo(1));
+			Assert.That(lastMouseDownPosition?.X, Is.EqualTo(30).Within(0.5));
+			Assert.That(lastMouseDownPosition?.Y, Is.EqualTo(20).Within(0.5));
 
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = buttonId, ClickCount = 2 }));
 			Assert.That(doubleClickCount, Is.EqualTo(1));
@@ -191,6 +256,31 @@ public sealed class TargetActionCommandTests
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = borderId, MouseButton = MouseButtonKind.Right }));
 			Assert.That(border.ContextMenu.IsOpen, Is.True);
 			border.ContextMenu.IsOpen = false;
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void ClickSelectsWpfTabItem()
+	{
+		var tabControl = new TabControl();
+		var firstTab = new TabItem { Name = "firstSyntheticClickTab", Header = "First", Content = "First Content" };
+		var secondTab = new TabItem { Name = "secondSyntheticClickTab", Header = "Second", Content = "Second Content" };
+		tabControl.Items.Add(firstTab);
+		tabControl.Items.Add(secondTab);
+		var window = CreateWindow("Synthetic click tab selection", tabControl);
+
+		try
+		{
+			window.Show();
+			var secondTabId = FindTargetId("secondSyntheticClickTab");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = secondTabId }));
+
+			Assert.That(WaitUntil(() => secondTab.IsSelected), Is.True);
 		}
 		finally
 		{
@@ -1153,6 +1243,69 @@ public sealed class TargetActionCommandTests
 	}
 
 	[Test]
+	public void InjectedDragAndDropReportsVirtualPointerPathWhenEnabled()
+	{
+		var renderer = new RecordingVirtualPointerRenderer();
+		using var _ = VirtualPointerService.UseRendererFactoryForTests(_ => renderer);
+		VirtualPointerService.Configure(new VirtualPointerOptionsDto { Enabled = true, HideDelayMs = 0 });
+		var source = new Border
+		{
+			Name = "virtualPointerDragSource",
+			Width = 40,
+			Height = 40,
+			Background = Brushes.SteelBlue,
+		};
+		var destination = new Border
+		{
+			Name = "virtualPointerDragDestination",
+			Width = 40,
+			Height = 40,
+			Background = Brushes.SeaGreen,
+		};
+		var canvas = new Canvas
+		{
+			Width = 260,
+			Height = 140,
+			Background = Brushes.Transparent,
+		};
+		Canvas.SetLeft(source, 20);
+		Canvas.SetTop(source, 20);
+		Canvas.SetLeft(destination, 180);
+		Canvas.SetTop(destination, 80);
+		canvas.Children.Add(source);
+		canvas.Children.Add(destination);
+		var window = CreateWindow("Virtual pointer drag", canvas, width: 320, height: 220);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			DoEvents();
+			var sourceId = FindTargetId("virtualPointerDragSource");
+			var destinationId = FindTargetId("virtualPointerDragDestination");
+
+			AssertOk(CaptureResponse(new DragAndDropCommandRequest
+			{
+				TargetId = sourceId,
+				DestinationTargetId = destinationId,
+				DurationMs = 100,
+				StepIntervalMs = 25,
+				UseInjectedEvents = true,
+				EnsureForeground = false,
+				ValidateSameProcess = false,
+			}));
+
+			Assert.That(renderer.BeginDragPoints, Has.Count.EqualTo(1));
+			Assert.That(renderer.DragMovePoints.Count, Is.GreaterThan(0));
+			Assert.That(renderer.EndDragPoints, Has.Count.EqualTo(1));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
 	public void ModalDialogWatcherReturnsPendingWhenShowDialogHookFires()
 	{
 		AppHooks.ShowDialogCalled = true;
@@ -1603,6 +1756,47 @@ public sealed class TargetActionCommandTests
 			ReceivedText += e.Text;
 			e.Handled = true;
 			base.OnPreviewTextInput(e);
+		}
+	}
+
+	private sealed class RecordingVirtualPointerRenderer : IVirtualPointerRenderer
+	{
+		public List<Point> MovePoints { get; } = [];
+
+		public List<int> Clicks { get; } = [];
+
+		public List<Point> BeginDragPoints { get; } = [];
+
+		public List<Point> DragMovePoints { get; } = [];
+
+		public List<Point> EndDragPoints { get; } = [];
+
+		public int HideCount { get; private set; }
+
+		public void Configure(VirtualPointerOptionsDto options)
+		{
+		}
+
+		public void MoveTo(Point screenDevicePoint, IntPtr ownerHwnd) =>
+			MovePoints.Add(screenDevicePoint);
+
+		public void Click(MouseButtonKind button, int clickCount) =>
+			Clicks.Add(clickCount);
+
+		public void BeginDrag(Point screenDevicePoint, IntPtr ownerHwnd) =>
+			BeginDragPoints.Add(screenDevicePoint);
+
+		public void DragMove(Point screenDevicePoint) =>
+			DragMovePoints.Add(screenDevicePoint);
+
+		public void EndDrag(Point screenDevicePoint) =>
+			EndDragPoints.Add(screenDevicePoint);
+
+		public void Hide() =>
+			HideCount++;
+
+		public void Dispose()
+		{
 		}
 	}
 

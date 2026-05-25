@@ -100,6 +100,7 @@ internal sealed class McpStreamRegistry : IDisposable
 		private readonly object gate = new();
 		private readonly ICliAppSession appSession;
 		private readonly ICliStreamSession stream;
+		private readonly McpSemanticRecordingFormatter? semanticRecordingFormatter;
 		private readonly int capacity;
 		private readonly int timeoutMs;
 		private readonly Queue<StreamMessage> frames = new();
@@ -112,6 +113,9 @@ internal sealed class McpStreamRegistry : IDisposable
 			SessionId = sessionId;
 			this.appSession = appSession;
 			this.stream = stream;
+			semanticRecordingFormatter = string.Equals(stream.Start.StreamKind, ProtocolConstants.StreamKinds.SemanticRecording, StringComparison.Ordinal)
+				? new McpSemanticRecordingFormatter()
+				: null;
 			this.capacity = Math.Max(1, capacity);
 			this.timeoutMs = Math.Max(1, timeoutMs);
 		}
@@ -142,7 +146,9 @@ internal sealed class McpStreamRegistry : IDisposable
 			{
 				StreamId = StreamId,
 				SubscriptionId = SubscriptionId,
-				Frames = result,
+				Frames = semanticRecordingFormatter is null ? result : [],
+				FrameCount = result.Count,
+				Recording = semanticRecordingFormatter?.FormatStreamMessages(result),
 				DroppedFrames = DroppedFrames,
 			};
 		}
@@ -174,6 +180,7 @@ internal sealed class McpStreamRegistry : IDisposable
 				}
 
 				stream.Dispose();
+				semanticRecordingFormatter?.Dispose();
 				cancellation.Dispose();
 			}
 		}
@@ -233,6 +240,10 @@ internal sealed record class StreamReadResult
 	public string SubscriptionId { get; init; } = string.Empty;
 
 	public IReadOnlyList<StreamMessage> Frames { get; init; } = [];
+
+	public int FrameCount { get; init; }
+
+	public McpCondensedRecordingOutput? Recording { get; init; }
 
 	public int DroppedFrames { get; init; }
 }

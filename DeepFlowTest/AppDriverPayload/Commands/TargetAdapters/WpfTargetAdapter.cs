@@ -12,6 +12,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Commands;
+using DeepFlowTest.AppDriverPayload.Diagnostics;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Shared;
 using DeepFlowTest.Utility;
@@ -150,6 +151,7 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		try
 		{
 			AppHooks.SetSyntheticMouseScreenPosition(sourceScreen);
+			VirtualPointerService.BeginDrag(sourceScreen, GetOwnerHwnd(source));
 			AppHooks.SetButton(MouseButton.Left, isPressed: true);
 			var sourceTargets = GetAscendingVisualTree(source);
 			RaiseMouseButtonEvent(source, UIElement.PreviewMouseDownEvent, MouseButton.Left, sourceTargets);
@@ -159,11 +161,14 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 			for (var i = 1; i <= steps; i++)
 			{
 				var progress = (double)i / steps;
-				AppHooks.SetSyntheticMouseScreenPosition(Interpolate(sourceScreen, destinationScreen, progress));
+				var currentScreen = Interpolate(sourceScreen, destinationScreen, progress);
+				AppHooks.SetSyntheticMouseScreenPosition(currentScreen);
+				VirtualPointerService.DragMove(currentScreen);
 				RaiseMouseMoveEvent(source);
 			}
 
 			AppHooks.SetSyntheticMouseScreenPosition(destinationScreen);
+			VirtualPointerService.EndDrag(destinationScreen);
 			RaiseMouseMoveEvent(destination);
 			AppHooks.SetButton(MouseButton.Left, isPressed: false);
 			var destinationTargets = GetAscendingVisualTree(destination);
@@ -202,6 +207,7 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 			return ActionResult.Unsupported($"Routed event '{eventName}' is not allow-listed.");
 
 		var args = CreateKnownRoutedEventArgs(eventName, routedEvent, target);
+		ReportVirtualPointerForKnownRoutedEvent(target, eventName);
 		if (args is MouseButtonEventArgs && string.Equals(eventName?.Trim(), "MouseDoubleClick", StringComparison.Ordinal))
 			InvokeMouseGestureBindings(target, MouseButton.Left, 2);
 
@@ -483,6 +489,12 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		UIHighlight.Select(target);
 		TryEnsureAppHooks();
 		using var syntheticMouseInput = AppHooks.BeginSyntheticMouseInput();
+		if (TryGetScreenPoint(target, new PointerAnchor(0.5, 0.5), out var clickScreen, out _))
+		{
+			AppHooks.SetSyntheticMouseScreenPosition(clickScreen);
+			VirtualPointerService.MoveTo(clickScreen, GetOwnerHwnd(target));
+		}
+
 		var clickEvent = mouseButton == MouseButton.Left ? ResolvePrimaryClickEvent(target) : null;
 		var observedClickCount = 0;
 		var observedDoubleClickCount = 0;
@@ -514,6 +526,7 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 				AppHooks.SetButton(mouseButton, isPressed: false);
 				RaiseMouseButtonEvent(target, UIElement.PreviewMouseUpEvent, mouseButton, targets);
 				RaiseMouseButtonEvent(target, UIElement.MouseUpEvent, mouseButton, targets);
+				VirtualPointerService.Click(button, 1);
 
 				var observedDoubleClickDuringThisClick = observedDoubleClickCount != observedBeforeDoubleClick;
 				if (clickEvent is not null && observedClickCount == observedBeforeClick && !observedDoubleClickDuringThisClick)
@@ -538,6 +551,20 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 			OpenContextMenu(target);
 
 		return ActionResult.Ok();
+	}
+
+	private static void ReportVirtualPointerForKnownRoutedEvent(object target, string eventName)
+	{
+		var normalized = eventName?.Trim();
+		if (normalized is not ("Click" or "MouseDoubleClick"))
+			return;
+		if (target is not UIElement uiElement)
+			return;
+		if (!TryGetScreenPoint(uiElement, new PointerAnchor(0.5, 0.5), out var screen, out _))
+			return;
+
+		VirtualPointerService.MoveTo(screen, GetOwnerHwnd(uiElement));
+		VirtualPointerService.Click(MouseButtonKind.Left, string.Equals(normalized, "MouseDoubleClick", StringComparison.Ordinal) ? 2 : 1);
 	}
 
 	private static MouseButton ToWpfMouseButton(MouseButtonKind button) =>

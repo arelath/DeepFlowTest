@@ -39,6 +39,7 @@ public sealed class McpEndToEndTests
 				["properties"] = DefaultProperties,
 				["limit"] = 500,
 				["refresh"] = true,
+				["outputFormat"] = "json",
 			});
 			Assert.That(TreeContainsAutomationId(tree.Data, "HelloWorldWindow"), Is.True);
 			Assert.That(TreeContainsAutomationId(tree.Data, "HelloWorldButton"), Is.True);
@@ -174,6 +175,7 @@ public sealed class McpEndToEndTests
 			["properties"] = DefaultProperties,
 			["limit"] = 500,
 			["refresh"] = true,
+			["outputFormat"] = "json",
 		});
 		var button = await mcp.FindOneByAutomationIdAsync("HelloWorldButton", DefaultProperties, refresh: false);
 		Assert.That(button.GetPropertyIgnoreCase("typeName").GetString(), Is.EqualTo("Button"));

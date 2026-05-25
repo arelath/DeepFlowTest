@@ -64,6 +64,10 @@ public sealed class ProtocolCommandTests
 		Assert.That(stale.Status, Is.EqualTo(ProtocolConstants.Statuses.StaleElement));
 		Assert.That(stream.Kind, Is.EqualTo(ProtocolConstants.StreamKinds.VisualTree));
 		Assert.That(stream.Sequence, Is.EqualTo(7));
+		Assert.That(new ConfigureDiagnosticsCommandRequest
+		{
+			VirtualPointer = new VirtualPointerOptionsDto { Enabled = true, HideDelayMs = 123 },
+		}.VirtualPointer!.HideDelayMs, Is.EqualTo(123));
 		Assert.That(ProtocolConstants.Properties.Base64Screenshot, Is.EqualTo("Base64Screenshot"));
 		Assert.That(ProtocolConstants.Properties.MaxMatches, Is.EqualTo("MaxMatches"));
 	}
@@ -277,6 +281,22 @@ public sealed class ProtocolCommandTests
 	}
 
 	[Test]
+	public void ConfigureDiagnosticsRejectsInvalidVirtualPointerOptions()
+	{
+		var response = CaptureResponse(new ConfigureDiagnosticsCommandRequest
+		{
+			VirtualPointer = new VirtualPointerOptionsDto
+			{
+				Enabled = true,
+				HideDelayMs = -1,
+			},
+		});
+
+		Assert.That(response, Is.TypeOf<StandardIpcResponse>());
+		Assert.That(((StandardIpcResponse)response!).ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.InvalidArguments));
+	}
+
+	[Test]
 	public void BindingFailureStreamStartsWithoutDispatcherAndStopsCaptureRegistration()
 	{
 		BindingFailureCaptureService.Instance.ResetForTests();
@@ -447,6 +467,7 @@ public sealed class ProtocolCommandTests
 			new HelloCommandRequest(),
 			new PingCommandRequest(),
 			new PipeStatusCommandRequest(),
+			new ConfigureDiagnosticsCommandRequest { VirtualPointer = new VirtualPointerOptionsDto() },
 			new GetBindingFailuresCommandRequest(),
 			new StartSendingCommandRequest { StreamKind = ProtocolConstants.StreamKinds.VisualTree },
 			new StopSendingCommandRequest { SubscriptionId = "missing" },

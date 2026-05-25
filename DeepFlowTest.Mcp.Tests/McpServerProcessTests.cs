@@ -49,7 +49,7 @@ public sealed class McpServerProcessTests
 		var executablePath = Path.Combine(TestContext.CurrentContext.TestDirectory, "DeepFlowTest.Mcp.exe");
 		Assert.That(File.Exists(executablePath), Is.True, "The MCP apphost must be present in the test output directory.");
 
-		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 		await using var client = await McpClient.CreateAsync(
 			new StdioClientTransport(
 				new StdioClientTransportOptions

@@ -37,13 +37,20 @@ internal static class StreamTools
 				throw new CliException(CliErrorCodes.InvalidArguments, $"intervalMs must be at least {TimeoutDefaults.StreamMinimumIntervalMs}.");
 
 			var timeout = Math.Max(1, timeoutMs ?? options.Value.DefaultTimeoutMs);
+			var propertyNames = McpArgumentParsing.ParseProperties(properties, options.Value.DefaultProperties);
+			if (string.Equals(kind, ProtocolConstants.StreamKinds.SemanticRecording, StringComparison.Ordinal))
+				propertyNames = McpSemanticRecordingFormatter.MergeSemanticProperties(propertyNames);
+
 			var request = new StartSendingCommandRequest
 			{
 				StreamKind = kind,
 				IntervalMs = intervalMs,
-				PropNames = McpArgumentParsing.ParseProperties(properties, options.Value.DefaultProperties),
+				PropNames = propertyNames,
 				TargetId = targetId,
 				Format = McpArgumentParsing.ParseImageFormat(imageFormat, ImageFormat.Png),
+				SemanticRecording = string.Equals(kind, ProtocolConstants.StreamKinds.SemanticRecording, StringComparison.Ordinal)
+					? new SemanticRecordingOptionsDto { MaxNodeCount = Math.Max(1, options.Value.TreeLimit) }
+					: null,
 				TimeoutMs = timeout,
 			};
 			return streams.Start(host.RequireSession(), request, timeout);

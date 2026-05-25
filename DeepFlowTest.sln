@@ -34,6 +34,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeepFlowTest.Mcp.Tests", "DeepFlowTest.Mcp.Tests\DeepFlowTest.Mcp.Tests.csproj", "{A3850A84-8B8B-4EE9-915B-D78B6EA74695}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeepFlowTest.Recorder", "DeepFlowTest.Recorder\DeepFlowTest.Recorder.csproj", "{9A1887AC-0639-4B2B-8DF8-9E46805A6907}"
+	ProjectSection(ProjectDependencies) = postProject
+		{126C2986-2493-4C81-9A8E-4E5E620AE10F} = {126C2986-2493-4C81-9A8E-4E5E620AE10F}
+		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5} = {BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -106,11 +110,13 @@ Global
 		{126C2986-2493-4C81-9A8E-4E5E620AE10F}.Release|x86.ActiveCfg = Release|x86
 		{126C2986-2493-4C81-9A8E-4E5E620AE10F}.Release|x86.Build.0 = Release|x86
 		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Debug|Any CPU.ActiveCfg = Debug|Win32
+		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Debug|Any CPU.Build.0 = Debug|Win32
 		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Debug|x64.ActiveCfg = Debug|x64
 		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Debug|x64.Build.0 = Debug|x64
 		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Debug|x86.ActiveCfg = Debug|Win32
 		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Debug|x86.Build.0 = Debug|Win32
 		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Release|Any CPU.ActiveCfg = Release|Win32
+		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Release|Any CPU.Build.0 = Release|Win32
 		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Release|x64.ActiveCfg = Release|x64
 		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Release|x64.Build.0 = Release|x64
 		{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Release|x86.ActiveCfg = Release|Win32

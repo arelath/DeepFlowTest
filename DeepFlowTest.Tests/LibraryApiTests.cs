@@ -18,6 +18,28 @@ using FakeSession = DeepFlowTest.Tests.Fakes.FakeAppDriverCommandSession;
 public sealed class LibraryApiTests
 {
 	[Test]
+	public void VirtualPointerOptionsConfigurePayloadAfterSessionCreation()
+	{
+		var session = new FakeSession(StandardIpcResponse.Ok());
+		var options = new AppDriverOptions
+		{
+			AutoSemanticRecordingEnabled = false,
+		};
+		options.VirtualPointer.Enabled = true;
+		options.VirtualPointer.HideDelayMs = 250;
+
+		using var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			session,
+			options);
+
+		var configure = session.SentCommands.OfType<ConfigureDiagnosticsCommandRequest>().Single();
+		Assert.That(configure.VirtualPointer, Is.Not.Null);
+		Assert.That(configure.VirtualPointer!.Enabled, Is.True);
+		Assert.That(configure.VirtualPointer.HideDelayMs, Is.EqualTo(250));
+	}
+
+	[Test]
 	public void PublicApiCanFindActTypeAndScreenshotThroughSession()
 	{
 		var session = new FakeSession(
@@ -156,6 +178,39 @@ public sealed class LibraryApiTests
 		Assert.That(frames, Has.Count.GreaterThan(0));
 		Assert.That(frames.Any(static frame => (string?)frame["kind"] == "action"), Is.True);
 		Assert.That(recordingText, Does.Not.Contain("\"frameKind\""));
+	}
+
+	[Test]
+	public void SemanticRecordingBatchCallbackReceivesRawFramesAndDoesNotStopFileWritingWhenItThrows()
+	{
+		var session = new FakeSemanticRecordingCommandSession();
+		using var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
+			session);
+		var path = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-semantic-recording-callback.json");
+		if (File.Exists(path))
+			File.Delete(path);
+
+		var receivedFrameCount = 0;
+		Exception? callbackError = null;
+		using (var recording = driver.StartSemanticRecording(path, new SemanticRecordingOptions
+		{
+			OutputFormat = SemanticRecordingOutputFormat.CompactJson,
+			BatchReceived = batch =>
+			{
+				receivedFrameCount += batch.Frames.Count;
+				throw new InvalidOperationException("viewer failed");
+			},
+			BatchReceivedError = ex => callbackError = ex,
+		}))
+		{
+			Assert.That(SpinWait.SpinUntil(() => recording.FramesWritten > 0, TimeSpan.FromSeconds(2)), Is.True);
+		}
+
+		Assert.That(receivedFrameCount, Is.GreaterThan(0));
+		Assert.That(callbackError, Is.TypeOf<InvalidOperationException>());
+		var frames = JArray.Parse(File.ReadAllText(path));
+		Assert.That(frames, Has.Count.GreaterThan(0));
 	}
 
 	[Test]

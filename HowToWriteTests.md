@@ -138,19 +138,25 @@ statusLabel.Assert(x => x["Text"] == "Success" && x["Foreground"].ToString().Con
 
 ## Keyboard Input
 
-Sometimes you need to simulate raw physical keyboard input. Use the `driver.Keyboard` API:
+Sometimes you need to simulate keyboard input. Use the `driver.Keyboard` API
+for physical foreground input, or pass an `Element` when the input should be
+sent through the target-side command pipeline.
 
 ```csharp
+using System.Windows.Input;
+
 // Type raw text into the active window
 driver.Keyboard.Type("Hello World!");
 
-// Press special keys
-driver.Keyboard.Press("Enter");
-driver.Keyboard.Press("Tab");
+// Press physical keys
+driver.Keyboard.Press(Key.Enter);
+driver.Keyboard.Press(Key.Tab);
 
-// Keyboard shortcuts
-driver.Keyboard.Shortcut("Control", "A"); // Select All
-driver.Keyboard.Shortcut("Control", "C"); // Copy
+// Target an element through the injected payload
+var input = driver.GetElement(ElementSelector.ByAutomationId("UsernameInput"));
+driver.Keyboard.Type(input, "admin", clearFirst: true);
+driver.Keyboard.Press(input, "Tab");
+driver.Keyboard.Shortcut(input, "Control", "A"); // Select All
 ```
 
 ## Handling Dialogs

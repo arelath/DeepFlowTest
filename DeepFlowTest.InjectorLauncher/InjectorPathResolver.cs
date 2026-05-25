@@ -37,18 +37,36 @@ internal static class InjectorPathResolver
 	public static string ResolveResourcePath(string rootDirectory, string architecture, string fileName)
 	{
 		var normalizedArchitecture = ArchitectureDetector.Normalize(architecture);
+		var normalizedRootDirectory = Path.GetFullPath(rootDirectory);
 
 		// Common deployment: launcher exe runs from <bin>/DeepFlowTestResources/<arch>/, with its
 		// architecture-specific DLLs sitting beside it. Prefer that sibling layout.
-		var siblingPath = Path.Combine(rootDirectory, fileName);
+		var siblingPath = Path.Combine(normalizedRootDirectory, fileName);
 		if (File.Exists(siblingPath))
 			return siblingPath;
 
-		var contentFilePath = Path.Combine(rootDirectory, "contentFiles", "any", "any", ResourceFolderName, normalizedArchitecture, fileName);
+		var contentFilePath = Path.Combine(normalizedRootDirectory, "contentFiles", "any", "any", ResourceFolderName, normalizedArchitecture, fileName);
 		if (File.Exists(contentFilePath))
 			return contentFilePath;
 
-		return Path.Combine(rootDirectory, ResourceFolderName, normalizedArchitecture, fileName);
+		return Path.Combine(ResolveResourceDirectory(normalizedRootDirectory, normalizedArchitecture), fileName);
+	}
+
+	private static string ResolveResourceDirectory(string rootDirectory, string architecture)
+	{
+		var trimmedRoot = rootDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		var directoryName = Path.GetFileName(trimmedRoot);
+		if (directoryName.Equals(architecture, StringComparison.OrdinalIgnoreCase))
+		{
+			var parent = Path.GetDirectoryName(trimmedRoot);
+			if (parent is not null && Path.GetFileName(parent).Equals(ResourceFolderName, StringComparison.OrdinalIgnoreCase))
+				return trimmedRoot;
+		}
+
+		if (directoryName.Equals(ResourceFolderName, StringComparison.OrdinalIgnoreCase))
+			return Path.Combine(trimmedRoot, architecture);
+
+		return Path.Combine(trimmedRoot, ResourceFolderName, architecture);
 	}
 
 	public static string ResolvePayloadPath(string rootDirectory, string frameworkFamily)

@@ -135,6 +135,46 @@ public sealed class InjectorArgumentTests
 	}
 
 	[Test]
+	public void ResourcePathUsesArchitectureFolderAsRootWithoutDuplicatingResourceSegments()
+	{
+		var root = CreateTempDirectory();
+		try
+		{
+			var resourceRoot = Path.Combine(root, "DeepFlowTestResources", "x64");
+			Directory.CreateDirectory(resourceRoot);
+
+			var path = InjectorPathResolver.ResolveResourcePath(resourceRoot, "x64", "DeepFlowTest.GenericInjector.x64.dll");
+
+			Assert.That(path, Is.EqualTo(Path.Combine(resourceRoot, "DeepFlowTest.GenericInjector.x64.dll")));
+		}
+		finally
+		{
+			Directory.Delete(root, recursive: true);
+		}
+	}
+
+	[Test]
+	public void ResourcePathUsesSiblingNativeDllWhenLauncherRunsFromArchitectureFolder()
+	{
+		var root = CreateTempDirectory();
+		try
+		{
+			var resourceRoot = Path.Combine(root, "DeepFlowTestResources", "x64");
+			var nativeDll = Path.Combine(resourceRoot, "DeepFlowTest.GenericInjector.x64.dll");
+			Directory.CreateDirectory(resourceRoot);
+			File.WriteAllText(nativeDll, string.Empty);
+
+			var path = InjectorPathResolver.ResolveResourcePath(resourceRoot, "x64", "DeepFlowTest.GenericInjector.x64.dll");
+
+			Assert.That(path, Is.EqualTo(nativeDll));
+		}
+		finally
+		{
+			Directory.Delete(root, recursive: true);
+		}
+	}
+
+	[Test]
 	public void NativeParameterContainsExpectedParts()
 	{
 		var data = new InjectorData

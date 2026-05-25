@@ -20,6 +20,12 @@ internal sealed class GetBindingFailuresCommandHandler : ICommandHandler<GetBind
 		GetBindingFailuresCommand.Process(request);
 }
 
+internal sealed class ConfigureDiagnosticsCommandHandler : ICommandHandler<ConfigureDiagnosticsCommandRequest, object>, IImmediateCommandHandler
+{
+	public object Handle(ConfigureDiagnosticsCommandRequest request, CommandContext context) =>
+		ConfigureDiagnosticsCommand.Process(request);
+}
+
 internal sealed class StartSendingCommandHandler : ICommandHandler<StartSendingCommandRequest, object>, IImmediateCommandHandler
 {
 	public object Handle(StartSendingCommandRequest request, CommandContext context) =>

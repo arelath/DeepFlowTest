@@ -1,8 +1,10 @@
 namespace DeepFlowTest.Mcp.Tests;
 
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Mcp.Contracts;
 using DeepFlowTest.Mcp.Hosting;
 using DeepFlowTest.Mcp.Prompts;
 using DeepFlowTest.Mcp.Resources;
@@ -35,7 +37,66 @@ public sealed class McpToolTests
 		var response = InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
 
 		Assert.That(response.Success, Is.True);
+		var recording = (McpCondensedRecordingOutput)response.Data!;
+		Assert.That(recording.Format, Is.EqualTo("condensed-agent"));
+		Assert.That(recording.Text, Does.Contain("dft-condensed/1"));
+		Assert.That(recording.Text, Does.Contain("SubmitButton"));
 		Assert.That(sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().AsSnapshot, Is.True);
+	}
+
+	[Test]
+	public void GetVisualTreeCanReturnJsonWhenRequested()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.Snapshot = VisualTreeSnapshot.Create(1, new[]
+		{
+			Node("window-0001", type: "Window", automationId: "MainWindow", childIds: ["grid-0002"], isRoot: true),
+			Node("grid-0002", type: "Grid", name: "LayoutGrid", parentId: "window-0001", childIds: ["button-0003"]),
+			Node("button-0003", type: "Button", automationId: "SubmitButton", text: "Submit", parentId: "grid-0002"),
+		});
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = InspectTools.GetVisualTree(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Resources,
+			fixture.Options,
+			properties: "Name,AutomationId",
+			outputFormat: "json");
+		var data = (DeepFlowTest.Cli.TreeSnapshotData)response.Data!;
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(response.Data, Is.TypeOf<DeepFlowTest.Cli.TreeSnapshotData>());
+		Assert.That(data.Nodes.Select(static node => node.TypeName), Does.Contain("Grid"));
+		Assert.That(data.Nodes.Single(static node => node.TargetId == "grid-0002").Properties[KnownProperties.Name], Is.EqualTo("LayoutGrid"));
+	}
+
+	[Test]
+	public void GetVisualTreeCondensedOutputAppliesMcpSemanticPruning()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.Snapshot = VisualTreeSnapshot.Create(1, new[]
+		{
+			Node("window-0001", type: "Window", automationId: "MainWindow", childIds: ["grid-0002"], isRoot: true),
+			Node("grid-0002", type: "Grid", name: "LayoutGrid", parentId: "window-0001", childIds: ["button-0003", "canvas-0004"]),
+			Node("button-0003", type: "Button", automationId: "SubmitButton", text: "Submit", parentId: "grid-0002"),
+			Node("canvas-0004", type: "Canvas", automationId: "SemanticCanvas", parentId: "grid-0002"),
+		});
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
+		var recording = (McpCondensedRecordingOutput)response.Data!;
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(recording.SemanticPruning, Is.True);
+		Assert.That(recording.Text, Does.Contain("Window [0001] #MainWindow"));
+		Assert.That(recording.Text, Does.Contain("Button [0003] #SubmitButton"));
+		Assert.That(recording.Text, Does.Contain("Canvas [0004] #SemanticCanvas"));
+		Assert.That(recording.Text, Does.Not.Contain("Grid [0002]"));
+		Assert.That(recording.Text, Does.Not.Contain("LayoutGrid"));
 	}
 
 	[Test]
@@ -212,7 +273,64 @@ public sealed class McpToolTests
 			intervalMs: 100);
 
 		Assert.That(started.Success, Is.True);
-		Assert.That(sessionService.Session.Commands.OfType<StartSendingCommandRequest>().Single().StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.SemanticRecording));
+		var request = sessionService.Session.Commands.OfType<StartSendingCommandRequest>().Single();
+		Assert.That(request.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.SemanticRecording));
+		Assert.That(request.SemanticRecording, Is.Not.Null);
+		Assert.That(request.SemanticRecording!.MaxNodeCount, Is.EqualTo(fixture.Options.Value.TreeLimit));
+		Assert.That(request.PropNames, Does.Contain(KnownProperties.Header));
+	}
+
+	[Test]
+	public void SemanticRecordingStreamReadReturnsCondensedPrunedText()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.StreamFrames =
+		[
+			new StreamMessage(
+				"sub-1",
+				ProtocolConstants.StreamKinds.SemanticRecording,
+				1,
+				new SemanticRecordingBatch
+				{
+					RecordingId = "recording",
+					Frames =
+					[
+						new SemanticRecordingFrame
+						{
+							RecordingId = "recording",
+							FrameKind = "snapshot",
+							SequenceNumber = 1,
+							Snapshot = VisualTreeSnapshot.Create(1, new[]
+							{
+								Node("window-0001", type: "Window", automationId: "MainWindow", childIds: ["grid-0002"], isRoot: true),
+								Node("grid-0002", type: "Grid", name: "LayoutGrid", parentId: "window-0001", childIds: ["button-0003"]),
+								Node("button-0003", type: "Button", automationId: "SubmitButton", text: "Submit", parentId: "grid-0002"),
+							}),
+						},
+					],
+				}),
+		];
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var started = StreamTools.StartStream(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Streams,
+			fixture.Options,
+			kind: ProtocolConstants.StreamKinds.SemanticRecording);
+		var streamId = ((StreamStartResult)started.Data!).StreamId;
+		Assert.That(SpinWait.SpinUntil(() => sessionService.Session.LastStreamSession!.ReadCount >= 1, 1_000), Is.True);
+		var read = StreamTools.ReadStream(fixture.Runner, fixture.Streams, streamId, maxFrames: 10);
+		var data = (StreamReadResult)read.Data!;
+
+		Assert.That(read.Success, Is.True);
+		Assert.That(data.Frames, Is.Empty);
+		Assert.That(data.FrameCount, Is.EqualTo(1));
+		Assert.That(data.Recording, Is.Not.Null);
+		Assert.That(data.Recording!.Text, Does.Contain("dft-condensed/1"));
+		Assert.That(data.Recording.Text, Does.Contain("Button [0003] #SubmitButton"));
+		Assert.That(data.Recording.Text, Does.Not.Contain("Grid [0002]"));
 	}
 
 	[Test]
@@ -314,6 +432,49 @@ public sealed class McpToolTests
 		InspectTools.GetVisualTree(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
 
 		Assert.That(sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>().Count(), Is.EqualTo(2));
+	}
+
+	[Test]
+	public void ActionDefaultReturnsCondensedDeltaAfterResult()
+	{
+		var before = VisualTreeSnapshot.Create(1, new[]
+		{
+			Node("window-0001", type: "Window", automationId: "MainWindow", childIds: ["grid-0002"], isRoot: true),
+			Node("grid-0002", type: "Grid", name: "LayoutGrid", parentId: "window-0001", childIds: ["button-0003"]),
+			Node("button-0003", type: "Button", automationId: "SubmitButton", text: "Before", parentId: "grid-0002"),
+		});
+		var after = VisualTreeSnapshot.Create(2, new[]
+		{
+			Node("window-0001", type: "Window", automationId: "MainWindow", childIds: ["grid-0002"], isRoot: true),
+			Node("grid-0002", type: "Grid", name: "LayoutGrid", parentId: "window-0001", childIds: ["button-0003"]),
+			Node("button-0003", type: "Button", automationId: "SubmitButton", text: "After", parentId: "grid-0002"),
+		});
+		var sessionService = new FakeAppSessionService();
+		var snapshotReads = 0;
+		sessionService.Session.SendHandler = command => command switch
+		{
+			GetVisualTreeCommandRequest => ++snapshotReads == 1 ? before : after,
+			ClickCommandRequest => new StandardIpcResponse { Success = true },
+			_ => new StandardIpcResponse { Success = true },
+		};
+		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = ActionTools.ClickElement(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Options,
+			targetId: "button-0003");
+		var data = (McpActionCommandResult)response.Data!;
+		var delta = (McpCondensedRecordingOutput)data.After!;
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(delta.Format, Is.EqualTo("condensed-agent"));
+		Assert.That(delta.Text, Does.Contain("@1 delta"));
+		Assert.That(delta.Text, Does.Contain("Button [0003] #SubmitButton"));
+		Assert.That(delta.Text, Does.Contain("After"));
+		Assert.That(delta.Text, Does.Not.Contain("Grid [0002]"));
 	}
 
 	[Test]
@@ -445,4 +606,32 @@ public sealed class McpToolTests
 		Assert.That(response.Error.Message, Does.Not.Contain("sensitive detail"));
 		Assert.That(DeepFlowResources.RecentLogs(fixture.ServiceProvider), Does.Contain("Unexpected MCP tool failure"));
 	}
+
+	private static VisualTreeNodeDto Node(
+		string id,
+		string? parentId = null,
+		bool isRoot = false,
+		IReadOnlyList<string>? childIds = null,
+		string type = "Window",
+		string? automationId = null,
+		string? name = null,
+		string? text = null) =>
+		new()
+		{
+			TargetId = id,
+			ParentId = parentId,
+			ChildIds = [.. (childIds ?? [])],
+			IsRoot = isRoot,
+			TypeName = type,
+			FrameworkTypeName = "System.Windows.Controls." + type,
+			Properties = new Dictionary<string, object?>
+			{
+				[KnownProperties.Name] = name ?? id,
+				[KnownProperties.AutomationId] = automationId ?? string.Empty,
+				[KnownProperties.Text] = text ?? string.Empty,
+				[KnownProperties.Content] = text ?? string.Empty,
+				[KnownProperties.IsVisible] = true,
+				[KnownProperties.IsEnabled] = true,
+			},
+		};
 }

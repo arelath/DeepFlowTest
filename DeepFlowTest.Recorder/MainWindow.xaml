@@ -46,7 +46,8 @@
                  Grid.Column="3"
                  Height="32"
                  VerticalContentAlignment="Center" />
-        <Button Grid.Column="5"
+        <Button x:Name="BrowseButton"
+                Grid.Column="5"
                 MinWidth="82"
                 Height="32"
                 Click="BrowseOutput_Click"
@@ -60,29 +61,198 @@
       </Grid>
     </Border>
 
-    <DataGrid x:Name="ProcessGrid"
-              Grid.Row="1"
-              Margin="16"
-              AutoGenerateColumns="False"
-              CanUserAddRows="False"
-              CanUserDeleteRows="False"
-              GridLinesVisibility="Horizontal"
-              HeadersVisibility="Column"
-              IsReadOnly="True"
-              SelectionMode="Single"
-              SelectionUnit="FullRow">
-      <DataGrid.Columns>
-        <DataGridTextColumn Header="Process"
-                            Binding="{Binding DisplayName}"
-                            Width="2*" />
-        <DataGridTextColumn Header="PID"
-                            Binding="{Binding ProcessId}"
-                            Width="90" />
-        <DataGridTextColumn Header="Window"
-                            Binding="{Binding WindowTitle}"
-                            Width="3*" />
-      </DataGrid.Columns>
-    </DataGrid>
+    <Grid Grid.Row="1">
+      <DataGrid x:Name="ProcessGrid"
+                Margin="16"
+                AutoGenerateColumns="False"
+                CanUserAddRows="False"
+                CanUserDeleteRows="False"
+                GridLinesVisibility="Horizontal"
+                HeadersVisibility="Column"
+                IsReadOnly="True"
+                SelectionMode="Single"
+                SelectionUnit="FullRow">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Process"
+                              Binding="{Binding DisplayName}"
+                              Width="2*" />
+          <DataGridTextColumn Header="PID"
+                              Binding="{Binding ProcessId}"
+                              Width="90" />
+          <DataGridTextColumn Header="Window"
+                              Binding="{Binding WindowTitle}"
+                              Width="3*" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <Grid x:Name="ReviewGrid"
+            Margin="16"
+            Visibility="Collapsed">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="2*" />
+          <ColumnDefinition Width="10" />
+          <ColumnDefinition Width="360" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0"
+                Background="#FFFFFF"
+                BorderBrush="#D7DCE2"
+                BorderThickness="1">
+          <TreeView x:Name="SemanticTreeView"
+                    ItemsSource="{Binding CurrentRoots}"
+                    SelectedItemChanged="SemanticTreeView_SelectedItemChanged"
+                    VirtualizingStackPanel.IsVirtualizing="True"
+                    VirtualizingStackPanel.VirtualizationMode="Recycling">
+            <TreeView.ItemContainerStyle>
+              <Style TargetType="{x:Type TreeViewItem}">
+                <Setter Property="IsExpanded"
+                        Value="{Binding IsExpanded, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <Setter Property="IsSelected"
+                        Value="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+              </Style>
+            </TreeView.ItemContainerStyle>
+            <TreeView.ItemTemplate>
+              <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                <Border x:Name="TreeRow"
+                        Padding="4,2"
+                        BorderBrush="Transparent"
+                        BorderThickness="1">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="18" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               HorizontalAlignment="Center"
+                               FontWeight="SemiBold"
+                               Text="{Binding Marker}" />
+                    <TextBlock x:Name="TreeRowText"
+                               Grid.Column="1"
+                               Text="{Binding Label}"
+                               TextTrimming="CharacterEllipsis" />
+                  </Grid>
+                </Border>
+                <HierarchicalDataTemplate.Triggers>
+                  <DataTrigger Binding="{Binding ChangeKind}"
+                               Value="Added">
+                    <Setter TargetName="TreeRow"
+                            Property="Background"
+                            Value="#DDF6E4" />
+                    <Setter TargetName="TreeRow"
+                            Property="BorderBrush"
+                            Value="#71C98E" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding ChangeKind}"
+                               Value="Changed">
+                    <Setter TargetName="TreeRow"
+                            Property="Background"
+                            Value="#FFF3C4" />
+                    <Setter TargetName="TreeRow"
+                            Property="BorderBrush"
+                            Value="#E3B341" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding ChangeKind}"
+                               Value="Removed">
+                    <Setter TargetName="TreeRow"
+                            Property="Background"
+                            Value="#F9D8D8" />
+                    <Setter TargetName="TreeRow"
+                            Property="BorderBrush"
+                            Value="#D78383" />
+                    <Setter TargetName="TreeRow"
+                            Property="Opacity"
+                            Value="0.72" />
+                    <Setter TargetName="TreeRowText"
+                            Property="TextDecorations"
+                            Value="Strikethrough" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding IsActionTarget}"
+                               Value="True">
+                    <Setter TargetName="TreeRow"
+                            Property="BorderBrush"
+                            Value="#4C7BD9" />
+                    <Setter TargetName="TreeRow"
+                            Property="BorderThickness"
+                            Value="2" />
+                  </DataTrigger>
+                </HierarchicalDataTemplate.Triggers>
+              </HierarchicalDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
+        </Border>
+
+        <Grid Grid.Column="2">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="2*" />
+            <RowDefinition Height="10" />
+            <RowDefinition Height="3*" />
+          </Grid.RowDefinitions>
+
+          <Border Grid.Row="0"
+                  Background="#FFFFFF"
+                  BorderBrush="#D7DCE2"
+                  BorderThickness="1">
+            <ListBox x:Name="FrameListBox"
+                     BorderThickness="0"
+                     DisplayMemberPath="DisplayText"
+                     ItemsSource="{Binding Frames}"
+                     SelectedItem="{Binding SelectedFrame, Mode=OneWay}"
+                     SelectionChanged="FrameListBox_SelectionChanged" />
+          </Border>
+
+          <Border Grid.Row="2"
+                  Background="#FFFFFF"
+                  BorderBrush="#D7DCE2"
+                  BorderThickness="1"
+                  Padding="12">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <StackPanel>
+                <TextBlock FontWeight="SemiBold"
+                           Text="{Binding SelectedFrame.DisplayText}"
+                           TextWrapping="Wrap" />
+                <TextBlock Margin="0,8,0,0"
+                           Foreground="#A43D3D"
+                           Text="{Binding SelectedFrame.ErrorDetails}"
+                           TextWrapping="Wrap" />
+                <TextBlock Margin="0,12,0,4"
+                           FontWeight="SemiBold"
+                           Text="Selected node" />
+                <TextBlock Text="{Binding SelectedTreeNode.Label}"
+                           TextWrapping="Wrap" />
+                <TextBlock Margin="0,6,0,0"
+                           Text="{Binding SelectedTreeNode.TargetId}"
+                           TextWrapping="Wrap" />
+                <TextBlock Margin="0,2,0,0"
+                           Text="{Binding SelectedTreeNode.ShortId, StringFormat=Short ID: {0}}"
+                           TextWrapping="Wrap" />
+                <TextBlock Margin="0,12,0,4"
+                           FontWeight="SemiBold"
+                           Text="Changed properties" />
+                <ItemsControl ItemsSource="{Binding SelectedTreeNode.ChangedProperties}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding}"
+                                 TextWrapping="Wrap" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Margin="0,12,0,4"
+                           FontWeight="SemiBold"
+                           Text="Properties" />
+                <ItemsControl ItemsSource="{Binding SelectedTreeNode.Properties}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding}"
+                                 TextWrapping="Wrap" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </ScrollViewer>
+          </Border>
+        </Grid>
+      </Grid>
+    </Grid>
 
     <Border Grid.Row="2"
             Background="#FFFFFF"
@@ -98,6 +268,8 @@
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="8" />
           <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="8" />
+          <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
         <TextBlock x:Name="StatusTextBlock"
@@ -107,16 +279,51 @@
                    Foreground="#3D4652"
                    TextWrapping="Wrap"
                    Text="Ready" />
+        <StackPanel x:Name="NavigationPanel"
+                    Grid.Row="0"
+                    Grid.Column="1"
+                    DataContext="{Binding ElementName=ReviewGrid, Path=DataContext}"
+                    Orientation="Horizontal"
+                    Visibility="Collapsed">
+          <Button x:Name="PreviousButton"
+                  MinWidth="80"
+                  Height="34"
+                  Click="PreviousFrame_Click"
+                  Content="Previous"
+                  IsEnabled="{Binding CanMovePrevious}" />
+          <Button x:Name="NextButton"
+                  Margin="6,0,0,0"
+                  MinWidth="64"
+                  Height="34"
+                  Click="NextFrame_Click"
+                  Content="Next"
+                  IsEnabled="{Binding CanMoveNext}" />
+          <Button x:Name="JumpLatestButton"
+                  Margin="6,0,0,0"
+                  MinWidth="104"
+                  Height="34"
+                  Click="JumpLatest_Click"
+                  Content="Jump to latest"
+                  IsEnabled="{Binding CanJumpToLatest}" />
+          <TextBlock Margin="10,0,0,0"
+                     VerticalAlignment="Center"
+                     Foreground="#3D4652"
+                     Text="{Binding FramePosition}" />
+          <TextBlock Margin="8,0,0,0"
+                     VerticalAlignment="Center"
+                     Foreground="#687586"
+                     Text="{Binding ModeText}" />
+        </StackPanel>
         <Button x:Name="StartButton"
                 Grid.Row="0"
-                Grid.Column="1"
+                Grid.Column="3"
                 MinWidth="96"
                 Height="34"
                 Click="StartRecording_Click"
                 Content="Start" />
         <Button x:Name="StopButton"
                 Grid.Row="0"
-                Grid.Column="3"
+                Grid.Column="5"
                 MinWidth="96"
                 Height="34"
                 IsEnabled="False"
@@ -125,7 +332,7 @@
 
         <Expander x:Name="FailureDetailsExpander"
                   Grid.Row="1"
-                  Grid.ColumnSpan="4"
+                  Grid.ColumnSpan="6"
                   Margin="0,10,0,0"
                   Header="Failure details"
                   Visibility="Collapsed">

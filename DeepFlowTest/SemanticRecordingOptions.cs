@@ -1,5 +1,6 @@
 namespace DeepFlowTest;
 
+using System;
 using System.Collections.Generic;
 using DeepFlowTest.Contracts;
 
@@ -24,6 +25,10 @@ public sealed class SemanticRecordingOptions
 	public int MaxNodeCount { get; set; } = VisualTreeDefaults.DefaultMaxNodeCount;
 
 	public int? TimeoutMs { get; set; }
+
+	public Action<SemanticRecordingBatch>? BatchReceived { get; set; }
+
+	public Action<Exception>? BatchReceivedError { get; set; }
 
 	public SemanticRecordingOutputFormat OutputFormat
 	{
