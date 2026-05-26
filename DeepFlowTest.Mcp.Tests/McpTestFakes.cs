@@ -36,12 +36,13 @@ internal static class McpTestHost
 		McpServerOptions? options = null,
 		ITargetResolver? resolver = null,
 		ICliAppSessionService? sessionService = null,
-		IMcpProcessLauncher? launcher = null)
+		IMcpProcessLauncher? launcher = null,
+		IProcessSnapshotSource? snapshotSource = null)
 	{
 		var optionSource = Microsoft.Extensions.Options.Options.Create(options ?? Options());
 		var services = new CliServices(
 			new CliDefaultsStore(CreateTempConfigPath()),
-			new FakeProcessSnapshotSource(),
+			snapshotSource ?? new FakeProcessSnapshotSource(),
 			resolver ?? new FakeTargetResolver(),
 			sessionService ?? new FakeAppSessionService());
 		var cache = new McpSnapshotCache(optionSource);
@@ -180,6 +181,8 @@ internal sealed class FakeAppSession : ICliAppSession
 
 	public Func<IpcCommand, object>? SendHandler { get; set; }
 
+	public Func<StartSendingCommandRequest, int, ICliStreamSession>? StartStreamHandler { get; set; }
+
 	public FakeCliStreamSession? LastStreamSession { get; private set; }
 
 	public TResponse Send<TResponse>(IpcCommand command, int timeoutMs)
@@ -209,6 +212,9 @@ internal sealed class FakeAppSession : ICliAppSession
 	public ICliStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs)
 	{
 		Commands.Add(command);
+		if (StartStreamHandler is not null)
+			return StartStreamHandler(command, timeoutMs);
+
 		LastStreamSession = new FakeCliStreamSession(command.StreamKind, StreamFrames);
 		return LastStreamSession;
 	}
@@ -261,6 +267,7 @@ internal sealed class FakeProcessSnapshotSource : IProcessSnapshotSource
 				ProcessId = 1,
 				ProcessName = "UiApp",
 				MainWindowTitle = "UI",
+				TopLevelWindows = [new ProcessWindowSnapshot { Hwnd = 100, Title = "UI" }],
 				IsLikelyWpfCandidate = true,
 			},
 			new ProcessSnapshot

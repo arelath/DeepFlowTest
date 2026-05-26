@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Contracts;
 
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json;
 
 public abstract record class IpcCommand
@@ -98,7 +99,13 @@ public sealed record class GetVisualTreeCommandRequest : IpcCommand
 		TimeoutMs = timeoutMs;
 	}
 
-	public IReadOnlyList<string>? PropNames { get; set; }
+	private IReadOnlyList<string>? propNames;
+
+	public IReadOnlyList<string>? PropNames
+	{
+		get => propNames;
+		set => propNames = value?.ToArray();
+	}
 
 	public bool AsSnapshot { get; set; }
 
@@ -147,7 +154,13 @@ public sealed record class FindElementCommandRequest : IpcCommand
 		TimeoutMs = timeoutMs;
 	}
 
-	public IReadOnlyList<string>? PropNames { get; set; }
+	private IReadOnlyList<string>? propNames;
+
+	public IReadOnlyList<string>? PropNames
+	{
+		get => propNames;
+		set => propNames = value?.ToArray();
+	}
 
 	public ElementSelectorDto? Selector { get; set; }
 
@@ -476,7 +489,13 @@ public sealed record class StartSendingCommandRequest : IpcCommand
 
 	public int IntervalMs { get; set; } = TimeoutDefaults.StreamIntervalMs;
 
-	public IReadOnlyList<string>? PropNames { get; set; }
+	private IReadOnlyList<string>? propNames;
+
+	public IReadOnlyList<string>? PropNames
+	{
+		get => propNames;
+		set => propNames = value?.ToArray();
+	}
 
 	[JsonConverter(typeof(ProtocolImageFormatJsonConverter))]
 	public ImageFormat Format { get; set; } = ImageFormat.Png;

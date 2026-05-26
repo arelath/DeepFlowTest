@@ -31,7 +31,7 @@ internal sealed class McpToolRunner
 		this.activity = activity;
 	}
 
-	public McpToolResponse Run(Func<object?> action, [CallerMemberName] string toolName = "")
+	public McpToolResponse Run(Func<object?> action, object? parameters = null, [CallerMemberName] string toolName = "")
 	{
 		ArgumentNullException.ThrowIfNull(action);
 		var stopwatch = Stopwatch.StartNew();
@@ -41,10 +41,12 @@ internal sealed class McpToolRunner
 			Kind = "tool.start",
 			Name = toolName,
 			Status = "started",
+			Details = new ToolActivityDetails { Parameters = parameters },
 		});
 		try
 		{
-			var response = McpToolResponse.Ok(action(), sessionHost.Status);
+			var result = action();
+			var response = McpToolResponse.Ok(result, sessionHost.Status);
 			activity?.Publish(new McpActivityEvent
 			{
 				Source = "client",
@@ -52,20 +54,25 @@ internal sealed class McpToolRunner
 				Name = toolName,
 				Status = "success",
 				Duration = stopwatch.Elapsed,
+				Details = new ToolActivityDetails
+				{
+					Parameters = parameters,
+					Result = result,
+				},
 			});
 			return response;
 		}
 		catch (CliException ex)
 		{
 			resources.AddLog("warning", ex.ErrorCode, ex.Message);
-			PublishFailure(toolName, stopwatch.Elapsed, ex.ErrorCode, ex.Message);
+			PublishFailure(toolName, stopwatch.Elapsed, ex.ErrorCode, ex.Message, parameters, ex.Details);
 			return McpToolResponse.Fail(ex.ErrorCode, ex.Message, ex.Details, RecoveryFor(ex.ErrorCode), sessionHost.Status);
 		}
 		catch (NamedPipeSessionException ex)
 		{
 			var errorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
 			resources.AddLog("warning", errorCode, ex.Message);
-			PublishFailure(toolName, stopwatch.Elapsed, errorCode, ex.Message);
+			PublishFailure(toolName, stopwatch.Elapsed, errorCode, ex.Message, parameters, new { protocolErrorCode = ex.ErrorCode, ex.TargetExitCode, ex.CrashLog });
 			return McpToolResponse.Fail(
 				errorCode,
 				ex.Message,
@@ -77,19 +84,19 @@ internal sealed class McpToolRunner
 		{
 			var errorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
 			resources.AddLog("warning", errorCode, ex.Message);
-			PublishFailure(toolName, stopwatch.Elapsed, errorCode, ex.Message);
+			PublishFailure(toolName, stopwatch.Elapsed, errorCode, ex.Message, parameters, new { protocolErrorCode = ex.ErrorCode });
 			return McpToolResponse.Fail(errorCode, ex.Message, new { protocolErrorCode = ex.ErrorCode }, RecoveryFor(errorCode), sessionHost.Status);
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
 			logger.LogError(ex, "MCP tool failed.");
 			resources.AddLog("error", CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.");
-			PublishFailure(toolName, stopwatch.Elapsed, CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.");
+			PublishFailure(toolName, stopwatch.Elapsed, CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", parameters, null);
 			return McpToolResponse.Fail(CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", recovery: "Check the MCP server stderr log for details.", target: sessionHost.Status);
 		}
 	}
 
-	private void PublishFailure(string toolName, TimeSpan duration, string errorCode, string message) =>
+	private void PublishFailure(string toolName, TimeSpan duration, string errorCode, string message, object? parameters, object? errorDetails) =>
 		activity?.Publish(new McpActivityEvent
 		{
 			Source = "client",
@@ -98,7 +105,16 @@ internal sealed class McpToolRunner
 			Status = "failure",
 			Duration = duration,
 			Summary = message,
-			Details = new { errorCode },
+			Details = new ToolActivityDetails
+			{
+				Parameters = parameters,
+				Error = new
+				{
+					code = errorCode,
+					message,
+					details = errorDetails,
+				},
+			},
 		});
 
 	private static string? RecoveryFor(string errorCode) =>

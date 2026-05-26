@@ -65,13 +65,40 @@ public sealed class McpServerProcessTests
 	{
 		await using var mcp = await McpEndToEndHarness.StartAsync();
 
-		await mcp.CallOkAsync("deepflow_target_status");
+		await mcp.CallOkAsync("deepflow_list_processes", new Dictionary<string, object?>
+		{
+			["candidatesOnly"] = false,
+		});
 		var resourceResult = await mcp.ReadResourceAsync(DeepFlowResourceNames.RecentActivity);
 		var text = ReadResourceText(resourceResult);
 
 		Assert.That(text, Does.Contain("tool.start"));
 		Assert.That(text, Does.Contain("tool.success"));
-		Assert.That(text, Does.Contain("TargetStatus"));
+		Assert.That(text, Does.Contain("ListProcesses"));
+		Assert.That(text, Does.Contain("parameters"));
+		Assert.That(text, Does.Contain("candidatesOnly"));
+		Assert.That(text, Does.Contain("false"));
+		Assert.That(text, Does.Contain("result"));
+		Assert.That(text, Does.Contain("processes"));
+	}
+
+	[Test]
+	public async Task SimpleHttpRequestsCanRunRepeatedlyWithoutMcpLevelErrors()
+	{
+		await using var mcp = await McpEndToEndHarness.StartAsync();
+
+		for (var i = 0; i < 10; i++)
+		{
+			await mcp.PingAsync();
+			var status = await mcp.CallAsync("deepflow_target_status");
+			Assert.That(status.Success, Is.True, $"target_status failed on iteration {i}: {status.ErrorSummary}");
+
+			var resources = await mcp.ListResourcesAsync();
+			Assert.That(resources.Select(static resource => resource.Uri?.ToString()), Does.Contain(DeepFlowResourceNames.RecentActivity));
+
+			var activity = await mcp.ReadResourceAsync(DeepFlowResourceNames.RecentActivity);
+			Assert.That(ReadResourceText(activity), Does.Contain("TargetStatus"));
+		}
 	}
 
 	[Test]

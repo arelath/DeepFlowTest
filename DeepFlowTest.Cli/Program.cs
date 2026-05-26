@@ -1046,16 +1046,11 @@ public static class Program
 	private static ProcessListData GetProcesses(CliServices services, bool candidatesOnly)
 	{
 		var result = services.ProcessSnapshotSource.GetSnapshots();
-		var processes = result.Processes
-			.Where(process => !candidatesOnly || process.IsLikelyWpfCandidate)
-			.OrderBy(static process => process.ProcessName, StringComparer.OrdinalIgnoreCase)
-			.ThenBy(static process => process.ProcessId)
-			.ToArray();
-		return new ProcessListData
-		{
-			Processes = processes,
-			Warnings = result.Warnings,
-		};
+		return ProcessListData.FromSnapshotResult(
+			result,
+			candidatesOnly,
+			excludeExited: candidatesOnly,
+			sortByProcessName: true);
 	}
 
 	private static CliCommonOptions CreateOutputOptions(string[] args, CliDefaults defaults)

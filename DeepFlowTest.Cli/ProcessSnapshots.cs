@@ -240,4 +240,58 @@ public sealed class ProcessListData
 	public IReadOnlyList<ProcessSnapshot> Processes { get; set; } = [];
 
 	public IReadOnlyList<ProcessInspectionWarning> Warnings { get; set; } = [];
+
+	public static ProcessListData FromSnapshotResult(
+		ProcessSnapshotResult result,
+		bool candidatesOnly,
+		bool excludeExited = false,
+		bool sortByProcessName = false)
+	{
+		_ = result ?? throw new ArgumentNullException(nameof(result));
+		var warnedProcessIds = candidatesOnly
+			? result.Warnings
+				.Where(static warning => warning.ProcessId.HasValue)
+				.Select(static warning => warning.ProcessId!.Value)
+				.ToHashSet()
+			: [];
+
+		var processes = result.Processes
+			.Where(process => !excludeExited || !process.HasExited)
+			.Where(process => !candidatesOnly || IsAttachCandidate(process, warnedProcessIds));
+		if (sortByProcessName)
+		{
+			processes = processes
+				.OrderBy(static process => process.ProcessName, StringComparer.OrdinalIgnoreCase)
+				.ThenBy(static process => process.ProcessId);
+		}
+
+		var processArray = processes.ToArray();
+		var warnings = candidatesOnly
+			? FilterWarningsForProcesses(result.Warnings, processArray)
+			: result.Warnings;
+		return new ProcessListData
+		{
+			Processes = processArray,
+			Warnings = warnings,
+		};
+	}
+
+	private static bool IsAttachCandidate(ProcessSnapshot process, HashSet<int> warnedProcessIds) =>
+		process.IsLikelyWpfCandidate
+		&& !process.HasExited
+		&& HasVisibleTopLevelWindow(process)
+		&& !warnedProcessIds.Contains(process.ProcessId);
+
+	private static bool HasVisibleTopLevelWindow(ProcessSnapshot process) =>
+		process.TopLevelWindows.Any(static window => !string.IsNullOrWhiteSpace(window.Title));
+
+	private static IReadOnlyList<ProcessInspectionWarning> FilterWarningsForProcesses(
+		IReadOnlyList<ProcessInspectionWarning> warnings,
+		IReadOnlyList<ProcessSnapshot> processes)
+	{
+		var processIds = processes.Select(static process => process.ProcessId).ToHashSet();
+		return warnings
+			.Where(warning => warning.ProcessId.HasValue && processIds.Contains(warning.ProcessId.Value))
+			.ToArray();
+	}
 }

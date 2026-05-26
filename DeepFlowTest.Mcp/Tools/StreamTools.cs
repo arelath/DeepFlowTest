@@ -54,7 +54,7 @@ internal static class StreamTools
 				TimeoutMs = timeout,
 			};
 			return streams.Start(host.RequireSession(), request, timeout);
-		});
+		}, new { kind, intervalMs, properties, targetId, imageFormat, timeoutMs });
 	}
 
 	[McpServerTool(Name = "deepflow_read_stream"), Description("Read buffered frames from a stream started by deepflow_start_stream.")]
@@ -64,7 +64,7 @@ internal static class StreamTools
 		string streamId,
 		int maxFrames = 10)
 	{
-		return runner.Run(() => streams.Read(streamId, maxFrames));
+		return runner.Run(() => streams.Read(streamId, maxFrames), new { streamId, maxFrames });
 	}
 
 	[McpServerTool(Name = "deepflow_stop_stream"), Description("Stop and dispose a stream started by deepflow_start_stream.")]
@@ -73,7 +73,7 @@ internal static class StreamTools
 		McpStreamRegistry streams,
 		string streamId)
 	{
-		return runner.Run(() => streams.Stop(streamId));
+		return runner.Run(() => streams.Stop(streamId), new { streamId });
 	}
 
 	private static bool IsKnownStreamKind(string kind) =>

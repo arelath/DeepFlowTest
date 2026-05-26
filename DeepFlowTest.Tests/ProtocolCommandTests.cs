@@ -29,6 +29,34 @@ public sealed class ProtocolCommandTests
 	}
 
 	[Test]
+	public void CommandPropertyListsRoundTripFromCollectionExpressions()
+	{
+		IReadOnlyList<string> properties = [KnownProperties.Name, KnownProperties.Text];
+
+		var tree = MessagePacker.ConvertTo<GetVisualTreeCommandRequest>(
+			MessagePacker.Unpack(MessagePacker.Pack(new GetVisualTreeCommandRequest
+			{
+				PropNames = properties,
+			})));
+		var find = MessagePacker.ConvertTo<FindElementCommandRequest>(
+			MessagePacker.Unpack(MessagePacker.Pack(new FindElementCommandRequest
+			{
+				PropNames = properties,
+				MatcherCode = "matcher",
+			})));
+		var stream = MessagePacker.ConvertTo<StartSendingCommandRequest>(
+			MessagePacker.Unpack(MessagePacker.Pack(new StartSendingCommandRequest
+			{
+				StreamKind = ProtocolConstants.StreamKinds.VisualTree,
+				PropNames = properties,
+			})));
+
+		Assert.That(tree.PropNames, Is.EqualTo(properties));
+		Assert.That(find.PropNames, Is.EqualTo(properties));
+		Assert.That(stream.PropNames, Is.EqualTo(properties));
+	}
+
+	[Test]
 	public void ContractDtosExposeCompatConstructorsAliasesAndEquality()
 	{
 		var leftClick = new ClickCommandRequest("button", "Left", 123);

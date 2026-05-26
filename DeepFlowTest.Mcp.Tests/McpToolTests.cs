@@ -3,12 +3,15 @@ namespace DeepFlowTest.Mcp.Tests;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Contracts;
 using DeepFlowTest.Mcp.Hosting;
 using DeepFlowTest.Mcp.Prompts;
 using DeepFlowTest.Mcp.Resources;
 using DeepFlowTest.Mcp.Tools;
+using DeepFlowTest.Mcp.ViewModels;
 using DeepFlowTest.Interop;
 using NUnit.Framework;
 
@@ -25,6 +28,84 @@ public sealed class McpToolTests
 
 		Assert.That(response.Success, Is.True);
 		Assert.That(data.Processes.Select(static process => process.ProcessName), Is.EqualTo(new[] { "UiApp" }));
+	}
+
+	[Test]
+	public void ListProcessesCandidatesOnlyOmitsWarnedProcessesAndWarnings()
+	{
+		var snapshotSource = new FakeProcessSnapshotSource
+		{
+			Result = new ProcessSnapshotResult
+			{
+				Processes =
+				[
+					Process(1, "CleanUi", isCandidate: true),
+					Process(2, "DeniedUi", isCandidate: true),
+					Process(3, "Worker", isCandidate: false),
+					Process(4, "WindowlessWpfBackground", isCandidate: true, hasWindow: false),
+				],
+				Warnings =
+				[
+					new ProcessInspectionWarning { ProcessId = 2, ProcessName = "DeniedUi", Message = "Access is denied." },
+					new ProcessInspectionWarning { ProcessId = 5, ProcessName = "System", Message = "Access is denied." },
+					new ProcessInspectionWarning { ProcessName = "Unknown", Message = "Unable to enumerate the process modules." },
+				],
+			},
+		};
+		var fixture = McpTestHost.CreateHost(snapshotSource: snapshotSource);
+
+		var response = TargetTools.ListProcesses(fixture.Runner, fixture.Services, candidatesOnly: true);
+		var data = (ProcessListData)response.Data!;
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(data.Processes.Select(static process => process.ProcessName), Is.EqualTo(new[] { "CleanUi" }));
+		Assert.That(data.Warnings, Is.Empty);
+	}
+
+	[Test]
+	public void ListProcessesCandidatesOnlyOmitsWindowlessWpfProcesses()
+	{
+		var snapshotSource = new FakeProcessSnapshotSource
+		{
+			Result = new ProcessSnapshotResult
+			{
+				Processes =
+				[
+					Process(1, "VisibleWpf", isCandidate: true),
+					Process(2, "PowerToys.PowerLauncher", isCandidate: true, hasWindow: false),
+				],
+			},
+		};
+		var fixture = McpTestHost.CreateHost(snapshotSource: snapshotSource);
+
+		var response = TargetTools.ListProcesses(fixture.Runner, fixture.Services, candidatesOnly: true);
+		var data = (ProcessListData)response.Data!;
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(data.Processes.Select(static process => process.ProcessName), Is.EqualTo(new[] { "VisibleWpf" }));
+	}
+
+	[Test]
+	public void ListProcessesShowAllKeepsWindowlessWpfProcessesForManualAttach()
+	{
+		var snapshotSource = new FakeProcessSnapshotSource
+		{
+			Result = new ProcessSnapshotResult
+			{
+				Processes =
+				[
+					Process(1, "VisibleWpf", isCandidate: true),
+					Process(2, "PowerToys.PowerLauncher", isCandidate: true, hasWindow: false),
+				],
+			},
+		};
+		var fixture = McpTestHost.CreateHost(snapshotSource: snapshotSource);
+
+		var response = TargetTools.ListProcesses(fixture.Runner, fixture.Services, candidatesOnly: false);
+		var data = (ProcessListData)response.Data!;
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(data.Processes.Select(static process => process.ProcessName), Is.EquivalentTo(new[] { "VisibleWpf", "PowerToys.PowerLauncher" }));
 	}
 
 	[Test]
@@ -133,6 +214,64 @@ public sealed class McpToolTests
 		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.CommandTimeout));
 		Assert.That(response.Error.Message, Is.EqualTo("target did not answer"));
 		Assert.That(response.Recovery, Does.Contain("Increase timeoutMs"));
+	}
+
+	[Test]
+	public void SuggestSelectorsTimeoutReturnsStructuredFailureAndDoesNotPoisonSession()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.SendHandler = command => command switch
+		{
+			GetVisualTreeCommandRequest => throw new NamedPipeSessionException(
+				ProtocolConstants.ErrorCodes.CommandTimeout,
+				"Command timed out after 10000 ms."),
+			PingCommandRequest => new PingCommandResponse(1234, 1),
+			_ => new StandardIpcResponse { Success = true },
+		};
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var failed = InspectTools.SuggestSelectors(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Options,
+			targetId: "button-0002",
+			refresh: true);
+		var ping = TargetTools.PingTarget(fixture.Runner, fixture.Host, fixture.Options);
+
+		Assert.That(failed.Success, Is.False);
+		Assert.That(failed.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.CommandTimeout));
+		Assert.That(failed.Error.Message, Does.Contain("10000"));
+		Assert.That(failed.Recovery, Does.Contain("Increase timeoutMs"));
+		Assert.That(ping.Success, Is.True);
+	}
+
+	[Test]
+	public void StreamStartTimeoutReturnsStructuredFailureWithoutRegisteringStream()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.StartStreamHandler = (_, _) => throw new DeepFlowTest.Cli.CliException(
+			DeepFlowTest.Cli.CliErrorCodes.PipeFailed,
+			"The operation has timed out.");
+		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var failed = StreamTools.StartStream(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Streams,
+			fixture.Options,
+			kind: ProtocolConstants.StreamKinds.VisualTree,
+			intervalMs: 1_000);
+		var ping = TargetTools.PingTarget(fixture.Runner, fixture.Host, fixture.Options);
+
+		Assert.That(failed.Success, Is.False);
+		Assert.That(failed.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.PipeFailed));
+		Assert.That(failed.Error.Message, Does.Contain("timed out"));
+		Assert.That(failed.Recovery, Does.Contain("Retry ping"));
+		Assert.That(fixture.Streams.ListActiveStreams(), Is.Empty);
+		Assert.That(ping.Success, Is.True);
 	}
 
 	[TestCase(ProtocolConstants.ErrorCodes.InvalidArguments, DeepFlowTest.Cli.CliErrorCodes.InvalidArguments)]
@@ -607,6 +746,28 @@ public sealed class McpToolTests
 		Assert.That(DeepFlowResources.RecentLogs(fixture.ServiceProvider), Does.Contain("Unexpected MCP tool failure"));
 	}
 
+	[Test]
+	public void ActivityDetailsViewModelShowsToolParametersAndResult()
+	{
+		var viewModel = new ActivityEventViewModel(new McpActivityEvent
+		{
+			Kind = "tool.success",
+			Name = "deepflow_click_element",
+			Status = "success",
+			Details = new ToolActivityDetails
+			{
+				Parameters = new { targetId = "button-0002", button = "right" },
+				Result = new { action = "click", ok = true },
+			},
+		});
+
+		Assert.That(viewModel.DetailsText, Does.Contain("Tool: deepflow_click_element"));
+		Assert.That(viewModel.DetailsText, Does.Contain("Parameters:"));
+		Assert.That(viewModel.DetailsText, Does.Contain("button-0002"));
+		Assert.That(viewModel.DetailsText, Does.Contain("Result:"));
+		Assert.That(viewModel.DetailsText, Does.Contain("\"action\": \"click\""));
+	}
+
 	private static VisualTreeNodeDto Node(
 		string id,
 		string? parentId = null,
@@ -633,5 +794,16 @@ public sealed class McpToolTests
 				[KnownProperties.IsVisible] = true,
 				[KnownProperties.IsEnabled] = true,
 			},
+		};
+
+	private static ProcessSnapshot Process(int pid, string name, bool isCandidate, bool hasExited = false, bool hasWindow = true) =>
+		new()
+		{
+			ProcessId = pid,
+			ProcessName = name,
+			MainWindowTitle = hasWindow ? name : string.Empty,
+			TopLevelWindows = hasWindow ? [new ProcessWindowSnapshot { Hwnd = pid, Title = name }] : [],
+			IsLikelyWpfCandidate = isCandidate,
+			HasExited = hasExited,
 		};
 }

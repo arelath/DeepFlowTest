@@ -55,7 +55,7 @@ internal static class ScreenshotTools
 			});
 			var resource = resources.StoreScreenshot(response);
 			return new ScreenshotCaptureData(screenshot, resource);
-		});
+		}, new { targetId, typeName, name, automationId, text, property, imageFormat, includeBase64, outputPath });
 	}
 
 	private static string? ResolveTargetId(

@@ -62,7 +62,7 @@ internal static class DiagnosticsTools
 				VirtualPointer = virtualPointer,
 				Payload = response,
 			};
-		});
+		}, new { virtualPointerEnabled, showClickRipples, showDragTrail, hideDelayMs, includeInScreenshots, timeoutMs });
 	}
 }
 

@@ -57,23 +57,32 @@ internal static class ActionTools
 		bool doubleClick = false,
 		string? after = "delta")
 	{
-		return ExecuteAction(runner, host, cache, options, "click", after, selector: CreateSelector(targetId, typeName, null, name, automationId, text, property), action =>
-		{
-			if (clickCount <= 0)
-				throw new CliException(CliErrorCodes.InvalidArguments, "clickCount must be greater than zero.");
+		return ExecuteAction(
+			runner,
+			host,
+			cache,
+			options,
+			"click",
+			after,
+			selector: CreateSelector(targetId, typeName, null, name, automationId, text, property),
+			parameters: new { targetId, typeName, name, automationId, text, property, button, clickCount, doubleClick, after },
+			action =>
+			{
+				if (clickCount <= 0)
+					throw new CliException(CliErrorCodes.InvalidArguments, "clickCount must be greater than zero.");
 
-			var mouseButton = McpArgumentParsing.ParseMouseButton(button, MouseButtonKind.Left);
-			return action.Execute(
-				targetId => doubleClick
-					? new KnownRoutedEventCommandRequest { TargetId = targetId ?? string.Empty, EventName = "MouseDoubleClick" }
-					: new ClickCommandRequest
-					{
-						TargetId = targetId ?? string.Empty,
-						MouseButton = mouseButton,
-						ClickCount = clickCount,
-					},
-				requireElementTarget: true);
-		});
+				var mouseButton = McpArgumentParsing.ParseMouseButton(button, MouseButtonKind.Left);
+				return action.Execute(
+					targetId => doubleClick
+						? new KnownRoutedEventCommandRequest { TargetId = targetId ?? string.Empty, EventName = "MouseDoubleClick" }
+						: new ClickCommandRequest
+						{
+							TargetId = targetId ?? string.Empty,
+							MouseButton = mouseButton,
+							ClickCount = clickCount,
+						},
+					requireElementTarget: true);
+			});
 	}
 
 	[McpServerTool(Name = "deepflow_drag_and_drop"), Description("Drag a source element and drop it on a destination element. Mutates UI and requires allowActions.")]
@@ -150,6 +159,31 @@ internal static class ActionTools
 				payload: result.Payload,
 				after: result.After,
 				delta: CreateDeltaAfter(host, cache, options.Value, afterMode, beforeSnapshot));
+		}, new
+		{
+			targetId,
+			typeName,
+			name,
+			automationId,
+			text,
+			property,
+			destinationTargetId,
+			destinationTypeName,
+			destinationName,
+			destinationAutomationId,
+			destinationText,
+			destinationProperty,
+			durationMs,
+			holdMs,
+			stepIntervalMs,
+			postDropWaitMs,
+			sourceAnchorX,
+			sourceAnchorY,
+			destinationAnchorX,
+			destinationAnchorY,
+			ensureForeground,
+			validateSameProcess,
+			after,
 		});
 	}
 
@@ -175,6 +209,7 @@ internal static class ActionTools
 			"focus",
 			after,
 			CreateSelector(targetId, typeName, null, name, automationId, text, property),
+			new { targetId, typeName, name, automationId, text, property, after },
 			action => action.Execute(
 				targetId => new FocusCommandRequest { TargetId = targetId ?? string.Empty },
 				requireElementTarget: true,
@@ -205,6 +240,7 @@ internal static class ActionTools
 			"type",
 			after,
 			CreateSelector(targetId, typeName, null, name, automationId, selectorText, property),
+			new { text, targetId, typeName, name, automationId, selectorText, property, clearFirst, after },
 			action => action.Execute(
 				targetId => new TypeTextCommandRequest
 				{
@@ -241,6 +277,7 @@ internal static class ActionTools
 			"key",
 			after,
 			CreateSelector(targetId, typeName, null, name, automationId, text, property),
+			new { keys, targetId, typeName, name, automationId, text, property, delayMs, ensureForeground, after },
 			action => action.Execute(
 				targetId => new KeyPressCommandRequest
 				{
@@ -277,6 +314,7 @@ internal static class ActionTools
 			"set",
 			after,
 			CreateSelector(targetId, typeName, null, name, automationId, text, property),
+			new { propertyName, value, targetId, typeName, name, automationId, text, property, after },
 			action => action.Execute(
 				targetId => new SetPropertyCommandRequest
 				{
@@ -303,7 +341,7 @@ internal static class ActionTools
 		string? property = null,
 		string? after = "delta")
 	{
-		return ExecuteAction(runner, host, cache, options, "raise", after, CreateSelector(targetId, typeName, null, name, automationId, text, property), action =>
+		return ExecuteAction(runner, host, cache, options, "raise", after, CreateSelector(targetId, typeName, null, name, automationId, text, property), new { eventName, targetId, typeName, name, automationId, text, property, after }, action =>
 		{
 			if (!KnownRoutedEvents.Contains(eventName))
 				throw new CliException(CliErrorCodes.InvalidArguments, $"Routed event '{eventName}' is not allow-listed.");
@@ -333,7 +371,7 @@ internal static class ActionTools
 		string? property = null,
 		string? after = "delta")
 	{
-		return ExecuteAction(runner, host, cache, options, "invoke", after, CreateSelector(targetId, typeName, null, name, automationId, text, property), action =>
+		return ExecuteAction(runner, host, cache, options, "invoke", after, CreateSelector(targetId, typeName, null, name, automationId, text, property), new { operation, targetId, typeName, name, automationId, text, property, after }, action =>
 		{
 			if (!KnownOperations.Contains(operation))
 				throw new CliException(CliErrorCodes.InvalidArguments, $"Known operation '{operation}' is not allow-listed.");
@@ -356,6 +394,7 @@ internal static class ActionTools
 		string actionName,
 		string? after,
 		McpElementSelector selector,
+		object parameters,
 		Func<ActionInvocation, ActionCommandResult> execute)
 	{
 		return runner.Run(() =>
@@ -379,7 +418,7 @@ internal static class ActionTools
 				payload: result.Payload,
 				after: result.After,
 				delta: CreateDeltaAfter(host, cache, options.Value, afterMode, beforeSnapshot));
-		});
+		}, parameters);
 	}
 
 	private static string NormalizeAfterMode(string? after)

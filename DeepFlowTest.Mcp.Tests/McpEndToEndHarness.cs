@@ -259,11 +259,17 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 
 			if (File.Exists(endpointFile))
 			{
-				using var stream = File.OpenRead(endpointFile);
-				var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-				var endpoint = json.RootElement.GetProperty("streamableHttpUrl").GetString();
-				Assert.That(endpoint, Is.Not.Null.And.Not.Empty);
-				return new Uri(endpoint!);
+				try
+				{
+					using var stream = new FileStream(endpointFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+					var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+					var endpoint = json.RootElement.GetProperty("streamableHttpUrl").GetString();
+					Assert.That(endpoint, Is.Not.Null.And.Not.Empty);
+					return new Uri(endpoint!);
+				}
+				catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+				{
+				}
 			}
 
 			await Task.Delay(100, cancellationToken);

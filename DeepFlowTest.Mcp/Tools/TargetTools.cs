@@ -2,7 +2,6 @@ namespace DeepFlowTest.Mcp.Tools;
 
 using System;
 using System.ComponentModel;
-using System.Linq;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Configuration;
@@ -25,15 +24,11 @@ internal static class TargetTools
 		return runner.Run(() =>
 		{
 			var result = services.ProcessSnapshotSource.GetSnapshots();
-			var processes = candidatesOnly
-				? result.Processes.Where(static process => process.IsLikelyWpfCandidate && !process.HasExited).ToArray()
-				: result.Processes.Where(static process => !process.HasExited).ToArray();
-			return new ProcessListData
-			{
-				Processes = processes,
-				Warnings = result.Warnings,
-			};
-		});
+			return ProcessListData.FromSnapshotResult(
+				result,
+				candidatesOnly,
+				excludeExited: true);
+		}, new { candidatesOnly });
 	}
 
 	[McpServerTool(Name = "deepflow_attach_target"), Description("Attach DeepFlowTest to an existing process by PID, process name, or window title.")]
@@ -58,7 +53,8 @@ internal static class TargetTools
 			},
 			timeoutMs,
 			noInject,
-			pipeId));
+			pipeId),
+			new { pid, process, executablePath, windowTitle, timeoutMs, noInject, pipeId });
 	}
 
 	[McpServerTool(Name = "deepflow_launch_target"), Description("Launch an application and attach DeepFlowTest to the launched process.")]
@@ -78,16 +74,16 @@ internal static class TargetTools
 			WorkingDirectory = workingDirectory,
 			AttachTimeoutMs = attachTimeoutMs,
 			TerminateOnDetach = terminateOnDetach,
-		}));
+		}), new { fileName, arguments, workingDirectory, attachTimeoutMs, terminateOnDetach });
 	}
 
 	[McpServerTool(Name = "deepflow_detach_target"), Description("Detach from the current target and stop active streams.")]
 	public static McpToolResponse DetachTarget(McpToolRunner runner, McpSessionHost host) =>
-		runner.Run(host.Detach);
+		runner.Run(host.Detach, new { });
 
 	[McpServerTool(Name = "deepflow_target_status"), Description("Return the current DeepFlowTest MCP target status.")]
 	public static McpToolResponse TargetStatus(McpToolRunner runner, McpSessionHost host) =>
-		runner.Run(() => host.Status);
+		runner.Run(() => host.Status, new { });
 
 	[McpServerTool(Name = "deepflow_ping_target"), Description("Ping the attached target through the DeepFlowTest payload protocol.")]
 	public static McpToolResponse PingTarget(
@@ -98,6 +94,6 @@ internal static class TargetTools
 	{
 		return runner.Run(() => host.Send<PingCommandResponse>(
 			new PingCommandRequest(timeoutMs ?? options.Value.DefaultTimeoutMs),
-			Math.Max(1, timeoutMs ?? options.Value.DefaultTimeoutMs)));
+			Math.Max(1, timeoutMs ?? options.Value.DefaultTimeoutMs)), new { timeoutMs });
 	}
 }

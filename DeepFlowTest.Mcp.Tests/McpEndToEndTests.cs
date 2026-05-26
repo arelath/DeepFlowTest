@@ -185,6 +185,52 @@ public sealed class McpEndToEndTests
 		Assert.That(harness.Process.HasExited, Is.False, "Detaching from an externally started harness must not terminate it.");
 	}
 
+	[Test]
+	public async Task McpAttachedReadAndStreamToolsCanRunRepeatedly()
+	{
+		await using var mcp = await McpEndToEndHarness.StartAsync("--allow-launch", "--timeout-ms", "60000", "--attach-timeout-ms", "60000", "--cache-ttl-ms", "60000");
+
+		var launch = await mcp.CallOkAsync("deepflow_launch_target", new Dictionary<string, object?>
+		{
+			["fileName"] = McpEndToEndHarness.ResolveHelloWorldExecutablePath(),
+			["attachTimeoutMs"] = 60_000,
+			["terminateOnDetach"] = true,
+		});
+		AssertAttached(launch.Target, launchedByServer: true);
+		var processId = launch.Target.GetPropertyIgnoreCase("processId").GetInt32();
+
+		try
+		{
+			var tree = await mcp.CallOkAsync("deepflow_get_visual_tree", new Dictionary<string, object?>
+			{
+				["properties"] = DefaultProperties,
+				["limit"] = 500,
+				["refresh"] = true,
+				["outputFormat"] = "json",
+			});
+			var button = FindNodeByAutomationId(tree.Data, "HelloWorldButton");
+			var targetId = button.GetPropertyIgnoreCase("targetId").GetString();
+			Assert.That(targetId, Is.Not.Null.And.Not.Empty);
+
+			for (var i = 0; i < 5; i++)
+			{
+				await mcp.CallOkAsync("deepflow_target_status");
+				await mcp.CallOkAsync("deepflow_ping_target");
+				await mcp.CallOkAsync("deepflow_suggest_selectors", new Dictionary<string, object?>
+				{
+					["targetId"] = targetId,
+					["refresh"] = i % 2 == 0,
+				});
+				await AssertVisualTreeStreamProducesFrame(mcp);
+			}
+		}
+		finally
+		{
+			await mcp.CallOkAsync("deepflow_detach_target");
+			DesktopHarnessProcess.WaitForProcessExit(processId, TimeSpan.FromSeconds(10));
+		}
+	}
+
 	private static async Task AssertVisualTreeStreamProducesFrame(McpEndToEndHarness mcp)
 	{
 		string? streamId = null;

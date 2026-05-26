@@ -56,6 +56,85 @@ public sealed class ProcessesCommandTests
 	}
 
 	[Test]
+	public void CandidateFilterOmitsWarnedProcessesAndWarnings()
+	{
+		var source = new FakeProcessSnapshotSource
+		{
+			Result = new ProcessSnapshotResult
+			{
+				Processes = new[]
+				{
+					Process(1, "CleanUi", isWpf: true),
+					Process(2, "DeniedUi", isWpf: true),
+					Process(3, "Plain", isWpf: false),
+					Process(4, "WindowlessWpfBackground", isWpf: true, hasWindow: false),
+				},
+				Warnings = new[]
+				{
+					new ProcessInspectionWarning { ProcessId = 2, ProcessName = "DeniedUi", Message = "Access is denied." },
+					new ProcessInspectionWarning { ProcessId = 5, ProcessName = "System", Message = "Access is denied." },
+				},
+			},
+		};
+		var services = CliTestHost.CreateServices(snapshotSource: source);
+
+		var result = CliTestHost.Run(new[] { "processes", "--candidates-only" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("CleanUi"));
+		Assert.That(result.Stdout, Does.Not.Contain("DeniedUi"));
+		Assert.That(result.Stdout, Does.Not.Contain("Access is denied."));
+	}
+
+	[Test]
+	public void CandidateFilterOmitsWindowlessWpfProcesses()
+	{
+		var source = new FakeProcessSnapshotSource
+		{
+			Result = new ProcessSnapshotResult
+			{
+				Processes = new[]
+				{
+					Process(1, "VisibleWpf", isWpf: true),
+					Process(2, "PowerToys.PowerLauncher", isWpf: true, hasWindow: false),
+				},
+				Warnings = Array.Empty<ProcessInspectionWarning>(),
+			},
+		};
+		var services = CliTestHost.CreateServices(snapshotSource: source);
+
+		var result = CliTestHost.Run(new[] { "processes", "--candidates-only" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("VisibleWpf"));
+		Assert.That(result.Stdout, Does.Not.Contain("PowerToys.PowerLauncher"));
+	}
+
+	[Test]
+	public void ShowAllKeepsWindowlessWpfProcessesForManualAttach()
+	{
+		var source = new FakeProcessSnapshotSource
+		{
+			Result = new ProcessSnapshotResult
+			{
+				Processes = new[]
+				{
+					Process(1, "VisibleWpf", isWpf: true),
+					Process(2, "PowerToys.PowerLauncher", isWpf: true, hasWindow: false),
+				},
+				Warnings = Array.Empty<ProcessInspectionWarning>(),
+			},
+		};
+		var services = CliTestHost.CreateServices(snapshotSource: source);
+
+		var result = CliTestHost.Run(new[] { "processes", "--show-all" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("VisibleWpf"));
+		Assert.That(result.Stdout, Does.Contain("PowerToys.PowerLauncher"));
+	}
+
+	[Test]
 	public void ShowAllCompatibilityOptionKeepsAllProcesses()
 	{
 		var source = new FakeProcessSnapshotSource
@@ -157,11 +236,13 @@ public sealed class ProcessesCommandTests
 		Assert.That(current.TargetProcess, Is.Null);
 	}
 
-	private static ProcessSnapshot Process(int pid, string name, bool isWpf = false) =>
+	private static ProcessSnapshot Process(int pid, string name, bool isWpf = false, bool hasWindow = true) =>
 		new()
 		{
 			ProcessId = pid,
 			ProcessName = name,
+			MainWindowTitle = hasWindow ? name : string.Empty,
+			TopLevelWindows = hasWindow ? [new ProcessWindowSnapshot { Hwnd = pid, Title = name }] : [],
 			IsLikelyWpfCandidate = isWpf,
 			TargetProcess = new FakeTargetProcess { Id = pid, ProcessName = name },
 		};

@@ -64,7 +64,7 @@ internal static class InspectTools
 			});
 			resources.StoreJson(DeepFlowResourceNames.LatestVisualTree, tree);
 			return tree;
-		});
+		}, new { shape, properties, limit, maxDepth, includeHidden, rootTargetId, refresh, outputFormat });
 	}
 
 	[McpServerTool(Name = "deepflow_find_elements"), Description("Find elements in the attached target's visual tree.")]
@@ -116,6 +116,25 @@ internal static class InspectTools
 				Properties = propertyNames,
 				UseShortIds = true,
 			});
+		}, new
+		{
+			typeName,
+			typeContains,
+			name,
+			automationId,
+			text,
+			property,
+			contains,
+			regex,
+			visible,
+			enabled,
+			caseSensitive,
+			limit,
+			includeProperties,
+			includeAncestors,
+			includeChildren,
+			properties,
+			refresh,
 		});
 	}
 
@@ -151,7 +170,7 @@ internal static class InspectTools
 			});
 			resources.StoreJson(DeepFlowResourceNames.LatestNode, node);
 			return node;
-		});
+		}, new { targetId, includeAncestors, includeChildren, includeSubtree, subtreeDepth, properties, refresh });
 	}
 
 	[McpServerTool(Name = "deepflow_get_properties"), Description("Get properties for one visual tree node by full target ID or short ID.")]
@@ -178,7 +197,7 @@ internal static class InspectTools
 			});
 			resources.StoreJson(DeepFlowResourceNames.LatestNode, node);
 			return node;
-		});
+		}, new { targetId, properties, refresh });
 	}
 
 	[McpServerTool(Name = "deepflow_suggest_selectors"), Description("Suggest stable selector arguments for one visual tree node.")]
@@ -196,7 +215,7 @@ internal static class InspectTools
 			var fullId = new CliTargetIdService().Resolve(targetId, snapshot);
 			var node = snapshot.Nodes.First(node => node.TargetId == fullId);
 			return new SelectorSuggestionService(new CliTargetIdService(), snapshot).Suggest(node, useShortIds: true);
-		});
+		}, new { targetId, refresh });
 	}
 
 	[McpServerTool(Name = "deepflow_wait_for_element"), Description("Poll the visual tree until an element selector matches.")]
@@ -256,6 +275,20 @@ internal static class InspectTools
 			}
 
 			throw new CliException(CliErrorCodes.CommandTimeout, $"Wait timed out after {timeout} ms.");
+		}, new
+		{
+			typeName,
+			typeContains,
+			name,
+			automationId,
+			text,
+			property,
+			visible,
+			enabled,
+			matchCount,
+			timeoutMs,
+			intervalMs,
+			properties,
 		});
 	}
 
@@ -275,7 +308,7 @@ internal static class InspectTools
 				options.Value.DefaultTimeoutMs);
 			resources.StoreJson(DeepFlowResourceNames.LatestBindingFailures, failures);
 			return failures;
-		});
+		}, new { afterSequenceNumber, maxCount });
 	}
 
 	private static IReadOnlyList<string> EnsureVisibilityProperty(IReadOnlyList<string> properties, bool includeHidden)
