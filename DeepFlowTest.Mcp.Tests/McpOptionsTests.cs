@@ -1,5 +1,7 @@
 namespace DeepFlowTest.Mcp.Tests;
 
+using System;
+using System.IO;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Configuration;
@@ -100,4 +102,76 @@ public sealed class McpOptionsTests
 			() => McpArgumentParsing.ValidateExecutableAllowed("C:\\outside\\Harness.exe", new[] { "C:\\allowed" }),
 			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ActionDenied));
 	}
+
+	[Test]
+	public void GuiSettingsStoreRoundTripsUxOptions()
+	{
+		var store = new McpGuiSettingsStore(CreateTempSettingsPath());
+
+		store.Save(new McpGuiSettings
+		{
+			Target = new McpGuiTargetSettings
+			{
+				AttachPidText = "123",
+				AttachProcessName = "Harness",
+				AttachWindowTitle = "Harness Window",
+				LaunchPath = "C:\\apps\\Harness.exe",
+				LaunchArguments = "--smoke",
+				TerminateOnDetach = true,
+			},
+			Policy = new McpGuiPolicySettings
+			{
+				AllowLaunch = true,
+				AllowActions = true,
+				AllowArbitraryInvoke = true,
+				AllowFileWrites = true,
+			},
+			VirtualPointer = new McpGuiVirtualPointerSettings
+			{
+				Enabled = true,
+				ShowClickRipples = false,
+				ShowDragTrail = false,
+				IncludeInScreenshots = true,
+				HideDelayMs = "250",
+			},
+			ActivityFilter = "target",
+		});
+
+		var loaded = store.Load();
+
+		Assert.That(loaded.Target.AttachPidText, Is.EqualTo("123"));
+		Assert.That(loaded.Target.AttachProcessName, Is.EqualTo("Harness"));
+		Assert.That(loaded.Target.AttachWindowTitle, Is.EqualTo("Harness Window"));
+		Assert.That(loaded.Target.LaunchPath, Is.EqualTo("C:\\apps\\Harness.exe"));
+		Assert.That(loaded.Target.LaunchArguments, Is.EqualTo("--smoke"));
+		Assert.That(loaded.Target.TerminateOnDetach, Is.True);
+		Assert.That(loaded.Policy.AllowLaunch, Is.True);
+		Assert.That(loaded.Policy.AllowActions, Is.True);
+		Assert.That(loaded.Policy.AllowArbitraryInvoke, Is.True);
+		Assert.That(loaded.Policy.AllowFileWrites, Is.True);
+		Assert.That(loaded.VirtualPointer.Enabled, Is.True);
+		Assert.That(loaded.VirtualPointer.ShowClickRipples, Is.False);
+		Assert.That(loaded.VirtualPointer.ShowDragTrail, Is.False);
+		Assert.That(loaded.VirtualPointer.IncludeInScreenshots, Is.True);
+		Assert.That(loaded.VirtualPointer.HideDelayMs, Is.EqualTo("250"));
+		Assert.That(loaded.ActivityFilter, Is.EqualTo("target"));
+	}
+
+	[Test]
+	public void GuiSettingsStoreReportsInvalidJsonWithoutThrowingFromTryLoad()
+	{
+		var path = CreateTempSettingsPath();
+		Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+		File.WriteAllText(path, "{bad json");
+		var store = new McpGuiSettingsStore(path);
+
+		var loaded = store.TryLoadIfExists(out var settings, out var error);
+
+		Assert.That(loaded, Is.False);
+		Assert.That(settings, Is.Null);
+		Assert.That(error, Does.Contain("could not be loaded"));
+	}
+
+	private static string CreateTempSettingsPath() =>
+		Path.Combine(Path.GetTempPath(), "DeepFlowTest.Mcp.Tests", Guid.NewGuid().ToString("N"), "mcp-gui-settings.json");
 }

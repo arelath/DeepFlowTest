@@ -3,6 +3,7 @@ namespace DeepFlowTest.Mcp.ViewModels;
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
@@ -22,6 +23,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 	private readonly McpEndpointReporter endpointReporter;
 	private readonly McpActivityStore activityStore;
 	private readonly IOptions<McpServerOptions> options;
+	private readonly McpGuiSettingsStore settingsStore;
 	private readonly Dispatcher dispatcher;
 	private readonly DispatcherTimer refreshTimer;
 	private McpEndpointInfo endpointInfo = new();
@@ -46,7 +48,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 		McpStreamRegistry streamRegistry,
 		McpEndpointReporter endpointReporter,
 		McpActivityStore activityStore,
-		IOptions<McpServerOptions> options)
+		IOptions<McpServerOptions> options,
+		McpGuiSettingsStore settingsStore)
 	{
 		this.sessionHost = sessionHost ?? throw new ArgumentNullException(nameof(sessionHost));
 		this.serverHost = serverHost ?? throw new ArgumentNullException(nameof(serverHost));
@@ -54,6 +57,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 		this.endpointReporter = endpointReporter ?? throw new ArgumentNullException(nameof(endpointReporter));
 		this.activityStore = activityStore ?? throw new ArgumentNullException(nameof(activityStore));
 		this.options = options ?? throw new ArgumentNullException(nameof(options));
+		this.settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
 		dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
 
 		StartServerCommand = new AsyncRelayCommand(StartServerAsync, () => !serverHost.IsRunning);
@@ -64,9 +68,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 		LaunchCommand = new RelayCommand(LaunchTarget);
 		ApplyVirtualPointerCommand = new RelayCommand(ApplyVirtualPointer);
 
+		LoadPersistedSettings();
+
 		endpointInfo = endpointReporter.Current;
 		foreach (var activity in activityStore.Snapshot())
-			ActivityEvents.Add(new ActivityEventViewModel(activity));
+		{
+			var item = new ActivityEventViewModel(activity);
+			if (MatchesFilter(item))
+				ActivityEvents.Add(item);
+		}
 
 		endpointReporter.Changed += (_, info) => Dispatch(() =>
 		{
@@ -167,37 +177,37 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 	public string AttachPidText
 	{
 		get => attachPidText;
-		set => SetField(ref attachPidText, value);
+		set => SetFieldAndSave(ref attachPidText, value);
 	}
 
 	public string? AttachProcessName
 	{
 		get => attachProcessName;
-		set => SetField(ref attachProcessName, value);
+		set => SetFieldAndSave(ref attachProcessName, value);
 	}
 
 	public string? AttachWindowTitle
 	{
 		get => attachWindowTitle;
-		set => SetField(ref attachWindowTitle, value);
+		set => SetFieldAndSave(ref attachWindowTitle, value);
 	}
 
 	public string? LaunchPath
 	{
 		get => launchPath;
-		set => SetField(ref launchPath, value);
+		set => SetFieldAndSave(ref launchPath, value);
 	}
 
 	public string? LaunchArguments
 	{
 		get => launchArguments;
-		set => SetField(ref launchArguments, value);
+		set => SetFieldAndSave(ref launchArguments, value);
 	}
 
 	public bool TerminateOnDetach
 	{
 		get => terminateOnDetach;
-		set => SetField(ref terminateOnDetach, value);
+		set => SetFieldAndSave(ref terminateOnDetach, value);
 	}
 
 	public bool AllowLaunch
@@ -210,6 +220,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
 			options.Value.Policy.AllowLaunch = value;
 			OnPropertyChanged();
+			SaveSettings();
 		}
 	}
 
@@ -223,6 +234,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
 			options.Value.Policy.AllowActions = value;
 			OnPropertyChanged();
+			SaveSettings();
 		}
 	}
 
@@ -236,6 +248,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
 			options.Value.Policy.AllowArbitraryInvoke = value;
 			OnPropertyChanged();
+			SaveSettings();
 		}
 	}
 
@@ -249,37 +262,38 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
 			options.Value.Policy.AllowFileWrites = value;
 			OnPropertyChanged();
+			SaveSettings();
 		}
 	}
 
 	public bool VirtualPointerEnabled
 	{
 		get => virtualPointerEnabled;
-		set => SetField(ref virtualPointerEnabled, value);
+		set => SetFieldAndSave(ref virtualPointerEnabled, value);
 	}
 
 	public bool VirtualPointerClickRipples
 	{
 		get => virtualPointerClickRipples;
-		set => SetField(ref virtualPointerClickRipples, value);
+		set => SetFieldAndSave(ref virtualPointerClickRipples, value);
 	}
 
 	public bool VirtualPointerDragTrail
 	{
 		get => virtualPointerDragTrail;
-		set => SetField(ref virtualPointerDragTrail, value);
+		set => SetFieldAndSave(ref virtualPointerDragTrail, value);
 	}
 
 	public bool VirtualPointerInScreenshots
 	{
 		get => virtualPointerInScreenshots;
-		set => SetField(ref virtualPointerInScreenshots, value);
+		set => SetFieldAndSave(ref virtualPointerInScreenshots, value);
 	}
 
 	public string VirtualPointerHideDelayMs
 	{
 		get => virtualPointerHideDelayMs;
-		set => SetField(ref virtualPointerHideDelayMs, value);
+		set => SetFieldAndSave(ref virtualPointerHideDelayMs, value);
 	}
 
 	public string? ActivityFilter
@@ -293,7 +307,58 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 			activityFilter = value;
 			OnPropertyChanged();
 			RefreshActivityFilter();
+			SaveSettings();
 		}
+	}
+
+	private void LoadPersistedSettings()
+	{
+		if (settingsStore.TryLoadIfExists(out var settings, out var error) && settings is not null)
+			ApplyPersistedSettings(settings);
+		else if (!string.IsNullOrWhiteSpace(error))
+			lastError = error;
+
+		ApplyStartupOptions();
+	}
+
+	private void ApplyPersistedSettings(McpGuiSettings settings)
+	{
+		attachPidText = settings.Target.AttachPidText;
+		attachProcessName = settings.Target.AttachProcessName;
+		attachWindowTitle = settings.Target.AttachWindowTitle;
+		launchPath = settings.Target.LaunchPath;
+		launchArguments = settings.Target.LaunchArguments;
+		terminateOnDetach = settings.Target.TerminateOnDetach;
+
+		var policy = options.Value.Policy;
+		policy.AllowLaunch = policy.AllowLaunch || settings.Policy.AllowLaunch;
+		policy.AllowActions = policy.AllowActions || settings.Policy.AllowActions;
+		policy.AllowArbitraryInvoke = policy.AllowArbitraryInvoke || settings.Policy.AllowArbitraryInvoke;
+		policy.AllowFileWrites = policy.AllowFileWrites || settings.Policy.AllowFileWrites;
+
+		virtualPointerEnabled = settings.VirtualPointer.Enabled;
+		virtualPointerClickRipples = settings.VirtualPointer.ShowClickRipples;
+		virtualPointerDragTrail = settings.VirtualPointer.ShowDragTrail;
+		virtualPointerInScreenshots = settings.VirtualPointer.IncludeInScreenshots;
+		virtualPointerHideDelayMs = settings.VirtualPointer.HideDelayMs;
+		activityFilter = settings.ActivityFilter;
+	}
+
+	private void ApplyStartupOptions()
+	{
+		var startup = options.Value.Startup;
+		if (startup.ProcessId.HasValue)
+			attachPidText = startup.ProcessId.Value.ToString(CultureInfo.InvariantCulture);
+		if (!string.IsNullOrWhiteSpace(startup.ProcessName))
+			attachProcessName = startup.ProcessName;
+		if (!string.IsNullOrWhiteSpace(startup.WindowTitle))
+			attachWindowTitle = startup.WindowTitle;
+		if (!string.IsNullOrWhiteSpace(startup.LaunchPath))
+			launchPath = startup.LaunchPath;
+		if (!string.IsNullOrWhiteSpace(startup.LaunchArguments))
+			launchArguments = startup.LaunchArguments;
+		if (startup.TerminateOnDetach)
+			terminateOnDetach = true;
 	}
 
 	private async Task StartServerAsync()
@@ -347,7 +412,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 		try
 		{
 			LastError = null;
-			int? pid = string.IsNullOrWhiteSpace(AttachPidText) ? null : int.Parse(AttachPidText, System.Globalization.CultureInfo.InvariantCulture);
+			int? pid = string.IsNullOrWhiteSpace(AttachPidText) ? null : int.Parse(AttachPidText, CultureInfo.InvariantCulture);
 			sessionHost.Attach(new McpTargetSelector
 			{
 				ProcessId = pid,
@@ -386,7 +451,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 		try
 		{
 			LastError = null;
-			if (!int.TryParse(VirtualPointerHideDelayMs, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var hideDelay))
+			if (!int.TryParse(VirtualPointerHideDelayMs, System.Globalization.NumberStyles.Integer, CultureInfo.InvariantCulture, out var hideDelay))
 				throw new InvalidOperationException("Hide delay must be an integer.");
 
 			var pointer = new VirtualPointerOptionsDto
@@ -470,6 +535,51 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 		field = value;
 		OnPropertyChanged(propertyName);
 		return true;
+	}
+
+	private void SetFieldAndSave<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+	{
+		if (SetField(ref field, value, propertyName))
+			SaveSettings();
+	}
+
+	private void SaveSettings()
+	{
+		try
+		{
+			settingsStore.Save(new McpGuiSettings
+			{
+				Target = new McpGuiTargetSettings
+				{
+					AttachPidText = attachPidText,
+					AttachProcessName = attachProcessName,
+					AttachWindowTitle = attachWindowTitle,
+					LaunchPath = launchPath,
+					LaunchArguments = launchArguments,
+					TerminateOnDetach = terminateOnDetach,
+				},
+				Policy = new McpGuiPolicySettings
+				{
+					AllowLaunch = options.Value.Policy.AllowLaunch,
+					AllowActions = options.Value.Policy.AllowActions,
+					AllowArbitraryInvoke = options.Value.Policy.AllowArbitraryInvoke,
+					AllowFileWrites = options.Value.Policy.AllowFileWrites,
+				},
+				VirtualPointer = new McpGuiVirtualPointerSettings
+				{
+					Enabled = virtualPointerEnabled,
+					ShowClickRipples = virtualPointerClickRipples,
+					ShowDragTrail = virtualPointerDragTrail,
+					IncludeInScreenshots = virtualPointerInScreenshots,
+					HideDelayMs = virtualPointerHideDelayMs,
+				},
+				ActivityFilter = activityFilter,
+			});
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			LastError = $"MCP GUI settings could not be saved: {ex.Message}";
+		}
 	}
 
 	private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>

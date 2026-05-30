@@ -3,6 +3,7 @@ namespace DeepFlowTest.Mcp;
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Hosting;
 using DeepFlowTest.Mcp.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +24,7 @@ public partial class App : Application
 			builder.AddDebug();
 		});
 		serviceCollection.AddDeepFlowMcpCore(e.Args);
+		serviceCollection.AddSingleton<McpGuiSettingsStore>();
 		serviceCollection.AddSingleton<MainWindowViewModel>();
 		serviceCollection.AddSingleton<MainWindow>();
 
