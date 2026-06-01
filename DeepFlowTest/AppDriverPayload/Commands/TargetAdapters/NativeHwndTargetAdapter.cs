@@ -30,7 +30,9 @@ internal sealed class NativeHwndTargetAdapter : UiTargetAdapterBase
 			: base.TypeText(target, text, clearFirst);
 
 	public override ActionResult SendKeys(object target, object? keys, string keyText, int delayMs) =>
-		TargetKeyboardInput.SendKeysToForeground(keys, delayMs);
+		target is IntPtr hwnd
+			? TargetKeyboardInput.SendKeysToHwnd(hwnd, keys, delayMs)
+			: base.SendKeys(target, keys, keyText, delayMs);
 
 	public override bool TryEnsureForeground(object target) =>
 		Focus(target).Success;

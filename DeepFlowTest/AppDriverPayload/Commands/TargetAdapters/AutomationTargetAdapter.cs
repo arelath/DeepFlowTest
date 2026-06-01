@@ -30,8 +30,23 @@ internal sealed class AutomationTargetAdapter : UiTargetAdapterBase
 			? ActionResult.Ok()
 			: base.TypeText(target, text, clearFirst);
 
-	public override ActionResult SendKeys(object target, object? keys, string keyText, int delayMs) =>
-		TargetKeyboardInput.SendKeysToForeground(keys, delayMs);
+	public override ActionResult SendKeys(object target, object? keys, string keyText, int delayMs)
+	{
+		if (target is not AutomationElement automationElement)
+			return base.SendKeys(target, keys, keyText, delayMs);
+
+		try
+		{
+			var hwnd = new IntPtr(automationElement.Current.NativeWindowHandle);
+			return hwnd != IntPtr.Zero
+				? TargetKeyboardInput.SendKeysToHwnd(hwnd, keys, delayMs)
+				: ActionResult.Unsupported("Automation target has no native window handle for key input.");
+		}
+		catch (ElementNotAvailableException)
+		{
+			return ActionResult.Unsupported("Automation target is no longer available.");
+		}
+	}
 
 	public override PointerTargetResult GetPointerTarget(object target, PointerAnchor anchor)
 	{

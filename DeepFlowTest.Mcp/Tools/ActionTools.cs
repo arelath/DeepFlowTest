@@ -111,7 +111,7 @@ internal static class ActionTools
 		double sourceAnchorY = 0.5,
 		double destinationAnchorX = 0.5,
 		double destinationAnchorY = 0.5,
-		bool ensureForeground = true,
+		bool ensureForeground = false,
 		bool validateSameProcess = true,
 		string? after = "delta")
 	{
@@ -146,6 +146,7 @@ internal static class ActionTools
 					SourceAnchorY = sourceAnchorY,
 					DestinationAnchorX = destinationAnchorX,
 					DestinationAnchorY = destinationAnchorY,
+					UseInjectedEvents = true,
 					EnsureForeground = ensureForeground,
 					ValidateSameProcess = validateSameProcess,
 					TimeoutMs = common.TimeoutMs,

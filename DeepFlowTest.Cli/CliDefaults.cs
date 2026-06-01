@@ -253,8 +253,8 @@ public sealed class CliDragDefaults
 	public double SourceAnchorY { get; set; } = 0.5;
 	public double DestinationAnchorX { get; set; } = 0.5;
 	public double DestinationAnchorY { get; set; } = 0.5;
-	public bool UseInjectedEvents { get; set; }
-	public bool Foreground { get; set; } = true;
+	public bool UseInjectedEvents { get; set; } = true;
+	public bool Foreground { get; set; }
 	public bool ValidateSameProcess { get; set; } = true;
 }
 

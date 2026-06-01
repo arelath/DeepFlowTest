@@ -65,11 +65,12 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 	{
 		List<ProcessSnapshot> snapshots = [];
 		List<ProcessInspectionWarning> warnings = [];
+		var windowsByProcessId = EnumerateTopLevelWindowsByProcessId();
 		foreach (var process in Process.GetProcesses())
 		{
 			try
 			{
-				snapshots.Add(CreateSnapshot(process, warnings));
+				snapshots.Add(CreateSnapshot(process, windowsByProcessId, warnings));
 			}
 			catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
 			{
@@ -91,18 +92,26 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 		};
 	}
 
-	private static ProcessSnapshot CreateSnapshot(Process process, List<ProcessInspectionWarning> warnings)
+	private static ProcessSnapshot CreateSnapshot(
+		Process process,
+		IReadOnlyDictionary<int, IReadOnlyList<ProcessWindowSnapshot>> windowsByProcessId,
+		List<ProcessInspectionWarning> warnings)
 	{
 		var processId = SafeGet(() => process.Id, 0);
 		var processName = SafeGet(() => process.ProcessName, string.Empty);
 		var hasExited = SafeGet(() => process.HasExited, true);
-		var modules = TryGetModuleNames(process, processId, processName, warnings);
-		var windows = EnumerateTopLevelWindows(processId);
-		var title = SafeGet(() => process.MainWindowTitle, string.Empty);
+		var windows = processId > 0 && windowsByProcessId.TryGetValue(processId, out var processWindows)
+			? processWindows
+			: Array.Empty<ProcessWindowSnapshot>();
+		var hasVisibleTopLevelWindow = HasVisibleTopLevelWindow(windows);
+		var modules = hasVisibleTopLevelWindow
+			? TryGetModuleNames(process, processId, processName, warnings)
+			: Array.Empty<string>();
+		var title = windows.FirstOrDefault(window => !string.IsNullOrWhiteSpace(window.Title))?.Title ?? string.Empty;
 		if (string.IsNullOrWhiteSpace(title))
-			title = windows.FirstOrDefault(window => !string.IsNullOrWhiteSpace(window.Title))?.Title ?? string.Empty;
+			title = SafeGet(() => process.MainWindowTitle, string.Empty);
 		var framework = DetectFramework(modules);
-		var hasWindowCandidate = windows.Any(static window => !string.IsNullOrWhiteSpace(window.Title));
+		var shouldInspectArchitecture = hasVisibleTopLevelWindow || processId == Environment.ProcessId;
 
 		return new ProcessSnapshot
 		{
@@ -110,11 +119,9 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 			ProcessName = processName,
 			MainWindowTitle = title,
 			TopLevelWindows = windows,
-			Architecture = DetectArchitecture(process),
+			Architecture = shouldInspectArchitecture ? DetectArchitecture(process) : string.Empty,
 			FrameworkFamily = framework,
-			IsLikelyWpfCandidate = modules.Any(static x => x.Equals("PresentationFramework.dll", StringComparison.OrdinalIgnoreCase))
-				|| modules.Any(static x => x.Equals("PresentationCore.dll", StringComparison.OrdinalIgnoreCase))
-				|| hasWindowCandidate,
+			IsLikelyWpfCandidate = IsSupportedUiFramework(modules),
 			HasExited = hasExited,
 		};
 	}
@@ -123,7 +130,10 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 	{
 		try
 		{
-			return process.Modules.Cast<ProcessModule>().Select(static x => x.ModuleName).ToArray();
+			return NativeMethods.GetModules(process)
+				.Select(static module => module.ModuleName)
+				.Where(static moduleName => !string.IsNullOrWhiteSpace(moduleName))
+				.ToArray();
 		}
 		catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
 		{
@@ -139,10 +149,10 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 
 	private static string DetectFramework(IReadOnlyList<string> modules)
 	{
-		if (modules.Any(static x => x.Equals("PresentationFramework.dll", StringComparison.OrdinalIgnoreCase)))
+		if (modules.Any(IsWpfModule))
 			return "wpf";
 
-		if (modules.Any(static x => x.Equals("System.Windows.Forms.dll", StringComparison.OrdinalIgnoreCase)))
+		if (modules.Any(IsWinFormsModule))
 			return "winforms";
 
 		if (modules.Any(static x => x.Equals("coreclr.dll", StringComparison.OrdinalIgnoreCase)))
@@ -153,6 +163,20 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 
 		return string.Empty;
 	}
+
+	private static bool IsSupportedUiFramework(IReadOnlyList<string> modules) =>
+		modules.Any(IsWpfModule) || modules.Any(IsWinFormsModule);
+
+	private static bool IsWpfModule(string moduleName) =>
+		IsModule(moduleName, "PresentationFramework")
+		|| IsModule(moduleName, "PresentationCore");
+
+	private static bool IsWinFormsModule(string moduleName) =>
+		IsModule(moduleName, "System.Windows.Forms");
+
+	private static bool IsModule(string moduleName, string baseName) =>
+		moduleName.Equals(baseName + ".dll", StringComparison.OrdinalIgnoreCase)
+		|| moduleName.Equals(baseName + ".ni.dll", StringComparison.OrdinalIgnoreCase);
 
 	private static string DetectArchitecture(Process process)
 	{
@@ -193,16 +217,13 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 		}
 	}
 
-	private static IReadOnlyList<ProcessWindowSnapshot> EnumerateTopLevelWindows(int processId)
+	private static IReadOnlyDictionary<int, IReadOnlyList<ProcessWindowSnapshot>> EnumerateTopLevelWindowsByProcessId()
 	{
-		if (processId <= 0)
-			return [];
-
-		List<ProcessWindowSnapshot> windows = [];
+		Dictionary<int, List<ProcessWindowSnapshot>> windowsByProcessId = [];
 		NativeMethods.EnumWindows((hwnd, _) =>
 		{
 			NativeMethods.GetWindowThreadProcessId(hwnd, out var windowProcessId);
-			if (windowProcessId != processId || !NativeMethods.IsWindowVisible(hwnd))
+			if (windowProcessId <= 0 || !NativeMethods.IsWindowVisible(hwnd))
 				return true;
 
 			var titleLength = NativeMethods.GetWindowTextLength(hwnd);
@@ -211,6 +232,12 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 
 			var builder = new StringBuilder(titleLength + 1);
 			NativeMethods.GetWindowText(hwnd, builder, builder.Capacity);
+			if (!windowsByProcessId.TryGetValue(windowProcessId, out var windows))
+			{
+				windows = [];
+				windowsByProcessId[windowProcessId] = windows;
+			}
+
 			windows.Add(new ProcessWindowSnapshot
 			{
 				Hwnd = hwnd.ToInt64(),
@@ -218,8 +245,13 @@ public sealed class LiveProcessSnapshotSource : IProcessSnapshotSource
 			});
 			return true;
 		}, IntPtr.Zero);
-		return windows;
+		return windowsByProcessId.ToDictionary(
+			static pair => pair.Key,
+			static pair => (IReadOnlyList<ProcessWindowSnapshot>)pair.Value.ToArray());
 	}
+
+	private static bool HasVisibleTopLevelWindow(IReadOnlyList<ProcessWindowSnapshot> windows) =>
+		windows.Any(static window => !string.IsNullOrWhiteSpace(window.Title));
 
 	private static T SafeGet<T>(Func<T> getter, T fallback)
 	{

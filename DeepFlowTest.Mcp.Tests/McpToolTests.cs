@@ -31,6 +31,29 @@ public sealed class McpToolTests
 	}
 
 	[Test]
+	public void ListProcessesCandidatesOnlyKeepsWinFormsCandidates()
+	{
+		var snapshotSource = new FakeProcessSnapshotSource
+		{
+			Result = new ProcessSnapshotResult
+			{
+				Processes =
+				[
+					Process(1, "NativeWindow", isCandidate: false),
+					Process(2, "WinFormsApp", isCandidate: true, frameworkFamily: "winforms"),
+				],
+			},
+		};
+		var fixture = McpTestHost.CreateHost(snapshotSource: snapshotSource);
+
+		var response = TargetTools.ListProcesses(fixture.Runner, fixture.Services, candidatesOnly: true);
+		var data = (ProcessListData)response.Data!;
+
+		Assert.That(response.Success, Is.True);
+		Assert.That(data.Processes.Select(static process => process.ProcessName), Is.EqualTo(new[] { "WinFormsApp" }));
+	}
+
+	[Test]
 	public void ListProcessesCandidatesOnlyOmitsWarnedProcessesAndWarnings()
 	{
 		var snapshotSource = new FakeProcessSnapshotSource
@@ -681,6 +704,7 @@ public sealed class McpToolTests
 		Assert.That(drag.SourceAnchorY, Is.EqualTo(0.25));
 		Assert.That(drag.DestinationAnchorX, Is.EqualTo(0.75));
 		Assert.That(drag.DestinationAnchorY, Is.EqualTo(0.85));
+		Assert.That(drag.UseInjectedEvents, Is.True);
 		Assert.That(drag.EnsureForeground, Is.False);
 		Assert.That(drag.ValidateSameProcess, Is.False);
 	}
@@ -796,7 +820,7 @@ public sealed class McpToolTests
 			},
 		};
 
-	private static ProcessSnapshot Process(int pid, string name, bool isCandidate, bool hasExited = false, bool hasWindow = true) =>
+	private static ProcessSnapshot Process(int pid, string name, bool isCandidate, bool hasExited = false, bool hasWindow = true, string? frameworkFamily = null) =>
 		new()
 		{
 			ProcessId = pid,
@@ -804,6 +828,7 @@ public sealed class McpToolTests
 			MainWindowTitle = hasWindow ? name : string.Empty,
 			TopLevelWindows = hasWindow ? [new ProcessWindowSnapshot { Hwnd = pid, Title = name }] : [],
 			IsLikelyWpfCandidate = isCandidate,
+			FrameworkFamily = frameworkFamily ?? (isCandidate ? "wpf" : string.Empty),
 			HasExited = hasExited,
 		};
 }

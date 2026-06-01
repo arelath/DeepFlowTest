@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Windows;
@@ -9,8 +10,10 @@ using System.Windows.Controls;
 using System.Windows.Forms.Integration;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Commands;
+using DeepFlowTest.AppDriverPayload.Commands.TargetAdapters;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Shared;
 using DeepFlowTest.Utility;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
@@ -308,6 +311,105 @@ public sealed class WinFormsSupportTests
 	}
 
 	[Test]
+	public void NativeDragAndDropPostsMouseMessagesToTargetHwndWhenCovered()
+	{
+		using var form = new RecordingDragForm
+		{
+			Name = "dragMessageTarget",
+			Text = "Drag message target",
+			Width = 240,
+			Height = 180,
+			ShowInTaskbar = false,
+			StartPosition = Forms.FormStartPosition.Manual,
+			Left = 20,
+			Top = 20,
+		};
+		using var cover = new Forms.Form
+		{
+			Text = "Cover",
+			Width = form.Width,
+			Height = form.Height,
+			ShowInTaskbar = false,
+			StartPosition = Forms.FormStartPosition.Manual,
+			Left = form.Left,
+			Top = form.Top,
+			TopMost = true,
+			Opacity = 0.01,
+		};
+
+		try
+		{
+			form.Show();
+			cover.Show();
+			cover.Activate();
+			Forms.Application.DoEvents();
+			var source = form.PointToScreen(new System.Drawing.Point(30, 30));
+			var destination = form.PointToScreen(new System.Drawing.Point(120, 80));
+			var plan = new DragPlan(
+				new PointerTarget(source.X, source.Y, form.Handle, "recording form"),
+				new PointerTarget(destination.X, destination.Y, form.Handle, "recording form"),
+				durationMs: 40,
+				holdMs: 0,
+				stepIntervalMs: 10,
+				postDropWaitMs: 0,
+				ensureForeground: true,
+				validateSameProcess: true);
+
+			var result = TargetMouseInput.PerformDragAndDrop(plan, CancellationToken.None);
+			Forms.Application.DoEvents();
+
+			Assert.That(result.Success, Is.True, result.Error);
+			Assert.That(form.MouseMessages.Select(static message => message.Message), Does.Contain(NativeMethods.WM_LBUTTONDOWN));
+			Assert.That(form.MouseMessages.Select(static message => message.Message), Does.Contain(NativeMethods.WM_MOUSEMOVE));
+			Assert.That(form.MouseMessages.Select(static message => message.Message), Does.Contain(NativeMethods.WM_LBUTTONUP));
+			var down = form.MouseMessages.First(message => message.Message == NativeMethods.WM_LBUTTONDOWN);
+			var up = form.MouseMessages.Last(message => message.Message == NativeMethods.WM_LBUTTONUP);
+			Assert.That(down.X, Is.EqualTo(30).Within(1));
+			Assert.That(down.Y, Is.EqualTo(30).Within(1));
+			Assert.That(up.X, Is.EqualTo(120).Within(1));
+			Assert.That(up.Y, Is.EqualTo(80).Within(1));
+		}
+		finally
+		{
+			cover.Close();
+			form.Close();
+		}
+	}
+
+	[Test]
+	public void NativeHwndKeyPressPostsKeyboardMessagesToTargetHandle()
+	{
+		using var form = CreateForm();
+		var textBox = new Forms.TextBox { Name = "nativeKeyBox", Text = "abcdef", Width = 160 };
+		form.Controls.Add(textBox);
+
+		try
+		{
+			form.Show();
+			Forms.Application.DoEvents();
+
+			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
+			{
+				AsSnapshot = true,
+				PropNames = ["Name", "Text"],
+				MaxNodeCount = 300,
+			})!;
+			var hwndNode = snapshot.Nodes.FirstOrDefault(node => node.TypeName == "HWND" && node.Hwnd == textBox.Handle.ToInt64());
+			Assert.That(hwndNode, Is.Not.Null);
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = hwndNode!.TargetId, Keys = "Control+A", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(textBox.SelectionLength, Is.EqualTo(6));
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = hwndNode.TargetId, Keys = "Backspace", DelayMs = 1, EnsureForeground = false }));
+			Assert.That(textBox.Text, Is.Empty);
+		}
+		finally
+		{
+			form.Close();
+		}
+	}
+
+	[Test]
 	public void NativeAutomationFileNamePropertySetsValuePattern()
 	{
 		using var form = CreateForm();
@@ -497,5 +599,25 @@ public sealed class WinFormsSupportTests
 		Assert.That(response, Is.TypeOf<StandardIpcResponse>());
 		Assert.That(((StandardIpcResponse)response!).Success, Is.True, ((StandardIpcResponse)response).Error);
 	}
+
+	private sealed class RecordingDragForm : Forms.Form
+	{
+		public List<RecordedMouseMessage> MouseMessages { get; } = [];
+
+		protected override void WndProc(ref Forms.Message m)
+		{
+			if (m.Msg is NativeMethods.WM_MOUSEMOVE or NativeMethods.WM_LBUTTONDOWN or NativeMethods.WM_LBUTTONUP)
+			{
+				MouseMessages.Add(new RecordedMouseMessage(
+					m.Msg,
+					unchecked((short)((long)m.LParam & 0xffff)),
+					unchecked((short)(((long)m.LParam >> 16) & 0xffff))));
+			}
+
+			base.WndProc(ref m);
+		}
+	}
+
+	private sealed record RecordedMouseMessage(int Message, int X, int Y);
 
 }

@@ -2,6 +2,7 @@ namespace DeepFlowTest.Cli.Tests;
 
 using System;
 using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
 
 [TestFixture]
@@ -53,6 +54,30 @@ public sealed class ProcessesCommandTests
 		Assert.That(result.ExitCode, Is.EqualTo(0));
 		Assert.That(result.Stdout, Does.Contain("WpfApp"));
 		Assert.That(result.Stdout, Does.Not.Contain("Plain"));
+	}
+
+	[Test]
+	public void CandidateFilterKeepsLikelyWinFormsProcesses()
+	{
+		var source = new FakeProcessSnapshotSource
+		{
+			Result = new ProcessSnapshotResult
+			{
+				Processes = new[]
+				{
+					Process(1, "NativeWindow", isWpf: false),
+					Process(2, "WinFormsApp", isWpf: true, frameworkFamily: "winforms"),
+				},
+				Warnings = Array.Empty<ProcessInspectionWarning>(),
+			},
+		};
+		var services = CliTestHost.CreateServices(snapshotSource: source);
+
+		var result = CliTestHost.Run(new[] { "processes", "--candidates-only" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("WinFormsApp"));
+		Assert.That(result.Stdout, Does.Not.Contain("NativeWindow"));
 	}
 
 	[Test]
@@ -236,13 +261,37 @@ public sealed class ProcessesCommandTests
 		Assert.That(current.TargetProcess, Is.Null);
 	}
 
-	private static ProcessSnapshot Process(int pid, string name, bool isWpf = false, bool hasWindow = true) =>
+	[TestCase("PresentationFramework.dll", true)]
+	[TestCase("PresentationFramework.ni.dll", true)]
+	[TestCase("PresentationCore.ni.dll", true)]
+	[TestCase("System.Windows.Forms.dll", false)]
+	public void WpfModuleDetectionRecognizesFrameworkNativeImages(string moduleName, bool expected)
+	{
+		var method = typeof(LiveProcessSnapshotSource).GetMethod("IsWpfModule", BindingFlags.NonPublic | BindingFlags.Static);
+
+		Assert.That(method, Is.Not.Null);
+		Assert.That((bool)method!.Invoke(null, new object[] { moduleName })!, Is.EqualTo(expected));
+	}
+
+	[TestCase("System.Windows.Forms.dll", true)]
+	[TestCase("System.Windows.Forms.ni.dll", true)]
+	[TestCase("PresentationFramework.ni.dll", false)]
+	public void WinFormsModuleDetectionRecognizesFrameworkNativeImages(string moduleName, bool expected)
+	{
+		var method = typeof(LiveProcessSnapshotSource).GetMethod("IsWinFormsModule", BindingFlags.NonPublic | BindingFlags.Static);
+
+		Assert.That(method, Is.Not.Null);
+		Assert.That((bool)method!.Invoke(null, new object[] { moduleName })!, Is.EqualTo(expected));
+	}
+
+	private static ProcessSnapshot Process(int pid, string name, bool isWpf = false, bool hasWindow = true, string? frameworkFamily = null) =>
 		new()
 		{
 			ProcessId = pid,
 			ProcessName = name,
 			MainWindowTitle = hasWindow ? name : string.Empty,
 			TopLevelWindows = hasWindow ? [new ProcessWindowSnapshot { Hwnd = pid, Title = name }] : [],
+			FrameworkFamily = frameworkFamily ?? (isWpf ? "wpf" : string.Empty),
 			IsLikelyWpfCandidate = isWpf,
 			TargetProcess = new FakeTargetProcess { Id = pid, ProcessName = name },
 		};

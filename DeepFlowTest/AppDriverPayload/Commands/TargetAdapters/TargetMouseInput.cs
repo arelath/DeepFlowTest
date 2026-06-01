@@ -2,8 +2,8 @@ namespace DeepFlowTest.AppDriverPayload.Commands.TargetAdapters;
 
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Threading;
+using System.Windows;
 using DeepFlowTest.AppDriverPayload.Commands;
 using DeepFlowTest.AppDriverPayload.Diagnostics;
 using DeepFlowTest.Shared;
@@ -55,29 +55,45 @@ internal static class TargetMouseInput
 
 		var mouseDown = false;
 		string? error = null;
+		var releaseHwnd = IntPtr.Zero;
+		var releasePoint = ToNativePoint(plan.Destination);
 		try
 		{
 			AppHooks.ResetMouseState();
-			VirtualPointerService.Hide();
-			if (plan.EnsureForeground && plan.Source.OwnerHwnd != IntPtr.Zero)
-				NativeMethods.SetForegroundWindow(plan.Source.OwnerHwnd);
+			var sourceHwnd = ResolveMessageTarget(plan.Source, "source");
+			var destinationHwnd = ResolveMessageTarget(plan.Destination, "destination");
 
-			MoveCursor(plan.Source.ScreenX, plan.Source.ScreenY, "source");
-			if (plan.ValidateSameProcess && !IsPointInCurrentProcess(plan.Source))
-				return ActionResult.Unsupported("Source point is not over a window owned by the target process.");
+			if (plan.ValidateSameProcess)
+			{
+				if (!IsWindowInCurrentProcess(sourceHwnd))
+					return ActionResult.Unsupported("Source window is not owned by the target process.");
+				if (!IsWindowInCurrentProcess(destinationHwnd))
+					return ActionResult.Unsupported("Destination window is not owned by the target process.");
+			}
 
-			SendMouseButton(NativeMethods.MOUSEEVENTF_LEFTDOWN, "left button down");
+			var sourcePoint = ToNativePoint(plan.Source);
+			releaseHwnd = sourceHwnd;
+			releasePoint = sourcePoint;
+
+			VirtualPointerService.BeginDrag(new Point(plan.Source.ScreenX, plan.Source.ScreenY), sourceHwnd);
+			PostMouseMove(sourceHwnd, sourcePoint, leftButtonDown: false, "source");
+			PostMouseButton(sourceHwnd, NativeMethods.WM_LBUTTONDOWN, NativeMethods.MK_LBUTTON, sourcePoint, "left button down");
 			mouseDown = true;
 			Wait(plan.HoldMs, cancellationToken);
 
 			var thresholdPoint = GetThresholdPoint(plan);
-			MoveCursor(thresholdPoint.X, thresholdPoint.Y, "drag threshold");
+			releasePoint = thresholdPoint;
+			PostMouseMove(sourceHwnd, thresholdPoint, leftButtonDown: true, "drag threshold");
+			VirtualPointerService.DragMove(new Point(thresholdPoint.X, thresholdPoint.Y));
 			Wait(Math.Min(plan.StepIntervalMs, plan.HoldMs), cancellationToken);
 
-			MoveAlongPath(thresholdPoint, plan, cancellationToken);
+			MoveAlongPath(thresholdPoint, sourceHwnd, destinationHwnd, plan, point =>
+			{
+				releaseHwnd = destinationHwnd;
+				releasePoint = point;
+			}, cancellationToken);
 
-			if (plan.ValidateSameProcess && !IsPointInCurrentProcess(plan.Destination))
-				error = "Destination point is not over a window owned by the target process.";
+			VirtualPointerService.EndDrag(new Point(plan.Destination.ScreenX, plan.Destination.ScreenY));
 		}
 		catch (OperationCanceledException)
 		{
@@ -93,7 +109,10 @@ internal static class TargetMouseInput
 			{
 				try
 				{
-					SendMouseButton(NativeMethods.MOUSEEVENTF_LEFTUP, "left button up");
+					if (releaseHwnd == IntPtr.Zero)
+						releaseHwnd = ResolveMessageTarget(plan.Destination, "destination");
+
+					PostMouseButton(releaseHwnd, NativeMethods.WM_LBUTTONUP, 0, releasePoint, "left button up");
 				}
 				catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 				{
@@ -119,11 +138,20 @@ internal static class TargetMouseInput
 		return ActionResult.Ok();
 	}
 
-	private static void MoveAlongPath(NativeMethods.NativePoint start, DragPlan plan, CancellationToken cancellationToken)
+	private static void MoveAlongPath(
+		NativeMethods.NativePoint start,
+		IntPtr sourceHwnd,
+		IntPtr destinationHwnd,
+		DragPlan plan,
+		Action<NativeMethods.NativePoint> recordReleasePoint,
+		CancellationToken cancellationToken)
 	{
 		if (plan.DurationMs <= 0)
 		{
-			MoveCursor(plan.Destination.ScreenX, plan.Destination.ScreenY, "destination");
+			var destination = ToNativePoint(plan.Destination);
+			PostMouseMove(destinationHwnd, destination, leftButtonDown: true, "destination");
+			VirtualPointerService.DragMove(new Point(destination.X, destination.Y));
+			recordReleasePoint(destination);
 			return;
 		}
 
@@ -134,7 +162,11 @@ internal static class TargetMouseInput
 			var progress = (double)i / steps;
 			var x = (int)Math.Round(start.X + (plan.Destination.ScreenX - start.X) * progress);
 			var y = (int)Math.Round(start.Y + (plan.Destination.ScreenY - start.Y) * progress);
-			MoveCursor(x, y, "drag move");
+			var point = new NativeMethods.NativePoint { X = x, Y = y };
+			var hwnd = i == steps ? destinationHwnd : sourceHwnd;
+			PostMouseMove(hwnd, point, leftButtonDown: true, "drag move");
+			VirtualPointerService.DragMove(new Point(x, y));
+			recordReleasePoint(point);
 			Wait(sleepPerStep, cancellationToken);
 		}
 	}
@@ -167,33 +199,51 @@ internal static class TargetMouseInput
 		};
 	}
 
-	private static bool IsPointInCurrentProcess(PointerTarget target)
+	private static IntPtr ResolveMessageTarget(PointerTarget target, string role)
 	{
-		var hwnd = NativeMethods.WindowFromPoint(new NativeMethods.NativePoint { X = target.ScreenX, Y = target.ScreenY });
+		var hwnd = target.OwnerHwnd;
 		if (hwnd == IntPtr.Zero)
-			return false;
+			throw new InvalidOperationException($"{role} target does not expose a native window handle.");
+		if (!NativeMethods.IsWindow(hwnd))
+			throw new InvalidOperationException($"{role} target window handle is not valid.");
+		if (!NativeMethods.IsWindowEnabled(hwnd))
+			throw new InvalidOperationException($"{role} target window is not enabled.");
 
+		return hwnd;
+	}
+
+	private static bool IsWindowInCurrentProcess(IntPtr hwnd)
+	{
 		NativeMethods.GetWindowThreadProcessId(hwnd, out var processId);
 		return processId == Process.GetCurrentProcess().Id;
 	}
 
-	private static void MoveCursor(int x, int y, string phase)
+	private static NativeMethods.NativePoint ToNativePoint(PointerTarget target) =>
+		new() { X = target.ScreenX, Y = target.ScreenY };
+
+	private static void PostMouseMove(IntPtr hwnd, NativeMethods.NativePoint screenPoint, bool leftButtonDown, string phase) =>
+		PostMouseMessage(
+			hwnd,
+			NativeMethods.WM_MOUSEMOVE,
+			leftButtonDown ? NativeMethods.MK_LBUTTON : 0,
+			screenPoint,
+			phase);
+
+	private static void PostMouseButton(IntPtr hwnd, int message, int wParam, NativeMethods.NativePoint screenPoint, string phase) =>
+		PostMouseMessage(hwnd, message, wParam, screenPoint, phase);
+
+	private static void PostMouseMessage(IntPtr hwnd, int message, int wParam, NativeMethods.NativePoint screenPoint, string phase)
 	{
-		if (!NativeMethods.SetCursorPos(x, y))
-			throw new InvalidOperationException($"Mouse move failed during {phase}.");
+		var clientPoint = screenPoint;
+		if (!NativeMethods.ScreenToClient(hwnd, ref clientPoint))
+			throw new InvalidOperationException($"Mouse coordinates could not be converted during {phase}.");
+
+		if (!NativeMethods.PostMessage(hwnd, message, new IntPtr(wParam), PackPoint(clientPoint)))
+			throw new InvalidOperationException($"Mouse message could not be posted during {phase}.");
 	}
 
-	private static void SendMouseButton(uint flags, string phase)
-	{
-		var input = NativeMethods.Input.Mouse(new NativeMethods.MouseInputData
-		{
-			Flags = flags,
-			ExtraInfo = NativeMethods.GetMessageExtraInfo(),
-		});
-		var sent = NativeMethods.SendInput(1, new[] { input }, Marshal.SizeOf(typeof(NativeMethods.Input)));
-		if (sent != 1)
-			throw new InvalidOperationException($"SendInput failed during {phase}.");
-	}
+	private static IntPtr PackPoint(NativeMethods.NativePoint point) =>
+		new(unchecked((point.Y & 0xffff) << 16 | (point.X & 0xffff)));
 
 	private static void Wait(int milliseconds, CancellationToken cancellationToken)
 	{

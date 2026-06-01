@@ -340,8 +340,6 @@ public sealed partial class TreeService
 	{
 		if (target is SystemResourceRoot)
 			return false;
-		if (target is VirtualPointerWindow or VirtualPointerRoot)
-			return true;
 
 		var type = target.GetType();
 		var fullName = type.FullName ?? string.Empty;

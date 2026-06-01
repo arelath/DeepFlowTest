@@ -32,6 +32,8 @@ public sealed class CliDefaultsTests
 		Assert.That(defaults.ScreenshotFormat, Is.EqualTo("png"));
 		Assert.That(defaults.KeyDelayMs, Is.EqualTo(TimeoutDefaults.KeyboardDelayMs));
 		Assert.That(defaults.EnsureForeground, Is.True);
+		Assert.That(defaults.Commands.Drag.UseInjectedEvents, Is.True);
+		Assert.That(defaults.Commands.Drag.Foreground, Is.False);
 	}
 
 	[Test]

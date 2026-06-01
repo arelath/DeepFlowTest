@@ -1,18 +1,12 @@
 namespace DeepFlowTest.AppDriverPayload.Commands.TargetAdapters;
 
 using System;
+using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Commands;
 using DeepFlowTest.Utility;
 
 internal static class TargetKeyboardInput
 {
-	public static bool IsPlainTextInputKey(string keyText) =>
-		keyText.Length == 1 && !char.IsControl(keyText[0]);
-
-	public static bool IsSelectAllShortcut(string keyText) =>
-		string.Equals(keyText, "Control+A", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Ctrl+A", StringComparison.OrdinalIgnoreCase);
-
 	public static void TypePhysical(string text) =>
 		KeyboardInput.TypePhysical(text);
 
@@ -26,5 +20,18 @@ internal static class TargetKeyboardInput
 			KeyboardInput.PressPhysical(group, delayMs);
 
 		return ActionResult.Ok();
+	}
+
+	public static ActionResult SendKeysToHwnd(IntPtr hwnd, object? keys, int delayMs)
+	{
+		var groups = KeyboardInput.ParseKeyGroups(TargetValueConverter.UnwrapJsonValue(keys));
+		if (groups.Count == 0)
+			return ActionResult.Unsupported("Key input cannot be empty.");
+		if (hwnd == IntPtr.Zero)
+			return ActionResult.Unsupported("Target window handle is invalid.");
+
+		return KeyboardInput.TryPressNativeHwnd(hwnd, groups, delayMs)
+			? ActionResult.Ok()
+			: ActionResult.Unsupported("Native key input could not be posted to the target window.");
 	}
 }

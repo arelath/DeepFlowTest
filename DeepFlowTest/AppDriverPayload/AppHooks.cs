@@ -22,10 +22,13 @@ public static class AppHooks
 	private static bool hooksApplied;
 	private static volatile bool showDialogCalled;
 	private static int syntheticMouseInputDepth;
+	private static int syntheticKeyboardInputDepth;
 	private static int syntheticInputDepth;
 	private static Point? syntheticMouseScreenPosition;
 	private static IInputElement? syntheticCapturedMouseElement;
 	private static IInputElement? syntheticMouseHitTarget;
+	private static readonly HashSet<Key> SyntheticPressedKeys = [];
+	private static ModifierKeys syntheticModifiers;
 
 	public static WpfPatchResult LastResult
 	{
@@ -83,19 +86,51 @@ public static class AppHooks
 
 	public static bool IsSyntheticMouseInputActive => Volatile.Read(ref syntheticMouseInputDepth) > 0;
 
+	public static bool IsSyntheticKeyboardInputActive => Volatile.Read(ref syntheticKeyboardInputDepth) > 0;
+
 	public static bool IsSyntheticInputActive => Volatile.Read(ref syntheticInputDepth) > 0;
 
 	public static IDisposable BeginSyntheticInput()
 	{
 		Interlocked.Increment(ref syntheticInputDepth);
-		return new SyntheticInputScope(includeMouse: false);
+		return new SyntheticInputScope(includeMouse: false, includeKeyboard: false);
 	}
 
 	public static IDisposable BeginSyntheticMouseInput()
 	{
 		Interlocked.Increment(ref syntheticInputDepth);
 		Interlocked.Increment(ref syntheticMouseInputDepth);
-		return new SyntheticInputScope(includeMouse: true);
+		return new SyntheticInputScope(includeMouse: true, includeKeyboard: false);
+	}
+
+	public static IDisposable BeginSyntheticKeyboardInput()
+	{
+		Interlocked.Increment(ref syntheticInputDepth);
+		Interlocked.Increment(ref syntheticKeyboardInputDepth);
+		return new SyntheticInputScope(includeMouse: false, includeKeyboard: true);
+	}
+
+	public static void SetSyntheticKeyboardState(IEnumerable<Key> pressedKeys)
+	{
+		lock (Gate)
+		{
+			SyntheticPressedKeys.Clear();
+			syntheticModifiers = ModifierKeys.None;
+			foreach (var key in pressedKeys)
+			{
+				SyntheticPressedKeys.Add(key);
+				syntheticModifiers |= ToModifierKeys(key);
+			}
+		}
+	}
+
+	public static void ResetKeyboardState()
+	{
+		lock (Gate)
+		{
+			SyntheticPressedKeys.Clear();
+			syntheticModifiers = ModifierKeys.None;
+		}
 	}
 
 	public static bool ShowDialogCalled
@@ -124,13 +159,20 @@ public static class AppHooks
 			lastResult = new WpfPatchResult { FrameworkFamily = RuntimeFrameworkFamilies.Unknown };
 		ShowDialogCalled = false;
 		ResetMouseState();
+		ResetKeyboardState();
 		Volatile.Write(ref syntheticMouseInputDepth, 0);
+		Volatile.Write(ref syntheticKeyboardInputDepth, 0);
 		Volatile.Write(ref syntheticInputDepth, 0);
 	}
 
 	private static void WarmupHookedMembers()
 	{
 		TryWarmup(() => _ = Mouse.PrimaryDevice.LeftButton);
+		TryWarmup(() => _ = Keyboard.PrimaryDevice.Modifiers);
+		TryWarmup(() => _ = Keyboard.PrimaryDevice.GetKeyStates(Key.LeftCtrl));
+		TryWarmup(() => _ = Keyboard.PrimaryDevice.IsKeyDown(Key.LeftCtrl));
+		TryWarmup(() => _ = Keyboard.GetKeyStates(Key.LeftCtrl));
+		TryWarmup(() => _ = Keyboard.IsKeyDown(Key.LeftCtrl));
 		TryWarmup(() => InvokeBestMatch(typeof(ButtonBase), new Button(), "UpdateIsPressed"));
 		TryWarmup(() => InvokeBestMatch(typeof(GridViewColumnHeader), new GridViewColumnHeader(), "IsMouseOutside"));
 		TryWarmup(() =>
@@ -254,6 +296,36 @@ public static class AppHooks
 	private static int GetMethodAccessRank(MethodInfo method) =>
 		method.IsPublic ? 0 : method.IsAssembly ? 1 : 2;
 
+	private static ModifierKeys GetSyntheticModifiers()
+	{
+		lock (Gate)
+			return syntheticModifiers;
+	}
+
+	private static bool IsSyntheticKeyDown(Key key)
+	{
+		lock (Gate)
+			return SyntheticPressedKeys.Contains(key)
+				|| key == Key.LeftCtrl && SyntheticPressedKeys.Contains(Key.RightCtrl)
+				|| key == Key.RightCtrl && SyntheticPressedKeys.Contains(Key.LeftCtrl)
+				|| key == Key.LeftShift && SyntheticPressedKeys.Contains(Key.RightShift)
+				|| key == Key.RightShift && SyntheticPressedKeys.Contains(Key.LeftShift)
+				|| key == Key.LeftAlt && SyntheticPressedKeys.Contains(Key.RightAlt)
+				|| key == Key.RightAlt && SyntheticPressedKeys.Contains(Key.LeftAlt)
+				|| key == Key.LWin && SyntheticPressedKeys.Contains(Key.RWin)
+				|| key == Key.RWin && SyntheticPressedKeys.Contains(Key.LWin);
+	}
+
+	private static ModifierKeys ToModifierKeys(Key key) =>
+		key switch
+		{
+			Key.LeftCtrl or Key.RightCtrl => ModifierKeys.Control,
+			Key.LeftAlt or Key.RightAlt => ModifierKeys.Alt,
+			Key.LeftShift or Key.RightShift => ModifierKeys.Shift,
+			Key.LWin or Key.RWin => ModifierKeys.Windows,
+			_ => ModifierKeys.None,
+		};
+
 	[HarmonyPatch(typeof(MouseDevice), "GetButtonState")]
 	public static class PatchMouseDeviceGetButtonState
 	{
@@ -275,6 +347,71 @@ public static class AppHooks
 			}
 
 			return true;
+		}
+	}
+
+	[HarmonyPatch(typeof(KeyboardDevice), "get_Modifiers")]
+	public static class PatchKeyboardDeviceModifiers
+	{
+		public static bool Prefix(ref ModifierKeys __result)
+		{
+			if (!IsSyntheticKeyboardInputActive)
+				return true;
+
+			__result = GetSyntheticModifiers();
+			return false;
+		}
+	}
+
+	[HarmonyPatch(typeof(KeyboardDevice), nameof(KeyboardDevice.GetKeyStates), new[] { typeof(Key) })]
+	public static class PatchKeyboardDeviceGetKeyStates
+	{
+		public static bool Prefix(Key key, ref KeyStates __result)
+		{
+			if (!IsSyntheticKeyboardInputActive || !IsSyntheticKeyDown(key))
+				return true;
+
+			__result = KeyStates.Down;
+			return false;
+		}
+	}
+
+	[HarmonyPatch(typeof(KeyboardDevice), nameof(KeyboardDevice.IsKeyDown), new[] { typeof(Key) })]
+	public static class PatchKeyboardDeviceIsKeyDown
+	{
+		public static bool Prefix(Key key, ref bool __result)
+		{
+			if (!IsSyntheticKeyboardInputActive || !IsSyntheticKeyDown(key))
+				return true;
+
+			__result = true;
+			return false;
+		}
+	}
+
+	[HarmonyPatch(typeof(Keyboard), nameof(Keyboard.GetKeyStates), new[] { typeof(Key) })]
+	public static class PatchKeyboardGetKeyStates
+	{
+		public static bool Prefix(Key key, ref KeyStates __result)
+		{
+			if (!IsSyntheticKeyboardInputActive || !IsSyntheticKeyDown(key))
+				return true;
+
+			__result = KeyStates.Down;
+			return false;
+		}
+	}
+
+	[HarmonyPatch(typeof(Keyboard), nameof(Keyboard.IsKeyDown), new[] { typeof(Key) })]
+	public static class PatchKeyboardIsKeyDown
+	{
+		public static bool Prefix(Key key, ref bool __result)
+		{
+			if (!IsSyntheticKeyboardInputActive || !IsSyntheticKeyDown(key))
+				return true;
+
+			__result = true;
+			return false;
 		}
 	}
 
@@ -568,11 +705,13 @@ public static class AppHooks
 	private sealed class SyntheticInputScope : IDisposable
 	{
 		private readonly bool includeMouse;
+		private readonly bool includeKeyboard;
 		private int disposed;
 
-		public SyntheticInputScope(bool includeMouse)
+		public SyntheticInputScope(bool includeMouse, bool includeKeyboard)
 		{
 			this.includeMouse = includeMouse;
+			this.includeKeyboard = includeKeyboard;
 		}
 
 		public void Dispose()
@@ -583,6 +722,8 @@ public static class AppHooks
 			Interlocked.Decrement(ref syntheticInputDepth);
 			if (includeMouse)
 				Interlocked.Decrement(ref syntheticMouseInputDepth);
+			if (includeKeyboard && Interlocked.Decrement(ref syntheticKeyboardInputDepth) == 0)
+				ResetKeyboardState();
 		}
 	}
 

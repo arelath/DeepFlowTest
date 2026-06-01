@@ -341,8 +341,8 @@ public static class CliRootCommand
 		command.Add(CreateOption<double>("--source-anchor-y", "Normalized source Y anchor."));
 		command.Add(CreateOption<double>("--destination-anchor-x", "Normalized destination X anchor."));
 		command.Add(CreateOption<double>("--destination-anchor-y", "Normalized destination Y anchor."));
-		command.Add(CreateOption<bool>("--injected-events", "Use injected WPF mouse events instead of physical cursor movement when possible."));
-		command.Add(CreateOption<bool>("--foreground", "Bring the source target main window to foreground first."));
+		command.Add(CreateOption<bool>("--injected-events", "Use framework-level injected mouse events for WPF targets."));
+		command.Add(CreateOption<bool>("--foreground", "Legacy compatibility option; drag actions run against the target window directly."));
 		command.Add(CreateOption<bool>("--validate-same-process", "Require drag points to remain over the target process."));
 	}
 

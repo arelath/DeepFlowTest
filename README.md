@@ -10,7 +10,7 @@ three surfaces:
   recordings, binding failure capture, and dialog helpers.
 - `DeepFlowTest.Cli`: a non-interactive command line interface for scripts and
   agents.
-- `DeepFlowTest.Mcp`: a stdio Model Context Protocol server for persistent
+- `DeepFlowTest.Mcp`: a local HTTP Model Context Protocol server for persistent
   agent sessions.
 
 See `HowToWriteTests.md` for library API examples,
@@ -144,4 +144,4 @@ unless they have an automation ID. Pass `outputFormat: "json"` to
 The server is read-only by default. Start it with `--allow-launch` to let tools
 start a process, `--allow-actions` to permit mutating UI tools, and
 `--allow-file-writes` when screenshot tools should write to disk. See
-`Docs/McpUsage.md` for stdio client configuration and sample workflows.
+`Docs/McpUsage.md` for HTTP client configuration and sample workflows.

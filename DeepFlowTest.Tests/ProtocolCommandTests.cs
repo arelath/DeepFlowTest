@@ -83,6 +83,8 @@ public sealed class ProtocolCommandTests
 		Assert.That(drag.TargetId, Is.EqualTo("source"));
 		Assert.That(drag.DestinationTargetId, Is.EqualTo("destination"));
 		Assert.That(drag.TimeoutMs, Is.EqualTo(456));
+		Assert.That(drag.UseInjectedEvents, Is.True);
+		Assert.That(drag.EnsureForeground, Is.False);
 		Assert.That(screenshot.BytesBase64, Is.EqualTo("AQID"));
 		Assert.That(screenshot.Base64Screenshot, Is.EqualTo("AQID"));
 		Assert.That(find.Matches.Single().TargetId, Is.EqualTo("button"));

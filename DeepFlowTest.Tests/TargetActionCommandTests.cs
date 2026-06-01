@@ -10,7 +10,9 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using DeepFlowTest.AppDriverPayload;
@@ -281,6 +283,74 @@ public sealed class TargetActionCommandTests
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = secondTabId }));
 
 			Assert.That(WaitUntil(() => secondTab.IsSelected), Is.True);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void ClickFocusesWpfTextBoxThroughInputManagerRouting()
+	{
+		var panel = new StackPanel();
+		var first = new TextBox { Name = "inputManagerClickFocusFirst", Width = 120 };
+		var second = new TextBox { Name = "inputManagerClickFocusSecond", Width = 120 };
+		panel.Children.Add(first);
+		panel.Children.Add(second);
+		var window = CreateWindow("InputManager click focus", panel);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			second.Focus();
+			DoEvents();
+			Assert.That(second.IsKeyboardFocusWithin, Is.True);
+			var firstId = FindTargetId("inputManagerClickFocusFirst");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = firstId }));
+
+			Assert.That(WaitUntil(() => first.IsKeyboardFocusWithin), Is.True);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void VirtualPointerRendererAttachesAdornerInsideOwnerWindow()
+	{
+		var root = new Grid
+		{
+			Name = "virtualPointerAdornerRoot",
+			Width = 180,
+			Height = 90,
+			Background = Brushes.Transparent,
+		};
+		var window = CreateWindow("Virtual pointer adorner", root, width: 240, height: 160);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			DoEvents();
+			var windowCount = Application.Current?.Windows.Count ?? 0;
+			using var renderer = new WpfAdornerVirtualPointerRenderer(
+				Dispatcher.CurrentDispatcher,
+				new VirtualPointerOptionsDto { Enabled = true, HideDelayMs = 0 });
+			var handle = new WindowInteropHelper(window).Handle;
+
+			renderer.MoveTo(root.PointToScreen(new Point(20, 20)), handle);
+			renderer.Click(MouseButtonKind.Left, 1);
+			DoEvents();
+
+			var layer = AdornerLayer.GetAdornerLayer(root);
+			Assert.That(layer, Is.Not.Null);
+			var adorners = layer!.GetAdorners(root);
+			Assert.That(adorners?.OfType<VirtualPointerAdorner>().Count(), Is.EqualTo(1));
+			Assert.That(Application.Current?.Windows.Count ?? 0, Is.EqualTo(windowCount));
 		}
 		finally
 		{
@@ -640,6 +710,63 @@ public sealed class TargetActionCommandTests
 
 			Assert.That(commandCount, Is.EqualTo(1));
 			Assert.That(textBox.Text, Is.EqualTo("ready"));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void KeyPressSpoofsWpfModifierStateDuringInjectedKeyEvents()
+	{
+		var previewCount = 0;
+		var keyDownCount = 0;
+		var observedModifiers = ModifierKeys.None;
+		var observedCtrlDown = false;
+		var observedKeyDown = false;
+		var target = new Button
+		{
+			Name = "modifierStateKeyTarget",
+			Content = "Keys",
+			Width = 80,
+			Height = 32,
+		};
+		target.PreviewKeyDown += (_, args) =>
+		{
+			if (args.Key == Key.K)
+				previewCount++;
+		};
+		target.KeyDown += (_, args) =>
+		{
+			if (args.Key != Key.K)
+				return;
+
+			keyDownCount++;
+			observedModifiers = Keyboard.Modifiers;
+			observedCtrlDown = Keyboard.IsKeyDown(Key.LeftCtrl);
+			observedKeyDown = Keyboard.PrimaryDevice.GetKeyStates(Key.K).HasFlag(KeyStates.Down);
+		};
+		var window = CreateWindow("WPF synthetic keyboard state", target);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("modifierStateKeyTarget");
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest
+			{
+				TargetId = targetId,
+				Keys = "Control+K",
+				DelayMs = 1,
+				EnsureForeground = false,
+			}));
+
+			Assert.That(previewCount, Is.EqualTo(1));
+			Assert.That(keyDownCount, Is.EqualTo(1));
+			Assert.That(observedModifiers, Is.EqualTo(ModifierKeys.Control));
+			Assert.That(observedCtrlDown, Is.True);
+			Assert.That(observedKeyDown, Is.True);
 		}
 		finally
 		{

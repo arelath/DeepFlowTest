@@ -155,7 +155,7 @@ internal static class VirtualPointerService
 			return null;
 
 		var dispatcher = ThreadUtility.FindWpfDispatcher();
-		return dispatcher is null ? null : new WpfOverlayVirtualPointerRenderer(dispatcher, currentOptions);
+		return dispatcher is null ? null : new WpfAdornerVirtualPointerRenderer(dispatcher, currentOptions);
 	}
 
 	private static void DisposeRenderer()

@@ -84,6 +84,7 @@ public sealed class ActionCommandHandlerTests
 		Assert.That(command.DestinationTargetId, Is.EqualTo("button-0002"));
 		Assert.That(command.DurationMs, Is.EqualTo(700));
 		Assert.That(command.DestinationAnchorY, Is.EqualTo(0.25));
+		Assert.That(command.UseInjectedEvents, Is.True);
 		Assert.That(command.EnsureForeground, Is.False);
 	}
 

@@ -10,6 +10,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Commands;
 using DeepFlowTest.AppDriverPayload.Diagnostics;
@@ -50,30 +51,14 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 
 	public override ActionResult SendKeys(object target, object? keys, string keyText, int delayMs)
 	{
-		if (TryHandleMenuEscape(target, keyText))
-			return ActionResult.Ok();
-
-		if (TryHandleFocusNavigation(target, keyText))
-			return ActionResult.Ok();
-
-		if (target is TextBox textBox)
-		{
-			if (ShouldHandleTextBoxKeyInternally(keyText))
-				return SendKeysToTextBox(textBox, keyText);
-
-			if (TryInvokeKeyGestureBindings(textBox, keyText))
-				return ActionResult.Ok();
-
-			return TargetKeyboardInput.SendKeysToForeground(keys, delayMs);
-		}
-
-		if (target is UIElement or ContentElement)
+		if (target is IInputElement inputElement)
 		{
 			Focus(target);
-			if (TryInvokeKeyGestureBindings(target, keyText))
-				return ActionResult.Ok();
-
-			return TargetKeyboardInput.SendKeysToForeground(keys, delayMs);
+			TryEnsureAppHooks();
+			var groups = KeyboardInput.ParseKeyGroups(TargetValueConverter.UnwrapJsonValue(keys));
+			return KeyboardInput.TryPressWpf(inputElement, groups, delayMs, out var error)
+				? ActionResult.Ok()
+				: ActionResult.Unsupported(error ?? "WPF key input could not be injected.");
 		}
 
 		return base.SendKeys(target, keys, keyText, delayMs);
@@ -155,7 +140,6 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 			AppHooks.SetButton(MouseButton.Left, isPressed: true);
 			var sourceTargets = GetAscendingVisualTree(source);
 			RaiseMouseButtonEvent(source, UIElement.PreviewMouseDownEvent, MouseButton.Left, sourceTargets);
-			RaiseMouseButtonEvent(source, UIElement.MouseDownEvent, MouseButton.Left, sourceTargets);
 
 			var steps = Math.Max(1, durationMs / Math.Max(1, stepIntervalMs));
 			for (var i = 1; i <= steps; i++)
@@ -173,7 +157,6 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 			AppHooks.SetButton(MouseButton.Left, isPressed: false);
 			var destinationTargets = GetAscendingVisualTree(destination);
 			RaiseMouseButtonEvent(destination, UIElement.PreviewMouseUpEvent, MouseButton.Left, destinationTargets);
-			RaiseMouseButtonEvent(destination, UIElement.MouseUpEvent, MouseButton.Left, destinationTargets);
 		}
 		finally
 		{
@@ -332,153 +315,6 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		}
 	}
 
-	private static bool ShouldHandleTextBoxKeyInternally(string keyText) =>
-		TargetKeyboardInput.IsSelectAllShortcut(keyText)
-		|| string.Equals(keyText, "Backspace", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Delete", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Del", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(keyText, "Space", StringComparison.OrdinalIgnoreCase)
-		|| TargetKeyboardInput.IsPlainTextInputKey(keyText);
-
-	private static ActionResult SendKeysToTextBox(TextBox textBox, string keyText)
-	{
-		if (TargetKeyboardInput.IsSelectAllShortcut(keyText))
-		{
-			textBox.SelectAll();
-			return ActionResult.Ok();
-		}
-
-		if (string.Equals(keyText, "Backspace", StringComparison.OrdinalIgnoreCase))
-		{
-			DeleteTextBeforeCaret(textBox);
-			return ActionResult.Ok();
-		}
-
-		if (string.Equals(keyText, "Delete", StringComparison.OrdinalIgnoreCase) || string.Equals(keyText, "Del", StringComparison.OrdinalIgnoreCase))
-		{
-			DeleteTextAtCaret(textBox);
-			return ActionResult.Ok();
-		}
-
-		if (string.Equals(keyText, "Space", StringComparison.OrdinalIgnoreCase) || TargetKeyboardInput.IsPlainTextInputKey(keyText))
-		{
-			textBox.SelectedText = string.Equals(keyText, "Space", StringComparison.OrdinalIgnoreCase) ? " " : keyText;
-			textBox.CaretIndex = textBox.Text.Length;
-		}
-
-		return ActionResult.Ok();
-	}
-
-	private static void DeleteTextBeforeCaret(TextBox textBox)
-	{
-		if (textBox.SelectionLength > 0)
-		{
-			var selectionStart = textBox.SelectionStart;
-			textBox.SelectedText = string.Empty;
-			textBox.CaretIndex = selectionStart;
-			return;
-		}
-
-		if (textBox.CaretIndex <= 0 || textBox.Text.Length == 0)
-			return;
-
-		var removeIndex = textBox.CaretIndex - 1;
-		textBox.Text = textBox.Text.Remove(removeIndex, 1);
-		textBox.CaretIndex = removeIndex;
-	}
-
-	private static void DeleteTextAtCaret(TextBox textBox)
-	{
-		if (textBox.SelectionLength > 0)
-		{
-			var selectionStart = textBox.SelectionStart;
-			textBox.SelectedText = string.Empty;
-			textBox.CaretIndex = selectionStart;
-			return;
-		}
-
-		if (textBox.CaretIndex >= textBox.Text.Length)
-			return;
-
-		var removeIndex = textBox.CaretIndex;
-		textBox.Text = textBox.Text.Remove(removeIndex, 1);
-		textBox.CaretIndex = removeIndex;
-	}
-
-	private static bool TryHandleMenuEscape(object target, string keyText)
-	{
-		if (!IsEscapeKey(keyText) || target is not MenuItem menuItem)
-			return false;
-
-		if (TryCloseDeepestOpenSubmenu(menuItem))
-			return true;
-
-		var current = LogicalTreeHelper.GetParent(menuItem) ?? VisualTreeHelper.GetParent(menuItem);
-		while (current is not null)
-		{
-			if (current is MenuItem ancestor && ancestor.IsSubmenuOpen)
-			{
-				ancestor.IsSubmenuOpen = false;
-				return true;
-			}
-
-			current = LogicalTreeHelper.GetParent(current) ?? VisualTreeHelper.GetParent(current);
-		}
-
-		return false;
-	}
-
-	private static bool IsEscapeKey(string keyText)
-	{
-		var normalized = keyText.Replace(" ", string.Empty);
-		return string.Equals(normalized, "Escape", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(normalized, "Esc", StringComparison.OrdinalIgnoreCase);
-	}
-
-	private static bool TryCloseDeepestOpenSubmenu(MenuItem menuItem)
-	{
-		foreach (var child in menuItem.Items.OfType<MenuItem>())
-			if (TryCloseDeepestOpenSubmenu(child))
-				return true;
-
-		if (!menuItem.IsSubmenuOpen)
-			return false;
-
-		menuItem.IsSubmenuOpen = false;
-		return true;
-	}
-
-	private bool TryHandleFocusNavigation(object target, string keyText)
-	{
-		var direction = GetFocusNavigationDirection(keyText);
-		if (direction is null)
-			return false;
-
-		Focus(target);
-		var request = new TraversalRequest(direction.Value);
-		return target switch
-		{
-			UIElement uiElement => uiElement.MoveFocus(request),
-			ContentElement contentElement => contentElement.MoveFocus(request),
-			_ => false,
-		};
-	}
-
-	private static FocusNavigationDirection? GetFocusNavigationDirection(string keyText)
-	{
-		var normalized = keyText.Replace(" ", string.Empty);
-		if (string.Equals(normalized, "Tab", StringComparison.OrdinalIgnoreCase))
-			return FocusNavigationDirection.Next;
-		if (string.Equals(normalized, "Shift+Tab", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(normalized, "LeftShift+Tab", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(normalized, "RightShift+Tab", StringComparison.OrdinalIgnoreCase))
-		{
-			return FocusNavigationDirection.Previous;
-		}
-
-		return null;
-	}
-
 	private static ActionResult PerformClick(UIElement target, MouseButtonKind button, int clickCount)
 	{
 		var mouseButton = ToWpfMouseButton(button);
@@ -500,6 +336,8 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		var observedDoubleClickCount = 0;
 		RoutedEventHandler? clickObserver = null;
 		MouseButtonEventHandler? doubleClickObserver = null;
+		ContextMenuEventHandler? contextMenuObserver = null;
+		var observedContextMenuOpeningCount = 0;
 		try
 		{
 			if (clickEvent is not null)
@@ -511,31 +349,46 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 			if (count > 1 && mouseButton == MouseButton.Left && target is Control)
 			{
 				doubleClickObserver = (_, _) => observedDoubleClickCount++;
-				target.AddHandler(Control.MouseDoubleClickEvent, doubleClickObserver, handledEventsToo: false);
+				target.AddHandler(Control.MouseDoubleClickEvent, doubleClickObserver, handledEventsToo: true);
+			}
+
+			if (mouseButton == MouseButton.Right)
+			{
+				contextMenuObserver = (_, _) => observedContextMenuOpeningCount++;
+				target.AddHandler(FrameworkElement.ContextMenuOpeningEvent, contextMenuObserver, handledEventsToo: true);
 			}
 
 			var targets = GetAscendingVisualTree(target);
-			for (var i = 0; i < count; i++)
+			var suppressedMouseBindings = SuppressMouseBindingsForButton(target, mouseButton);
+			try
 			{
-				var observedBeforeClick = observedClickCount;
-				var observedBeforeDoubleClick = observedDoubleClickCount;
-				AppHooks.SetButton(mouseButton, isPressed: true);
-				RaiseMouseButtonEvent(target, UIElement.PreviewMouseDownEvent, mouseButton, targets);
-				RaiseMouseButtonEvent(target, UIElement.MouseDownEvent, mouseButton, targets);
+				for (var i = 0; i < count; i++)
+				{
+					var observedBeforeClick = observedClickCount;
+					var observedBeforeDoubleClick = observedDoubleClickCount;
+					AppHooks.SetButton(mouseButton, isPressed: true);
+					RaiseMouseButtonEvent(target, UIElement.PreviewMouseDownEvent, mouseButton, targets);
 
-				AppHooks.SetButton(mouseButton, isPressed: false);
-				RaiseMouseButtonEvent(target, UIElement.PreviewMouseUpEvent, mouseButton, targets);
-				RaiseMouseButtonEvent(target, UIElement.MouseUpEvent, mouseButton, targets);
-				VirtualPointerService.Click(button, 1);
+					AppHooks.SetButton(mouseButton, isPressed: false);
+					RaiseMouseButtonEvent(target, UIElement.PreviewMouseUpEvent, mouseButton, targets);
+					VirtualPointerService.Click(button, 1);
 
-				var observedDoubleClickDuringThisClick = observedDoubleClickCount != observedBeforeDoubleClick;
-				if (clickEvent is not null && observedClickCount == observedBeforeClick && !observedDoubleClickDuringThisClick)
-					target.RaiseEvent(new RoutedEventArgs(clickEvent, target));
+					var menuHeaderHandled = mouseButton == MouseButton.Left && TryHandleMenuHeaderClick(target);
+					var observedDoubleClickDuringThisClick = observedDoubleClickCount != observedBeforeDoubleClick;
+					if (clickEvent is not null && observedClickCount == observedBeforeClick && !observedDoubleClickDuringThisClick && !menuHeaderHandled)
+						target.RaiseEvent(new RoutedEventArgs(clickEvent, target));
+				}
+			}
+			finally
+			{
+				suppressedMouseBindings.Dispose();
 			}
 
-			if (count > 1 && mouseButton == MouseButton.Left)
+			if (count == 1)
+				InvokeMouseGestureBindings(target, mouseButton, 1);
+			else if (mouseButton == MouseButton.Left && observedDoubleClickCount == 0)
 				RaiseMouseButtonEvent(target, Control.MouseDoubleClickEvent, MouseButton.Left, targets, count);
-			else if (count > 1)
+			else if (mouseButton != MouseButton.Left)
 				InvokeMouseGestureBindings(target, mouseButton, count);
 		}
 		finally
@@ -544,13 +397,27 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 				target.RemoveHandler(clickEvent, clickObserver);
 			if (doubleClickObserver is not null)
 				target.RemoveHandler(Control.MouseDoubleClickEvent, doubleClickObserver);
+			if (contextMenuObserver is not null)
+				target.RemoveHandler(FrameworkElement.ContextMenuOpeningEvent, contextMenuObserver);
 			AppHooks.ResetMouseState();
 		}
 
-		if (mouseButton == MouseButton.Right)
+		if (mouseButton == MouseButton.Right && observedContextMenuOpeningCount == 0)
 			OpenContextMenu(target);
 
 		return ActionResult.Ok();
+	}
+
+	private static bool TryHandleMenuHeaderClick(UIElement target)
+	{
+		if (target is not MenuItem menuItem || menuItem.Items.Count == 0)
+			return false;
+
+		menuItem.IsSubmenuOpen = true;
+		menuItem.Dispatcher.BeginInvoke(
+			DispatcherPriority.Background,
+			new Action(() => menuItem.IsSubmenuOpen = true));
+		return true;
 	}
 
 	private static void ReportVirtualPointerForKnownRoutedEvent(object target, string eventName)
@@ -610,8 +477,7 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 			AppHooks.WriteElementOverElement?.Invoke(hoveredTarget, new object[] { AppHooks.CoreFlags.IsMouseOverCache, true });
 
 		AppHooks.SetSyntheticMouseHitTarget(target);
-		if (!TryRaiseTrustedEvent(target, args))
-			target.RaiseEvent(args);
+		InputManager.Current.ProcessInput(args);
 		return args.Handled;
 	}
 
@@ -628,8 +494,7 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 			AppHooks.WriteElementOverElement?.Invoke(hoveredTarget, new object[] { AppHooks.CoreFlags.IsMouseOverCache, true });
 
 		AppHooks.SetSyntheticMouseHitTarget(target);
-		if (!TryRaiseTrustedEvent(target, args))
-			target.RaiseEvent(args);
+		InputManager.Current.ProcessInput(args);
 		return args.Handled;
 	}
 
@@ -661,42 +526,6 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		new(
 			start.X + (end.X - start.X) * progress,
 			start.Y + (end.Y - start.Y) * progress);
-
-	private static bool TryRaiseTrustedEvent(UIElement target, RoutedEventArgs args)
-	{
-		var argsArray = new object[] { args };
-		var method = typeof(UIElement)
-			.GetMethods(InvokeCommandBindings)
-			.Where(static method => method.Name == "RaiseTrustedEvent")
-			.FirstOrDefault(method => ParametersMatch(method.GetParameters(), argsArray));
-		if (method is null)
-			return false;
-
-		try
-		{
-			method.Invoke(target, argsArray);
-			return true;
-		}
-		catch (TargetInvocationException ex) when (ex.InnerException is not null)
-		{
-			throw ex.InnerException;
-		}
-	}
-
-	private static bool ParametersMatch(ParameterInfo[] parameterInfos, object[] args)
-	{
-		if (parameterInfos.Length != args.Length)
-			return false;
-
-		for (var i = 0; i < parameterInfos.Length; i++)
-		{
-			var parameterType = parameterInfos[i].ParameterType;
-			if (!parameterType.IsAssignableFrom(args[i].GetType()))
-				return false;
-		}
-
-		return true;
-	}
 
 	private static IReadOnlyList<UIElement> GetAscendingVisualTree(DependencyObject element)
 	{
@@ -773,24 +602,6 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		typeof(MouseButtonEventArgs).GetField("_count", InvokeCommandBindings)?.SetValue(args, count);
 	}
 
-	private static bool TryInvokeKeyGestureBindings(object target, string keyText)
-	{
-		var invoked = false;
-		foreach (var group in KeyboardInput.ParseKeyGroups(keyText))
-		{
-			if (!TryGetKeyGestureParts(group, out var key, out var modifiers))
-				continue;
-
-			invoked |= InvokeMatchingCommandGestures(
-				target,
-				gesture => gesture is KeyGesture keyGesture
-					&& keyGesture.Key == key
-					&& keyGesture.Modifiers == modifiers);
-		}
-
-		return invoked;
-	}
-
 	private static bool InvokeMouseGestureBindings(object target, MouseButton button, int clickCount)
 	{
 		if (!TryGetMouseAction(button, clickCount, out var mouseAction))
@@ -802,6 +613,41 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 				&& mouseGesture.MouseAction == mouseAction
 				&& mouseGesture.Modifiers == ModifierKeys.None);
 	}
+
+	private static IDisposable SuppressMouseBindingsForButton(object target, MouseButton button)
+	{
+		List<SuppressedInputBinding> suppressed = [];
+		foreach (var bindingOwner in EnumerateInputBindingOwners(target))
+		{
+			var inputBindings = GetInputBindings(bindingOwner);
+			if (inputBindings is null)
+				continue;
+
+			for (var i = inputBindings.Count - 1; i >= 0; i--)
+			{
+				if (inputBindings[i] is not InputBinding binding)
+					continue;
+				if (binding.Gesture is not MouseGesture mouseGesture)
+					continue;
+				if (!IsMouseGestureForButton(mouseGesture, button))
+					continue;
+
+				inputBindings.RemoveAt(i);
+				suppressed.Add(new SuppressedInputBinding(inputBindings, i, binding));
+			}
+		}
+
+		return new SuppressedInputBindingScope(suppressed);
+	}
+
+	private static bool IsMouseGestureForButton(MouseGesture gesture, MouseButton button) =>
+		button switch
+		{
+			MouseButton.Left => gesture.MouseAction is MouseAction.LeftClick or MouseAction.LeftDoubleClick,
+			MouseButton.Right => gesture.MouseAction is MouseAction.RightClick or MouseAction.RightDoubleClick,
+			MouseButton.Middle => gesture.MouseAction is MouseAction.MiddleClick or MouseAction.MiddleDoubleClick,
+			_ => false,
+		};
 
 	private static bool InvokeMatchingCommandGestures(object target, Func<InputGesture, bool> matches)
 	{
@@ -844,48 +690,6 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		}
 
 		return invoked;
-	}
-
-	private static bool TryGetKeyGestureParts(IReadOnlyCollection<Key> keys, out Key key, out ModifierKeys modifiers)
-	{
-		key = Key.None;
-		modifiers = ModifierKeys.None;
-		foreach (var candidate in keys)
-		{
-			if (TryAddModifier(candidate, ref modifiers))
-				continue;
-
-			if (key != Key.None)
-				return false;
-			key = candidate;
-		}
-
-		return key != Key.None;
-	}
-
-	private static bool TryAddModifier(Key key, ref ModifierKeys modifiers)
-	{
-		switch (key)
-		{
-			case Key.LeftCtrl:
-			case Key.RightCtrl:
-				modifiers |= ModifierKeys.Control;
-				return true;
-			case Key.LeftAlt:
-			case Key.RightAlt:
-				modifiers |= ModifierKeys.Alt;
-				return true;
-			case Key.LeftShift:
-			case Key.RightShift:
-				modifiers |= ModifierKeys.Shift;
-				return true;
-			case Key.LWin:
-			case Key.RWin:
-				modifiers |= ModifierKeys.Windows;
-				return true;
-			default:
-				return false;
-		}
 	}
 
 	private static bool TryGetMouseAction(MouseButton button, int clickCount, out MouseAction mouseAction)
@@ -1036,6 +840,43 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 
 		var ownerWindow = Window.GetWindow(element);
 		return ownerWindow is null ? IntPtr.Zero : new WindowInteropHelper(ownerWindow).Handle;
+	}
+
+	private sealed class SuppressedInputBindingScope : IDisposable
+	{
+		private readonly IReadOnlyList<SuppressedInputBinding> suppressed;
+		private bool disposed;
+
+		public SuppressedInputBindingScope(IReadOnlyList<SuppressedInputBinding> suppressed)
+		{
+			this.suppressed = suppressed;
+		}
+
+		public void Dispose()
+		{
+			if (disposed)
+				return;
+
+			disposed = true;
+			foreach (var item in suppressed.OrderBy(static item => item.Index))
+				item.Bindings.Insert(Math.Min(item.Index, item.Bindings.Count), item.Binding);
+		}
+	}
+
+	private sealed class SuppressedInputBinding
+	{
+		public SuppressedInputBinding(InputBindingCollection bindings, int index, InputBinding binding)
+		{
+			Bindings = bindings;
+			Index = index;
+			Binding = binding;
+		}
+
+		public InputBindingCollection Bindings { get; }
+
+		public int Index { get; }
+
+		public InputBinding Binding { get; }
 	}
 
 	private static bool IsPositiveFinite(double value) =>

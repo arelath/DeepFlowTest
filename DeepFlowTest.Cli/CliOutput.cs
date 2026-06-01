@@ -173,7 +173,7 @@ public static class CliOutput
 			return;
 		}
 
-		writer.WriteLine("PID     PROCESS                         WPF   ARCH       FRAMEWORK        WINDOW");
+		writer.WriteLine("PID     PROCESS                         UI    ARCH       FRAMEWORK        WINDOW");
 		foreach (var process in processList.Processes)
 		{
 			var title = process.MainWindowTitle ?? string.Empty;

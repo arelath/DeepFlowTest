@@ -40,10 +40,8 @@ internal static partial class TargetActionCommand
 
 		var sourceTarget = sourceResolution.Target!;
 		var destinationTarget = destinationResolution.Target!;
-		if (request.EnsureForeground)
-			EnsureForegroundTarget(sourceTarget);
 
-		if (request.UseInjectedEvents)
+		if (request.UseInjectedEvents && sourceTarget is System.Windows.UIElement && destinationTarget is System.Windows.UIElement)
 		{
 			var injectedResult = WpfTargetAdapter.PerformInjectedDragAndDrop(
 				sourceTarget,
@@ -245,9 +243,6 @@ internal static partial class TargetActionCommand
 		var keyText = Convert.ToString(TargetValueConverter.UnwrapJsonValue(keys), CultureInfo.InvariantCulture) ?? string.Empty;
 		if (string.IsNullOrEmpty(keyText))
 			return ActionResult.Unsupported("Key input cannot be empty.");
-
-		if (ensureForeground)
-			EnsureForegroundTarget(target);
 
 		if (delayMs > 0)
 			Thread.Sleep(delayMs);

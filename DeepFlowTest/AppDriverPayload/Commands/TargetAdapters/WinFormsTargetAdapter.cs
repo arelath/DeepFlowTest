@@ -51,30 +51,11 @@ internal sealed class WinFormsTargetAdapter : UiTargetAdapterBase
 
 	public override ActionResult SendKeys(object target, object? keys, string keyText, int delayMs)
 	{
-		if (TryHandleFocusNavigation(target, keyText))
-			return ActionResult.Ok();
+		if (target is not Forms.Control control)
+			return base.SendKeys(target, keys, keyText, delayMs);
 
-		if (target is Forms.TextBoxBase formsTextBox)
-		{
-			if (TargetKeyboardInput.IsSelectAllShortcut(keyText))
-				formsTextBox.SelectAll();
-			else if (string.Equals(keyText, "Backspace", StringComparison.OrdinalIgnoreCase))
-				DeleteTextBeforeCaret(formsTextBox);
-			else if (string.Equals(keyText, "Delete", StringComparison.OrdinalIgnoreCase) || string.Equals(keyText, "Del", StringComparison.OrdinalIgnoreCase))
-				DeleteTextAtCaret(formsTextBox);
-			else if (string.Equals(keyText, "Space", StringComparison.OrdinalIgnoreCase))
-				formsTextBox.SelectedText = " ";
-			else if (TargetKeyboardInput.IsPlainTextInputKey(keyText))
-				formsTextBox.SelectedText = keyText;
-			else
-				return TargetKeyboardInput.SendKeysToForeground(keys, delayMs);
-
-			return ActionResult.Ok();
-		}
-
-		return target is Forms.Control
-			? TargetKeyboardInput.SendKeysToForeground(keys, delayMs)
-			: base.SendKeys(target, keys, keyText, delayMs);
+		control.Focus();
+		return TargetKeyboardInput.SendKeysToHwnd(control.Handle, keys, delayMs);
 	}
 
 	public override bool TryEnsureForeground(object target)
@@ -104,11 +85,10 @@ internal sealed class WinFormsTargetAdapter : UiTargetAdapterBase
 			(int)Math.Round(control.ClientSize.Width * anchor.X),
 			(int)Math.Round(control.ClientSize.Height * anchor.Y));
 		var screen = control.PointToScreen(local);
-		var owner = control.FindForm()?.Handle ?? control.Handle;
 		return PointerTargetResult.FromTarget(new PointerTarget(
 			screen.X,
 			screen.Y,
-			owner,
+			control.Handle,
 			control.GetType().FullName ?? control.GetType().Name));
 	}
 
@@ -168,73 +148,4 @@ internal sealed class WinFormsTargetAdapter : UiTargetAdapterBase
 		return base.RunKnownOperation(target, operation);
 	}
 
-	private static void DeleteTextBeforeCaret(Forms.TextBoxBase textBox)
-	{
-		if (textBox.SelectionLength > 0)
-		{
-			var selectionStart = textBox.SelectionStart;
-			textBox.SelectedText = string.Empty;
-			textBox.SelectionStart = selectionStart;
-			return;
-		}
-
-		if (textBox.SelectionStart <= 0 || textBox.Text.Length == 0)
-			return;
-
-		var removeIndex = textBox.SelectionStart - 1;
-		textBox.Text = textBox.Text.Remove(removeIndex, 1);
-		textBox.SelectionStart = removeIndex;
-	}
-
-	private static void DeleteTextAtCaret(Forms.TextBoxBase textBox)
-	{
-		if (textBox.SelectionLength > 0)
-		{
-			var selectionStart = textBox.SelectionStart;
-			textBox.SelectedText = string.Empty;
-			textBox.SelectionStart = selectionStart;
-			return;
-		}
-
-		if (textBox.SelectionStart >= textBox.Text.Length)
-			return;
-
-		var removeIndex = textBox.SelectionStart;
-		textBox.Text = textBox.Text.Remove(removeIndex, 1);
-		textBox.SelectionStart = removeIndex;
-	}
-
-	private static bool TryHandleFocusNavigation(object target, string keyText)
-	{
-		if (target is not Forms.Control control || !TryGetTabDirection(keyText, out var forward))
-			return false;
-
-		var form = control.FindForm();
-		if (form is null)
-			return false;
-
-		control.Focus();
-		return form.SelectNextControl(control, forward, tabStopOnly: true, nested: true, wrap: true);
-	}
-
-	private static bool TryGetTabDirection(string keyText, out bool forward)
-	{
-		var normalized = keyText.Replace(" ", string.Empty);
-		if (string.Equals(normalized, "Tab", StringComparison.OrdinalIgnoreCase))
-		{
-			forward = true;
-			return true;
-		}
-
-		if (string.Equals(normalized, "Shift+Tab", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(normalized, "LeftShift+Tab", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(normalized, "RightShift+Tab", StringComparison.OrdinalIgnoreCase))
-		{
-			forward = false;
-			return true;
-		}
-
-		forward = true;
-		return false;
-	}
 }

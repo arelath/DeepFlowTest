@@ -49,9 +49,13 @@ public sealed class AppDriverInProcessEndToEndTests
 			driver.GetElement(ElementSelector.ByName("inProcessButton"))
 				.Click()
 				.DoubleClick();
-			driver.GetElement(ElementSelector.ByName("inProcessTextBox"))
+			var inputElement = driver.GetElement(ElementSelector.ByName("inProcessTextBox"));
+			inputElement
 				.Type("hello", clearFirst: true)
 				.SetProperty("Text", "updated");
+			driver.Keyboard.DelayMs = 1;
+			driver.Keyboard.Shortcut(inputElement, "Control", "A");
+			driver.Keyboard.Press(inputElement, "Backspace");
 			driver.GetElement(ElementSelector.ByName("inProcessCheckBox"))
 				.Check()
 				.Uncheck();
@@ -61,7 +65,7 @@ public sealed class AppDriverInProcessEndToEndTests
 
 			Assert.That(clickCount, Is.EqualTo(1));
 			Assert.That(doubleClickCount, Is.EqualTo(1));
-			Assert.That(textBox.Text, Is.EqualTo("updated"));
+			Assert.That(textBox.Text, Is.Empty);
 			Assert.That(checkBox.IsChecked, Is.False);
 			Assert.That(expander.IsExpanded, Is.False);
 		}
