@@ -20,6 +20,7 @@ public static class AppHooks
 	private static readonly object Gate = new();
 	private static WpfPatchResult lastResult = new() { FrameworkFamily = RuntimeFrameworkFamilies.Unknown };
 	private static bool hooksApplied;
+	private static bool dialogHooksApplied;
 	private static volatile bool showDialogCalled;
 	private static int syntheticMouseInputDepth;
 	private static int syntheticKeyboardInputDepth;
@@ -41,10 +42,58 @@ public static class AppHooks
 
 	public static WpfPatchResult Apply(Action<string, Exception?>? log = null, RuntimeWpfPatchCoordinator? coordinator = null)
 	{
+		// Install ONLY the dialog-detection hooks (MessageBox.Show / Window.ShowDialog /
+		// CommonDialog.ShowDialog, which flag ShowDialogCalled so the dispatcher's modal-watch can
+		// detect a blocking native dialog) unconditionally at startup. These must not be gated on the
+		// optional cosmetic patches below: on .NET Framework every optional patch reports unavailable
+		// and is skipped, so relying on their apply-action to call EnsureHooked left the dialog hooks
+		// uninstalled there -- modal detection then fell back to slow native enumeration and stalled
+		// shutdown. We deliberately do NOT call the full EnsureHooked() here: that also installs the
+		// mouse/keyboard/menu input-interception patches, which on net-framework were never active
+		// (EnsureHooked only ran via the optional patches, all skipped there) and turning them on
+		// unconditionally changes input behavior the existing tests depend on. EnsureDialogHooked is
+		// idempotent and independent of EnsureHooked's full-patch flag.
+		try
+		{
+			EnsureDialogHooked();
+			log?.Invoke("Dialog detection hooks installed.", null);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			log?.Invoke("Dialog detection hooks failed to install; continuing startup.", ex);
+		}
+
 		var result = (coordinator ?? RuntimeWpfPatchCoordinator.Default).ApplyCurrentRuntime(log);
 		lock (Gate)
 			lastResult = result;
 		return result;
+	}
+
+	// The dialog patch classes whose Prefix sets ShowDialogCalled. Kept separate from the full
+	// PatchAll set so they can be installed without the input-interception patches.
+	private static readonly Type[] DialogHookPatchClasses =
+	{
+		typeof(PatchWindowShowDialog),
+		typeof(PatchMessageBoxShow),
+		typeof(PatchCommonDialogShowDialog),
+	};
+
+	// Installs just the dialog-detection hooks. Safe to call repeatedly and safe to call before or
+	// after EnsureHooked: PatchAll skips members that are already patched, so the later call is a
+	// no-op for the dialog members.
+	public static void EnsureDialogHooked()
+	{
+		lock (Gate)
+		{
+			if (dialogHooksApplied || hooksApplied)
+				return;
+
+			var harmony = new Harmony("com.deepflowtest.apphooks.dialog");
+			foreach (var patchClass in DialogHookPatchClasses)
+				harmony.CreateClassProcessor(patchClass).Patch();
+
+			dialogHooksApplied = true;
+		}
 	}
 
 	public static void EnsureHooked()
@@ -734,6 +783,34 @@ public static class AppHooks
 		{
 			ShowDialogCalled = true;
 			return true;
+		}
+	}
+
+	[HarmonyPatch]
+	public static class PatchMessageBoxShow
+	{
+		public static IEnumerable<MethodBase> TargetMethods()
+		{
+			foreach (var method in GetMessageBoxShowMethods(typeof(MessageBox)))
+				yield return method;
+
+			foreach (var method in GetMessageBoxShowMethods(typeof(WinForms.MessageBox)))
+				yield return method;
+		}
+
+		public static bool Prefix()
+		{
+			ShowDialogCalled = true;
+			return true;
+		}
+
+		private static IEnumerable<MethodBase> GetMessageBoxShowMethods(Type type)
+		{
+			foreach (var method in type.GetMethods(BindingFlags.Static | BindingFlags.Public))
+			{
+				if (method.Name == "Show")
+					yield return method;
+			}
 		}
 	}
 

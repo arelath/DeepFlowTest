@@ -3,6 +3,7 @@ namespace DeepFlowTest.Tests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
@@ -18,6 +19,7 @@ using DeepFlowTest.Utility;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
 using static DeepFlowTest.Tests.TestIpcHost;
+using static DeepFlowTest.Tests.WpfTestHelpers;
 using Forms = System.Windows.Forms;
 
 [TestFixture]
@@ -84,6 +86,116 @@ public sealed class WinFormsSupportTests
 		{
 			secondaryForm.Close();
 			mainForm.Close();
+		}
+	}
+
+	[Test]
+	public void FindElementSelectorContinuesFromWpfRootsIntoWinFormsRoots()
+	{
+		var window = CreateWindow("Mixed selector WPF root", new Button { Name = "wpfOnlyButton", Content = "WPF only" });
+		using var form = CreateForm();
+		form.Controls.Add(new Forms.Button { Name = "formsMixedSelectorButton", Text = "WinForms target", Width = 120, Height = 28 });
+
+		try
+		{
+			window.Show();
+			form.Show();
+			Forms.Application.DoEvents();
+
+			var response = (FindElementCommandResponse)CaptureResponse(new FindElementCommandRequest
+			{
+				Selector = new ElementSelectorDto { Name = "formsMixedSelectorButton" },
+				PropNames = ["Name", "Text", "Content"],
+				MaxMatches = 1,
+			})!;
+
+			Assert.That(response.Status, Is.EqualTo(ProtocolConstants.Statuses.Ok));
+			Assert.That(response.MatchCount, Is.EqualTo(1));
+			Assert.That(response.Matches[0].TypeName, Is.EqualTo("Button"));
+			Assert.That(response.Matches[0].FrameworkTypeName, Does.StartWith("System.Windows.Forms."));
+			Assert.That(response.Matches[0].Properties["Name"], Is.EqualTo("formsMixedSelectorButton"));
+		}
+		finally
+		{
+			form.Close();
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void ElementExpressionMatcherContinuesFromWpfRootsIntoWinFormsRoots()
+	{
+		var window = CreateWindow("Mixed expression WPF root", new TextBlock { Name = "wpfOnlyText", Text = "WPF only" });
+		using var form = CreateForm();
+		form.Controls.Add(new Forms.Button { Name = "formsMixedExpressionButton", Text = "Expression target", Width = 120, Height = 28 });
+
+		try
+		{
+			window.Show();
+			form.Show();
+			Forms.Application.DoEvents();
+			Expression<Func<DeepFlowTest.Element, bool?>> matcher = element =>
+				element.TypeName == "Button"
+				&& element["Name"] == "formsMixedExpressionButton"
+				&& element["Text"] == "Expression target";
+
+			var response = (FindElementCommandResponse)CaptureResponse(new FindElementCommandRequest
+			{
+				MatcherCode = Eval.SerializeCode(matcher),
+				MatcherHash = ExpressionPayloadSerializer.Serialize(matcher).ExpressionHash,
+				PropNames = ["Name", "Text"],
+				MaxMatches = 1,
+			})!;
+
+			Assert.That(response.Status, Is.EqualTo(ProtocolConstants.Statuses.Ok));
+			Assert.That(response.MatchCount, Is.EqualTo(1));
+			Assert.That(response.Matches[0].FrameworkTypeName, Does.StartWith("System.Windows.Forms."));
+			Assert.That(response.Matches[0].Properties["Name"], Is.EqualTo("formsMixedExpressionButton"));
+		}
+		finally
+		{
+			form.Close();
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void RootMatcherContinuesFromWpfRootsIntoWinFormsRoots()
+	{
+		var window = CreateWindow("Mixed root matcher WPF root", new Button { Name = "wpfOnlyRootMatcherButton", Content = "WPF only" });
+		using var form = CreateForm();
+		form.Controls.Add(new Forms.Button { Name = "formsMixedRootMatcherButton", Text = "Root matcher target", Width = 140, Height = 28 });
+
+		try
+		{
+			window.Show();
+			form.Show();
+			Forms.Application.DoEvents();
+			Expression<Func<DeepFlowTest.Element, bool?>> rootMatcher = element =>
+				element.TypeName == "Form" && element["Name"] == "formsRoot";
+			Expression<Func<DeepFlowTest.Element, bool?>> matcher = element =>
+				element.TypeName == "Button" && element["Name"] == "formsMixedRootMatcherButton";
+
+			var response = (FindElementCommandResponse)CaptureResponse(new FindElementCommandRequest
+			{
+				RootMatcherCode = Eval.SerializeCode(rootMatcher),
+				RootMatcherHash = ExpressionPayloadSerializer.Serialize(rootMatcher).ExpressionHash,
+				IncludeRoot = false,
+				MatcherCode = Eval.SerializeCode(matcher),
+				MatcherHash = ExpressionPayloadSerializer.Serialize(matcher).ExpressionHash,
+				PropNames = ["Name", "Text"],
+				MaxMatches = 1,
+			})!;
+
+			Assert.That(response.Status, Is.EqualTo(ProtocolConstants.Statuses.Ok));
+			Assert.That(response.MatchCount, Is.EqualTo(1));
+			Assert.That(response.Matches[0].FrameworkTypeName, Does.StartWith("System.Windows.Forms."));
+			Assert.That(response.Matches[0].Properties["Name"], Is.EqualTo("formsMixedRootMatcherButton"));
+		}
+		finally
+		{
+			form.Close();
+			window.Close();
 		}
 	}
 
@@ -503,6 +615,87 @@ public sealed class WinFormsSupportTests
 		finally
 		{
 			form.Close();
+		}
+	}
+
+	// Regression: a native MessageBox/dialog pumps the message queue, so an untargeted WPF find
+	// dispatched while it's open still completes (against the WPF tree, which lacks the native
+	// window) and returns NoMatch -- winning the modal-watch race so the native fallback never
+	// fires. The dispatcher must augment an empty untargeted find with a native-tree lookup when
+	// native dialog roots exist, so the dialog is surfaced deterministically rather than by luck.
+	[Test]
+	public void UntargetedFindAugmentsEmptyWpfResultWithNativeDialog()
+	{
+		var wpfWindow = CreateWindow("WPF host", new Button { Name = "onlyWpfButton", Content = "WPF" });
+		using var nativeDialog = CreateForm();
+		nativeDialog.Text = $"Pending changes found {Guid.NewGuid():N}";
+
+		try
+		{
+			wpfWindow.Show();
+			nativeDialog.Show();
+			Forms.Application.DoEvents();
+			using var roots = NativeDialogService.OverrideRootWindowsForTests(new[] { nativeDialog.Handle });
+
+			// Dispatch on a worker thread while this STA thread pumps messages -- mirroring production,
+			// where the command loop runs off the UI thread and the UI thread pumps the modal loop.
+			// Running the dispatcher synchronously on the STA thread instead would deadlock, because the
+			// native-tree augmentation uses UI Automation against a window owned by this same thread,
+			// which only services UIA cross-thread calls while it is pumping.
+			var request = new FindElementCommandRequest
+			{
+				Selector = new ElementSelectorDto { Properties = { ["Title"] = nativeDialog.Text } },
+				PropNames = ["Title", "IsVisible"],
+				MaxMatches = 1,
+			};
+			FindElementCommandResponse? response = null;
+			var findTask = System.Threading.Tasks.Task.Run(
+				() => response = (FindElementCommandResponse)CaptureResponse(request)!);
+			while (!findTask.IsCompleted)
+			{
+				Forms.Application.DoEvents();
+				Thread.Sleep(10);
+			}
+
+			findTask.GetAwaiter().GetResult();
+			Assert.That(response, Is.Not.Null);
+			Assert.That(response!.Status, Is.EqualTo(ProtocolConstants.Statuses.Ok));
+			Assert.That(response.MatchCount, Is.EqualTo(1));
+			Assert.That(response.Matches[0].Properties["Title"], Is.EqualTo(nativeDialog.Text));
+		}
+		finally
+		{
+			nativeDialog.Close();
+			wpfWindow.Close();
+		}
+	}
+
+	// Counterpart: when no native dialog roots exist, an empty untargeted find must stay NoMatch.
+	// The augmentation must not invent matches or change behavior on the normal path.
+	[Test]
+	public void UntargetedFindWithoutNativeDialogStaysNoMatch()
+	{
+		var wpfWindow = CreateWindow("WPF host", new Button { Name = "onlyWpfButton", Content = "WPF" });
+
+		try
+		{
+			wpfWindow.Show();
+			Forms.Application.DoEvents();
+			using var roots = NativeDialogService.OverrideRootWindowsForTests(Array.Empty<IntPtr>());
+
+			var response = (FindElementCommandResponse)CaptureResponse(new FindElementCommandRequest
+			{
+				Selector = new ElementSelectorDto { Properties = { ["Title"] = "no such dialog" } },
+				PropNames = ["Title", "IsVisible"],
+				MaxMatches = 1,
+			})!;
+
+			Assert.That(response.Status, Is.EqualTo(ProtocolConstants.Statuses.NoMatch));
+			Assert.That(response.MatchCount, Is.EqualTo(0));
+		}
+		finally
+		{
+			wpfWindow.Close();
 		}
 	}
 

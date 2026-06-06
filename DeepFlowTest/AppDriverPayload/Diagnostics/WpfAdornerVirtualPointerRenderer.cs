@@ -236,9 +236,9 @@ internal sealed class WpfAdornerVirtualPointerRenderer : IVirtualPointerRenderer
 		if (Application.Current is null)
 			return null;
 
-		foreach (Window window in Application.Current.Windows)
+		foreach (Window? window in Application.Current.Windows)
 		{
-			if (window.IsVisible && GetAdornerTarget(window) is { } target)
+			if (window is { IsVisible: true } && GetAdornerTarget(window) is { } target)
 				return target;
 		}
 

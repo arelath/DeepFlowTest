@@ -1,12 +1,16 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Tests.Fakes;
+using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
 using static DeepFlowTest.Tests.TestIpcHost;
 using static DeepFlowTest.Tests.WpfTestHelpers;
@@ -76,6 +80,108 @@ public sealed class AppDriverInProcessEndToEndTests
 		}
 	}
 
+	[Test]
+	[NonParallelizable]
+	public void MessageBoxShowReportsPendingModalDialogThroughPayloadDispatcher()
+	{
+		var caption = $"DeepFlowTest MessageBox hook {Guid.NewGuid():N}";
+		var button = new Button { Name = "messageBoxHookButton", Content = "Show message", Width = 120, Height = 28 };
+		var window = CreateWindow("MessageBox hook", button);
+		button.Click += (_, _) => MessageBox.Show(window, "MessageBox hook content", caption, MessageBoxButton.OK);
+
+		Task? closeDialogTask = null;
+		try
+		{
+			window.Show();
+			DoEvents();
+			using var nativeDialogFallback = NativeDialogService.OverrideRootWindowsForTests([]);
+			using var driver = AppDriver.CreateForTests(
+				AppConnection.ForAttach(new FakeTargetProcess(), "in-process-payload"),
+				new InProcessPayloadSession());
+			var target = driver.GetElement(ElementSelector.ByName("messageBoxHookButton"));
+
+			var responseTask = Task.Run(() => driver.Send<StandardIpcResponse>(new ClickCommandRequest
+			{
+				TargetId = target.TargetId,
+				TimeoutMs = 1_000,
+			}));
+			closeDialogTask = CloseNativeDialogAfterResponseAsync(caption, responseTask);
+
+			Assert.That(
+				WaitUntil(() => responseTask.IsCompleted, 5_000),
+				Is.True,
+				"Click command did not return while MessageBox.Show was still modal.");
+			var response = responseTask.GetAwaiter().GetResult();
+
+			Assert.That(response.Success, Is.True, response.Error);
+			Assert.That(response.Status, Is.EqualTo(ProtocolConstants.Statuses.PendingResult));
+		}
+		finally
+		{
+			CloseNativeDialogByCaption(caption, TimeSpan.FromMilliseconds(250));
+			try
+			{
+				closeDialogTask?.Wait(TimeSpan.FromSeconds(5));
+			}
+			catch (AggregateException)
+			{
+			}
+
+			window.Close();
+			DoEvents();
+		}
+	}
+
+	private static Task CloseNativeDialogAfterResponseAsync(string caption, Task responseTask) =>
+		Task.Run(() =>
+		{
+			try
+			{
+				responseTask.Wait(TimeSpan.FromSeconds(2));
+			}
+			catch (AggregateException)
+			{
+			}
+
+			CloseNativeDialogByCaption(caption, TimeSpan.FromSeconds(3));
+		});
+
+	private static bool CloseNativeDialogByCaption(string caption, TimeSpan timeout)
+	{
+		var stopwatch = Stopwatch.StartNew();
+		while (stopwatch.Elapsed < timeout)
+		{
+			var hwnd = FindWindow("#32770", caption);
+			if (hwnd == IntPtr.Zero)
+				hwnd = FindWindow(null, caption);
+
+			if (hwnd != IntPtr.Zero)
+			{
+				SendMessage(hwnd, WmClose, IntPtr.Zero, IntPtr.Zero);
+				return true;
+			}
+
+			Thread.Sleep(25);
+		}
+
+		return false;
+	}
+
+	private static bool WaitUntil(Func<bool> condition, int timeoutMs)
+	{
+		var stopwatch = Stopwatch.StartNew();
+		while (stopwatch.ElapsedMilliseconds < timeoutMs)
+		{
+			if (condition())
+				return true;
+
+			DoEvents();
+			Thread.Sleep(25);
+		}
+
+		return condition();
+	}
+
 	private static void DoEvents()
 	{
 		var frame = new DispatcherFrame();
@@ -89,6 +195,14 @@ public sealed class AppDriverInProcessEndToEndTests
 			null);
 		Dispatcher.PushFrame(frame);
 	}
+
+	private const int WmClose = 0x0010;
+
+	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+	private static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
+
+	[DllImport("user32.dll")]
+	private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
 	private sealed class InProcessPayloadSession : IAppDriverCommandSession
 	{

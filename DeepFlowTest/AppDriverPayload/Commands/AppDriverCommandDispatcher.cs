@@ -141,8 +141,47 @@ internal static class AppDriverCommandDispatcher
 			AppHooks.ShowDialogCalled = false;
 		}
 
-		return await commandTask.ConfigureAwait(false);
+		var commandResult = await commandTask.ConfigureAwait(false);
+		return AugmentWithNativeDialogResultIfNeeded(kind, context, commandResult);
 	}
+
+	// A native MessageBox/dialog pumps the thread's message queue, so WPF Dispatcher operations
+	// (including our find snapshot) still run and complete against the WPF visual tree -- which does
+	// NOT contain the native #32770 window. The find then returns NoMatch fast enough to win the race
+	// in WaitForShowDialogAsync, so the modal-watch's native fallback never fires and the dialog is
+	// never surfaced. To make detection deterministic rather than race-dependent: when an untargeted
+	// find/visual-tree command completed without matching anything and native dialog roots exist,
+	// re-run it against the native tree and prefer that result. WPF-first, native only as augmentation.
+	private static object AugmentWithNativeDialogResultIfNeeded(string kind, CommandContext context, object commandResult)
+	{
+		if (kind is not (ProtocolConstants.Commands.FindElement or ProtocolConstants.Commands.GetVisualTree))
+			return commandResult;
+
+		// Only untargeted commands: a targeted command already resolved to a specific (WPF) element.
+		if (!string.IsNullOrEmpty(TryGetStringProperty(context.Command.Value, ProtocolConstants.Properties.TargetId)))
+			return commandResult;
+
+		if (!IsEmptyFindResult(commandResult))
+			return commandResult;
+
+		if (!NativeDialogService.HasRootWindowsForCurrentProcess())
+			return commandResult;
+
+		if (TryProcessNativeCommand(kind, context, allowUntargetedCommands: true, out var nativeResponse)
+			&& !IsEmptyFindResult(nativeResponse))
+		{
+			return nativeResponse;
+		}
+
+		return commandResult;
+	}
+
+	private static bool IsEmptyFindResult(object response) =>
+		response switch
+		{
+			FindElementCommandResponse find => find.MatchCount == 0,
+			_ => false,
+		};
 
 	internal static async Task<UiThreadRunResult> WaitForShowDialogAsync(int timeoutMs, CancellationToken token)
 	{

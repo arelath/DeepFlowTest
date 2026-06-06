@@ -30,16 +30,16 @@
       <PackagePath>contentFiles</PackagePath>
       <IncludeInPackage>True</IncludeInPackage>
       <PackageCopyToOutput>True</PackageCopyToOutput>
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <CopyToOutputDirectory>IfNewer</CopyToOutputDirectory>
+      <CopyToPublishDirectory>IfNewer</CopyToPublishDirectory>
     </Content>
     <Content Include="$(RepositoryRoot)Tools\DeepFlowTestResources\ffmpeg.exe" Link="contentFiles\any\any\DeepFlowTestResources\ffmpeg.exe" Condition="Exists('$(RepositoryRoot)Tools\DeepFlowTestResources\ffmpeg.exe')">
       <Pack>True</Pack>
       <PackagePath>contentFiles\any\any\DeepFlowTestResources\ffmpeg.exe</PackagePath>
       <IncludeInPackage>True</IncludeInPackage>
       <PackageCopyToOutput>True</PackageCopyToOutput>
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <CopyToOutputDirectory>IfNewer</CopyToOutputDirectory>
+      <CopyToPublishDirectory>IfNewer</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
 
