@@ -50,6 +50,14 @@ internal static partial class TargetActionCommand
 				new PointerAnchor(request.DestinationAnchorX, request.DestinationAnchorY),
 				request.DurationMs,
 				request.StepIntervalMs);
+			if (!injectedResult.Success && IsDetachedPresentationSourceError(injectedResult.Error))
+			{
+				return StandardIpcResponse.FromError(
+					FormatActionError(injectedResult.Error ?? "The requested action is not supported for this target.", ProtocolConstants.Commands.DragAndDrop, request.TargetId),
+					ProtocolConstants.ErrorCodes.StaleTarget,
+					PayloadLog.CurrentCorrelationId);
+			}
+
 			return ToResponse(injectedResult, ProtocolConstants.Commands.DragAndDrop, request.TargetId);
 		}
 
@@ -226,6 +234,9 @@ internal static partial class TargetActionCommand
 
 	private static StandardIpcResponse UnsupportedTarget(string error) =>
 		StandardIpcResponse.FromError(error, ProtocolConstants.ErrorCodes.UnsupportedTarget, PayloadLog.CurrentCorrelationId);
+
+	private static bool IsDetachedPresentationSourceError(string? error) =>
+		error?.IndexOf("not connected to a PresentationSource", StringComparison.OrdinalIgnoreCase) >= 0;
 
 	private static string FormatActionError(string error, string? commandName, string? targetId)
 	{

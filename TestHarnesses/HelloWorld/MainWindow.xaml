@@ -389,6 +389,47 @@
                   Click="MenuItemTwo_Click"
                   AutomationProperties.AutomationId="MenuItemTwo"
                   AutomationProperties.Name="MenuItemTwo" />
+        <!-- Depth-2 nested submenu: a SubmenuHeader whose child is under another SubmenuHeader.
+             Clicking NestedStaticHeader / NestedDynamicHeader opens a depth-2 popup. -->
+        <MenuItem x:Name="NestedStaticHeader"
+                  Header="NestedStaticHeader"
+                  AutomationProperties.AutomationId="NestedStaticHeader"
+                  AutomationProperties.Name="NestedStaticHeader">
+          <MenuItem Header="NestedStaticChild"
+                    AutomationProperties.AutomationId="NestedStaticChild"
+                    AutomationProperties.Name="NestedStaticChild" />
+        </MenuItem>
+        <MenuItem x:Name="NestedDynamicHeader"
+                  Header="NestedDynamicHeader"
+                  ItemsSource="{Binding NestedDynamicItems, RelativeSource={RelativeSource AncestorType=Window}}"
+                  AutomationProperties.AutomationId="NestedDynamicHeader"
+                  AutomationProperties.Name="NestedDynamicHeader">
+          <!-- Bind Header from a child property via ItemContainerStyle, exactly like Sage's menus. -->
+          <MenuItem.ItemContainerStyle>
+            <Style TargetType="MenuItem">
+              <Setter Property="Header" Value="{Binding Label}" />
+            </Style>
+          </MenuItem.ItemContainerStyle>
+        </MenuItem>
+        <!-- Depth-3 dynamic submenu — the exact Sage File>Build>Folder shape:
+             MenuHeader (menu-bar) > DeepIntermediateHeader (depth-1) > DeepDynamicHeader (depth-2),
+             whose ItemsSource children open in a depth-3 popup. -->
+        <MenuItem x:Name="DeepIntermediateHeader"
+                  Header="DeepIntermediateHeader"
+                  AutomationProperties.AutomationId="DeepIntermediateHeader"
+                  AutomationProperties.Name="DeepIntermediateHeader">
+          <MenuItem x:Name="DeepDynamicHeader"
+                    Header="DeepDynamicHeader"
+                    ItemsSource="{Binding NestedDynamicItems, RelativeSource={RelativeSource AncestorType=Window}}"
+                    AutomationProperties.AutomationId="DeepDynamicHeader"
+                    AutomationProperties.Name="DeepDynamicHeader">
+            <MenuItem.ItemContainerStyle>
+              <Style TargetType="MenuItem">
+                <Setter Property="Header" Value="{Binding Label}" />
+              </Style>
+            </MenuItem.ItemContainerStyle>
+          </MenuItem>
+        </MenuItem>
       </MenuItem>
     </Menu>
   </Grid>

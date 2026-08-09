@@ -28,6 +28,8 @@ public static class AppHooks
 	private static Point? syntheticMouseScreenPosition;
 	private static IInputElement? syntheticCapturedMouseElement;
 	private static IInputElement? syntheticMouseHitTarget;
+	private static object? syntheticDragDropData;
+	private static DragDropEffects syntheticDragDropAllowedEffects;
 	private static readonly HashSet<Key> SyntheticPressedKeys = [];
 	private static ModifierKeys syntheticModifiers;
 
@@ -125,6 +127,8 @@ public static class AppHooks
 		syntheticMouseScreenPosition = null;
 		syntheticCapturedMouseElement = null;
 		syntheticMouseHitTarget = null;
+		syntheticDragDropData = null;
+		syntheticDragDropAllowedEffects = DragDropEffects.None;
 	}
 
 	public static void SetSyntheticMouseScreenPosition(Point? screenPosition) =>
@@ -132,6 +136,20 @@ public static class AppHooks
 
 	public static void SetSyntheticMouseHitTarget(IInputElement? target) =>
 		syntheticMouseHitTarget = target;
+
+	public static bool TryGetSyntheticDragDrop(out object data, out DragDropEffects allowedEffects)
+	{
+		if (syntheticDragDropData is null)
+		{
+			data = null!;
+			allowedEffects = DragDropEffects.None;
+			return false;
+		}
+
+		data = syntheticDragDropData;
+		allowedEffects = syntheticDragDropAllowedEffects;
+		return true;
+	}
 
 	public static bool IsSyntheticMouseInputActive => Volatile.Read(ref syntheticMouseInputDepth) > 0;
 
@@ -399,6 +417,22 @@ public static class AppHooks
 		}
 	}
 
+	[HarmonyPatch(typeof(DragDrop), nameof(DragDrop.DoDragDrop), new[] { typeof(DependencyObject), typeof(object), typeof(DragDropEffects) })]
+	public static class PatchDragDropDoDragDrop
+	{
+		public static bool Prefix(DependencyObject dragSource, object data, DragDropEffects allowedEffects, ref DragDropEffects __result)
+		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
+			_ = dragSource;
+			syntheticDragDropData = data;
+			syntheticDragDropAllowedEffects = allowedEffects;
+			__result = allowedEffects;
+			return false;
+		}
+	}
+
 	[HarmonyPatch(typeof(KeyboardDevice), "get_Modifiers")]
 	public static class PatchKeyboardDeviceModifiers
 	{
@@ -585,10 +619,28 @@ public static class AppHooks
 		if (!IsSyntheticMouseInputActive || syntheticMouseScreenPosition is not { } screenPosition)
 			return false;
 
+		if (relativeTo is null)
+		{
+			position = screenPosition;
+			return true;
+		}
+
 		if (relativeTo is not Visual visual)
 			return false;
 
-		position = visual.PointFromScreen(screenPosition);
+		try
+		{
+			position = visual.PointFromScreen(screenPosition);
+		}
+		catch (InvalidOperationException)
+		{
+			// Synthetic drag/drop can raise mouse moves while application handlers still reference
+			// visuals that just detached. Keep the patched GetPosition path from falling through to
+			// WPF's PointFromScreen exception; there is no meaningful coordinate for a detached
+			// visual, and a default point is safer than failing the injected gesture.
+			position = default;
+		}
+
 		return true;
 	}
 

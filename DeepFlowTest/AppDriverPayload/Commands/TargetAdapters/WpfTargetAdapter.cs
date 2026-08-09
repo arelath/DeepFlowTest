@@ -140,6 +140,7 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 			AppHooks.SetButton(MouseButton.Left, isPressed: true);
 			var sourceTargets = GetAscendingVisualTree(source);
 			RaiseMouseButtonEvent(source, UIElement.PreviewMouseDownEvent, MouseButton.Left, sourceTargets);
+			RaiseDirectMouseButtonEventOnTargets(sourceTargets, UIElement.PreviewMouseLeftButtonDownEvent, MouseButton.Left, source);
 
 			var steps = Math.Max(1, durationMs / Math.Max(1, stepIntervalMs));
 			for (var i = 1; i <= steps; i++)
@@ -149,14 +150,28 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 				AppHooks.SetSyntheticMouseScreenPosition(currentScreen);
 				VirtualPointerService.DragMove(currentScreen);
 				RaiseMouseMoveEvent(source);
+				RaiseDirectMouseMoveEventOnTargets(sourceTargets, source);
+			}
+
+			var hasSyntheticDragDrop = AppHooks.TryGetSyntheticDragDrop(out var dragDropData, out var allowedEffects);
+			var destinationTargets = GetAscendingVisualTree(destination);
+			var destinationDropTargets = GetDragDropEventTargets(destinationTargets);
+			if (hasSyntheticDragDrop)
+			{
+				if (!TryRaiseDragDropEventOnTargets(destinationDropTargets, DragDrop.DragEnterEvent, dragDropData, allowedEffects, destinationScreen, out var dragEnterError))
+					return ActionResult.Unsupported(dragEnterError);
+				if (!TryRaiseDragDropEventOnTargets(destinationDropTargets, DragDrop.DragOverEvent, dragDropData, allowedEffects, destinationScreen, out var dragOverError))
+					return ActionResult.Unsupported(dragOverError);
 			}
 
 			AppHooks.SetSyntheticMouseScreenPosition(destinationScreen);
 			VirtualPointerService.EndDrag(destinationScreen);
 			RaiseMouseMoveEvent(destination);
+			if (hasSyntheticDragDrop && !TryRaiseDragDropEventOnTargets(destinationDropTargets, DragDrop.DropEvent, dragDropData, allowedEffects, destinationScreen, out var dropError))
+				return ActionResult.Unsupported(dropError);
 			AppHooks.SetButton(MouseButton.Left, isPressed: false);
-			var destinationTargets = GetAscendingVisualTree(destination);
 			RaiseMouseButtonEvent(destination, UIElement.PreviewMouseUpEvent, MouseButton.Left, destinationTargets);
+			RaiseDirectMouseButtonEventOnTargets(destinationTargets, UIElement.PreviewMouseLeftButtonUpEvent, MouseButton.Left, destination);
 		}
 		finally
 		{
@@ -496,6 +511,129 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		AppHooks.SetSyntheticMouseHitTarget(target);
 		InputManager.Current.ProcessInput(args);
 		return args.Handled;
+	}
+
+	private static bool RaiseDirectMouseButtonEventOnTargets(
+		IReadOnlyList<UIElement> targets,
+		RoutedEvent routedEvent,
+		MouseButton button,
+		UIElement hitTarget)
+	{
+		var handled = false;
+		foreach (var target in targets)
+		{
+			var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, button)
+			{
+				RoutedEvent = routedEvent,
+				Source = target,
+			};
+			AppHooks.MouseOverElement?.SetValue(Mouse.PrimaryDevice, target);
+			AppHooks.SetSyntheticMouseHitTarget(hitTarget);
+			target.RaiseEvent(args);
+			handled |= args.Handled;
+		}
+
+		return handled;
+	}
+
+	private static bool RaiseDirectMouseMoveEventOnTargets(IReadOnlyList<UIElement> targets, UIElement hitTarget)
+	{
+		var handled = false;
+		foreach (var target in targets)
+		{
+			var args = new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)
+			{
+				RoutedEvent = UIElement.MouseMoveEvent,
+				Source = target,
+			};
+			AppHooks.MouseOverElement?.SetValue(Mouse.PrimaryDevice, target);
+			AppHooks.SetSyntheticMouseHitTarget(hitTarget);
+			target.RaiseEvent(args);
+			handled |= args.Handled;
+		}
+
+		return handled;
+	}
+
+	private static bool TryRaiseDragDropEventOnTargets(
+		IReadOnlyList<UIElement> targets,
+		RoutedEvent routedEvent,
+		object data,
+		DragDropEffects allowedEffects,
+		Point screenPoint,
+		out string error)
+	{
+		error = string.Empty;
+		var raised = false;
+		foreach (var target in targets)
+		{
+			Point targetPoint;
+			try
+			{
+				targetPoint = target.PointFromScreen(screenPoint);
+			}
+			catch (InvalidOperationException ex)
+			{
+				error = ex.Message;
+				continue;
+			}
+
+			var args = TryCreateDragEventArgs(data, allowedEffects, target, targetPoint, out error);
+			if (args is null)
+				return false;
+
+			args.RoutedEvent = routedEvent;
+			args.Source = target;
+			target.RaiseEvent(args);
+			raised = true;
+			if (args.Handled)
+				return true;
+		}
+
+		return raised;
+	}
+
+	private static IReadOnlyList<UIElement> GetDragDropEventTargets(IReadOnlyList<UIElement> targets)
+	{
+		var allowDropTargets = targets.Where(target => target.AllowDrop).ToArray();
+		return allowDropTargets.Length == 0 ? targets : allowDropTargets;
+	}
+
+	private static DragEventArgs? TryCreateDragEventArgs(
+		object data,
+		DragDropEffects allowedEffects,
+		DependencyObject target,
+		Point targetPoint,
+		out string error)
+	{
+		error = string.Empty;
+		var constructor = typeof(DragEventArgs).GetConstructor(
+			BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+			binder: null,
+			types:
+			[
+				typeof(IDataObject),
+				typeof(DragDropKeyStates),
+				typeof(DragDropEffects),
+				typeof(DependencyObject),
+				typeof(Point),
+			],
+			modifiers: null);
+		if (constructor is null)
+		{
+			error = "Could not find the WPF DragEventArgs constructor.";
+			return null;
+		}
+
+		var dataObject = data as IDataObject ?? new DataObject(data);
+		return (DragEventArgs)constructor.Invoke(
+		[
+			dataObject,
+			DragDropKeyStates.LeftMouseButton,
+			allowedEffects,
+			target,
+			targetPoint,
+		]);
 	}
 
 	private static bool TryGetScreenPoint(UIElement target, PointerAnchor anchor, out Point screen, out string? error)

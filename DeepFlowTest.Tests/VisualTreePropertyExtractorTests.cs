@@ -61,6 +61,17 @@ public sealed class VisualTreePropertyExtractorTests
 	}
 
 	[Test]
+	public void MenuItemAutomationIdDoesNotUseStringHeader()
+	{
+		var target = new MenuItem { Header = "GeneratedChild" };
+
+		var properties = new VisualTreePropertyExtractor().Extract(target, new[] { KnownProperties.AutomationId, KnownProperties.Header });
+
+		Assert.That(properties[KnownProperties.AutomationId], Is.EqualTo(string.Empty));
+		Assert.That(properties[KnownProperties.Header], Is.EqualTo("GeneratedChild"));
+	}
+
+	[Test]
 	public void MissingAndThrowingPropertiesAreStructuredErrors()
 	{
 		var target = new ThrowingTarget();

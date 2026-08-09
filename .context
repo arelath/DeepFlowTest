@@ -17,6 +17,9 @@ excludedRegex: output\\
 excludedRegex: InjectionDll\\
 excludedRegex: tools\\
 excludedRegex: artifacts\\
+excludedRegex: \.build\\
+excludedRegex: \.claude\\
+excludedRegex: \.nuke\\
 excludedRegex: .test-artifacts\\
 excludedRegex: package-lock\.json
 excludedRegex: reports\\

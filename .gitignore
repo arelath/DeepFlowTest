@@ -62,3 +62,7 @@ MegaContext-files.txt
 MegaContext-files.txt
 *.lscache
 /isolated-nuget-packages
+/CodeSense
+/CodeSense
+Generate-CodeSceneReport.ps1
+Run-CodeSceneReviews.ps1

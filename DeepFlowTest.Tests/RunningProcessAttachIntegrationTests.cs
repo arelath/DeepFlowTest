@@ -181,6 +181,80 @@ public sealed class RunningProcessAttachIntegrationTests
 	}
 
 	[Test]
+	public void ClickingNestedStaticSubmenuHeaderRealizesItsChild()
+	{
+		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
+		using var driver = AttachToHarness(harness.Process.Id, nameof(ClickingNestedStaticSubmenuHeaderRealizesItsChild));
+
+		// File>Build shape: open the top header, then click the depth-2 SubmenuHeader.
+		FindByAutomationId(driver, "MenuHeader").Click();
+		WaitForMenuHeaderOpen(driver);
+		FindByAutomationId(driver, "NestedStaticHeader").Click();
+
+		// The grandchild must materialize in the visual tree so a tree-wide find can see it.
+		var child = driver.GetElement(
+			element => element[KnownProperties.AutomationId] == "NestedStaticChild" && element[KnownProperties.IsVisible] == true,
+			timeoutMs: 15_000,
+			propNames: MatcherPropertyNames);
+		Assert.That(child[KnownProperties.AutomationId].ToString(), Is.EqualTo("NestedStaticChild"));
+	}
+
+	// Regression guard for the Sage File>New shape: a submenu header (one level below the menu bar)
+	// whose children come from an ItemsSource. The generated child MenuItems have header text, not
+	// explicit AutomationIds, so discoverability is asserted through the same visible menu text a user
+	// or semantic selector would use. (Originally written believing this case was broken; it works —
+	// clicking the header opens the submenu and the data-bound children become discoverable.)
+	[Test]
+	public void ClickingNestedDynamicSubmenuHeaderRealizesDataBoundChildren()
+	{
+		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
+		using var driver = AttachToHarness(harness.Process.Id, nameof(ClickingNestedDynamicSubmenuHeaderRealizesDataBoundChildren));
+
+		// Sage File>Build>Folder shape: a depth-2 SubmenuHeader whose children come from an
+		// ItemsSource.
+		FindByAutomationId(driver, "MenuHeader").Click();
+		WaitForMenuHeaderOpen(driver);
+		FindByAutomationId(driver, "NestedDynamicHeader").Click();
+
+		var child = driver.GetElement(
+			element => element.TypeName == "MenuItem"
+				&& element[KnownProperties.Header] == "NestedDynamicChildA"
+				&& element[KnownProperties.IsVisible] == true,
+			timeoutMs: 15_000,
+			propNames: MatcherPropertyNames);
+		Assert.That(child[KnownProperties.Header].ToString(), Is.EqualTo("NestedDynamicChildA"));
+	}
+
+	// Regression guard at the exact Sage File>Build>Folder depth: MenuHeader (menu bar) >
+	// DeepIntermediateHeader (static, depth-1) > DeepDynamicHeader (ItemsSource, depth-2), whose
+	// data-bound children open in a depth-3 popup. This mirrors Sage's structure, ItemContainerStyle
+	// (Header bound to a child property), and item type. It PASSES — clicking the deep header opens
+	// the submenu and the data-bound children become discoverable by Header text. This rules out
+	// "DeepFlowTest cannot drive nested/dynamic submenus" as the cause of the Sage menu-test failures;
+	// the Sage failure (the Folder submenu not opening on click) is reproduced by neither this depth,
+	// the ItemContainerStyle, custom item objects, nor large item counts, so its cause is Sage-specific
+	// and still under investigation.
+	[Test]
+	public void ClickingDeepDynamicSubmenuHeaderRealizesDataBoundChildren()
+	{
+		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
+		using var driver = AttachToHarness(harness.Process.Id, nameof(ClickingDeepDynamicSubmenuHeaderRealizesDataBoundChildren));
+
+		FindByAutomationId(driver, "MenuHeader").Click();
+		WaitForMenuHeaderOpen(driver);
+		FindByAutomationId(driver, "DeepIntermediateHeader").Click();
+		FindByAutomationId(driver, "DeepDynamicHeader").Click();
+
+		var child = driver.GetElement(
+			element => element.TypeName == "MenuItem"
+				&& element[KnownProperties.Header] == "NestedDynamicChildA"
+				&& element[KnownProperties.IsVisible] == true,
+			timeoutMs: 15_000,
+			propNames: MatcherPropertyNames);
+		Assert.That(child[KnownProperties.Header].ToString(), Is.EqualTo("NestedDynamicChildA"));
+	}
+
+	[Test]
 	public void DoubleClickingAttachedHarnessButtonRaisesMouseDoubleClick()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());

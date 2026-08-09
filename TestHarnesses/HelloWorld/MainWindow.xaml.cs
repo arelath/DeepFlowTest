@@ -21,6 +21,27 @@ public partial class MainWindow : Window
 
 	public static Func<Window, string?>? ShowOpenFileDialogForTests { get; set; }
 
+	// Data-bound children for the dynamic submenus (mirrors Sage's BuildFolderMenuItems / KeyFilters
+	// ItemsSource). These are custom objects whose Header text comes from a child property surfaced
+	// through an ItemContainerStyle, exactly like Sage's menus — not plain strings — so the harness
+	// reproduces Sage's nested dynamic-submenu realization behavior faithfully.
+	public System.Collections.Generic.IReadOnlyList<MenuEntry> NestedDynamicItems { get; } =
+		new[]
+		{
+			new MenuEntry("NestedDynamicChildA"),
+			new MenuEntry("NestedDynamicChildB"),
+			new MenuEntry("NestedDynamicChildC"),
+		};
+
+	// Mirror of a Sage menu data item (e.g. BuildFolderMenuItem): the visible label is exposed via a
+	// child property that the MenuItem.ItemContainerStyle binds to MenuItem.Header.
+	public sealed class MenuEntry
+	{
+		public MenuEntry(string label) => Label = label;
+
+		public string Label { get; }
+	}
+
 	public MainWindow()
 	{
 		InitializeComponent();

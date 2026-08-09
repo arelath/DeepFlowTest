@@ -2,13 +2,13 @@ namespace DeepFlowTest.Tests;
 
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Shared;
 using DeepFlowTest.Tests.Fakes;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
@@ -151,13 +151,13 @@ public sealed class AppDriverInProcessEndToEndTests
 		var stopwatch = Stopwatch.StartNew();
 		while (stopwatch.Elapsed < timeout)
 		{
-			var hwnd = FindWindow("#32770", caption);
+			var hwnd = NativeMethods.FindWindow("#32770", caption);
 			if (hwnd == IntPtr.Zero)
-				hwnd = FindWindow(null, caption);
+				hwnd = NativeMethods.FindWindow(null, caption);
 
 			if (hwnd != IntPtr.Zero)
 			{
-				SendMessage(hwnd, WmClose, IntPtr.Zero, IntPtr.Zero);
+				NativeMethods.SendMessage(hwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
 				return true;
 			}
 
@@ -195,14 +195,6 @@ public sealed class AppDriverInProcessEndToEndTests
 			null);
 		Dispatcher.PushFrame(frame);
 	}
-
-	private const int WmClose = 0x0010;
-
-	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-	private static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
-
-	[DllImport("user32.dll")]
-	private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
 	private sealed class InProcessPayloadSession : IAppDriverCommandSession
 	{

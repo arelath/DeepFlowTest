@@ -38,6 +38,7 @@ internal static partial class NativeMethods
 	public const int WM_RBUTTONUP = 0x0205;
 	public const int WM_MBUTTONDOWN = 0x0207;
 	public const int WM_MBUTTONUP = 0x0208;
+	public const int WM_CLOSE = 0x0010;
 	public const int MK_LBUTTON = 0x0001;
 	public const int MK_RBUTTON = 0x0002;
 	public const int MK_MBUTTON = 0x0010;
@@ -81,6 +82,9 @@ internal static partial class NativeMethods
 
 	[DllImport("user32.dll")]
 	public static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+	public static extern IntPtr FindWindow(string? className, string? windowName);
 
 	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
 	public static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
