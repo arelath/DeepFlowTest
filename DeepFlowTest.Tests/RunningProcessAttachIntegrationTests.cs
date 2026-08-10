@@ -37,6 +37,22 @@ public sealed class RunningProcessAttachIntegrationTests
 	];
 
 	[Test]
+	public void InjectedPayloadAndTargetCanUseDifferentNewtonsoftVersions()
+	{
+		using var harness = HarnessProcess.Start(ResolveDependencyConflictHarnessExecutablePath());
+		using var driver = AttachToHarness(harness.Process.Id, nameof(InjectedPayloadAndTargetCanUseDifferentNewtonsoftVersions));
+
+		var targetVersion = FindByAutomationId(driver, "TargetNewtonsoftVersion");
+		Assert.That(Convert.ToString(targetVersion.Properties[KnownProperties.Text], CultureInfo.InvariantCulture), Does.StartWith("12.0.0"));
+
+		FindByAutomationId(driver, "TargetSerializeButton").Click();
+		var result = WaitForElementText(driver, "TargetSerializationResult", "{\"message\":\"target-ok\"}");
+
+		Assert.That(Convert.ToString(result.Properties[KnownProperties.Text], CultureInfo.InvariantCulture), Is.EqualTo("{\"message\":\"target-ok\"}"));
+		Assert.That(FindByAutomationId(driver, "DependencyConflictWindow").TypeName, Is.EqualTo("MainWindow"));
+	}
+
+	[Test]
 	public void AttachToRunningProcessCanDisconnectAndReattach()
 	{
 		using var harness = HarnessProcess.Start(ResolveHelloWorldExecutablePath());
@@ -741,6 +757,21 @@ public sealed class RunningProcessAttachIntegrationTests
 			"HelloWorld.exe");
 
 		Assert.That(File.Exists(path), Is.True, $"HelloWorld harness was not found at '{path}'. Build CompileTestHarnesses first.");
+		return path;
+	}
+
+	private static string ResolveDependencyConflictHarnessExecutablePath()
+	{
+		var path = Path.Combine(
+			FindRepositoryRoot(),
+			"TestHarnesses",
+			"bin",
+			"DependencyConflictHarness",
+			"Debug",
+			"net8.0-windows",
+			"DependencyConflictHarness.exe");
+
+		Assert.That(File.Exists(path), Is.True, $"Dependency conflict harness was not found at '{path}'. Build CompileTestHarnesses first.");
 		return path;
 	}
 

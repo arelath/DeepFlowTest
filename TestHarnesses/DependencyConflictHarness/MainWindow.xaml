@@ -1,0 +1,26 @@
+<Window x:Class="DependencyConflictHarness.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DeepFlowTest Dependency Conflict Harness"
+        Width="520"
+        Height="240"
+        Name="DependencyConflictWindow"
+        AutomationProperties.AutomationId="DependencyConflictWindow">
+  <StackPanel Margin="24">
+    <TextBlock Text="Target Newtonsoft.Json assembly version" />
+    <TextBlock x:Name="TargetNewtonsoftVersion"
+               Margin="0,4,0,16"
+               AutomationProperties.AutomationId="TargetNewtonsoftVersion" />
+    <Button x:Name="TargetSerializeButton"
+            Width="180"
+            Height="32"
+            HorizontalAlignment="Left"
+            Content="Serialize in target"
+            AutomationProperties.AutomationId="TargetSerializeButton"
+            Click="TargetSerializeButton_OnClick" />
+    <TextBlock x:Name="TargetSerializationResult"
+               Margin="0,16,0,0"
+               Text="not-run"
+               AutomationProperties.AutomationId="TargetSerializationResult" />
+  </StackPanel>
+</Window>

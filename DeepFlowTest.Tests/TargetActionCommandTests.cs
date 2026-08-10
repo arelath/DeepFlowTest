@@ -172,6 +172,12 @@ public sealed class TargetActionCommandTests
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = headerId }));
 			Assert.That(WaitUntil(() => header.IsSubmenuOpen), Is.True, "Initial menu header click should open the menu.");
 
+			AssertOk(CaptureResponse(new KnownOperationCommandRequest { TargetId = headerId, Operation = "Collapse" }));
+			Assert.That(WaitUntil(() => !header.IsSubmenuOpen), Is.True, "Collapse should close the menu header.");
+
+			AssertOk(CaptureResponse(new KnownOperationCommandRequest { TargetId = headerId, Operation = "Expand" }));
+			Assert.That(WaitUntil(() => header.IsSubmenuOpen), Is.True, "Expand should open the menu header.");
+
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = nestedHeaderId }));
 			Assert.That(WaitUntil(() => nestedHeader.IsSubmenuOpen), Is.True, "Nested submenu click should open the nested menu.");
 

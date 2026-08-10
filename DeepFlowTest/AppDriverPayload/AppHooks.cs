@@ -585,6 +585,20 @@ public static class AppHooks
 		}
 	}
 
+	[HarmonyPatch(typeof(Mouse), nameof(Mouse.Capture), new[] { typeof(IInputElement), typeof(CaptureMode) })]
+	public static class PatchMouseCaptureWithMode
+	{
+		public static bool Prefix(IInputElement element, ref bool __result)
+		{
+			if (!IsSyntheticMouseInputActive)
+				return true;
+
+			syntheticCapturedMouseElement = element;
+			__result = true;
+			return false;
+		}
+	}
+
 	[HarmonyPatch(typeof(Mouse), "get_Captured")]
 	public static class PatchMouseCaptured
 	{

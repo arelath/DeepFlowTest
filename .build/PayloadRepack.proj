@@ -5,6 +5,11 @@
     <ILRepackTaskAssembly>$(NuGetPackageRoot)ilrepack.lib.msbuild.task\$(ILRepackVersion)\build\ILRepack.Lib.MSBuild.Task.dll</ILRepackTaskAssembly>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <ILRepackLibraryPath Condition="$([System.String]::Copy('$(PrimaryAssembly)').Contains('\netcoreapp3.1\'))">$(NuGetPackageRoot)microsoft.netcore.app.ref\3.1.0\ref\netcoreapp3.1</ILRepackLibraryPath>
+    <ILRepackLibraryPath Condition="$([System.String]::Copy('$(PrimaryAssembly)').Contains('\net5.0-windows\'))">$(NuGetPackageRoot)microsoft.netcore.app.ref\5.0.0\ref\net5.0</ILRepackLibraryPath>
+  </PropertyGroup>
+
   <UsingTask AssemblyFile="$(ILRepackTaskAssembly)" TaskName="ILRepack" />
 
   <Target Name="Repack">
@@ -30,6 +35,7 @@
       Internalize="true"
       AllowDuplicateResources="false"
       InputAssemblies="@(InputAssemblies)"
+      LibraryPath="$(ILRepackLibraryPath)"
       TargetKind="SameAsPrimaryAssembly"
       OutputFile="$(OutputFile)" />
   </Target>

@@ -23,6 +23,12 @@ using Size = System.Drawing.Size;
 
 internal static class ScreenshotCommand
 {
+	static ScreenshotCommand()
+	{
+		AppContext.SetSwitch("Switch.System.Windows.Media.ShouldNotRenderInNonInteractiveWindowStation", false);
+		AppContext.SetSwitch("Switch.System.Windows.Media.ShouldRenderEvenWhenNoDisplayDevicesAreAvailable", true);
+	}
+
 	public static object Process(ScreenshotCommandRequest request, TreeService treeService)
 	{
 		_ = request ?? throw new ArgumentNullException(nameof(request));

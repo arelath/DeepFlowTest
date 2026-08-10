@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -28,9 +30,12 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		target is IInputElement or DependencyObject;
 
 	public override ActionResult Click(object target, MouseButtonKind button, int clickCount) =>
-		target is UIElement uiElement
-			? PerformClick(uiElement, button, clickCount)
-			: base.Click(target, button, clickCount);
+		target switch
+		{
+			MenuItem menuItem when button == MouseButtonKind.Left && clickCount == 1 => PerformMenuItemClick(menuItem),
+			UIElement uiElement => PerformClick(uiElement, button, clickCount),
+			_ => base.Click(target, button, clickCount),
+		};
 
 	public override ActionResult Focus(object target) =>
 		target is IInputElement inputElement && inputElement.Focus()
@@ -266,6 +271,9 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 
 				break;
 			case "Expand":
+				if (target is MenuItem menuItem)
+					return SetMenuItemExpanded(menuItem, expanded: true);
+
 				if (target is Expander expander)
 				{
 					expander.IsExpanded = true;
@@ -280,6 +288,9 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 
 				break;
 			case "Collapse":
+				if (target is MenuItem collapseMenuItem)
+					return SetMenuItemExpanded(collapseMenuItem, expanded: false);
+
 				if (target is Expander collapseExpander)
 				{
 					collapseExpander.IsExpanded = false;
@@ -328,6 +339,57 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 				comboBox.Text = string.Empty;
 				break;
 		}
+	}
+
+	private static ActionResult PerformMenuItemClick(MenuItem menuItem)
+	{
+		if (!menuItem.IsEnabled)
+			return ActionResult.Ok();
+
+		if (!menuItem.HasItems)
+			return PerformClick(menuItem, MouseButtonKind.Left, 1);
+
+		UIHighlight.Select(menuItem);
+		ReportVirtualPointerClick(menuItem);
+		return SetMenuItemExpanded(menuItem, !menuItem.IsSubmenuOpen);
+	}
+
+	private static ActionResult SetMenuItemExpanded(MenuItem menuItem, bool expanded)
+	{
+		if (!menuItem.IsEnabled)
+			return ActionResult.Ok();
+
+		TryEnsureAppHooks();
+		using var syntheticMouseInput = AppHooks.BeginSyntheticMouseInput();
+		var peer = GetMenuItemAutomationPeer(menuItem);
+		if (peer.GetPattern(PatternInterface.ExpandCollapse) is IExpandCollapseProvider expandCollapseProvider)
+		{
+			if (expanded)
+				expandCollapseProvider.Expand();
+			else
+				expandCollapseProvider.Collapse();
+		}
+		else
+		{
+			menuItem.IsSubmenuOpen = expanded;
+		}
+
+		return menuItem.IsSubmenuOpen == expanded
+			? ActionResult.Ok()
+			: ActionResult.Unsupported("WPF did not reach the requested menu expansion state.");
+	}
+
+	private static MenuItemAutomationPeer GetMenuItemAutomationPeer(MenuItem menuItem) =>
+		UIElementAutomationPeer.CreatePeerForElement(menuItem) as MenuItemAutomationPeer
+		?? new MenuItemAutomationPeer(menuItem);
+
+	private static void ReportVirtualPointerClick(UIElement target)
+	{
+		if (!TryGetScreenPoint(target, new PointerAnchor(0.5, 0.5), out var clickScreen, out _))
+			return;
+
+		VirtualPointerService.MoveTo(clickScreen, GetOwnerHwnd(target));
+		VirtualPointerService.Click(MouseButtonKind.Left, 1);
 	}
 
 	private static ActionResult PerformClick(UIElement target, MouseButtonKind button, int clickCount)

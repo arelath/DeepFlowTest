@@ -18,6 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.ShouldNotRenderInNonInteractiveWindowStation" Value="false" />
+    <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.ShouldRenderEvenWhenNoDisplayDevicesAreAvailable" Value="true" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="..\Shared\InjectorData.cs" Link="Linked\Shared\InjectorData.cs" />
     <Compile Include="..\DeepFlowTest.InjectorLauncher\*.cs" Link="Linked\InjectorLauncher\%(Filename)%(Extension)" />
   </ItemGroup>
