@@ -4,7 +4,6 @@
     <RootNamespace>DeepFlowTest</RootNamespace>
     <AssemblyName>DeepFlowTest</AssemblyName>
     <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <Platforms>AnyCPU;x86;x64</Platforms>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -18,7 +17,6 @@
     <Compile Include="..\Shared\NativeMethods.cs" Link="Shared\NativeMethods.cs" />
     <Compile Include="..\Shared\NativeMethods.Kernel32.cs" Link="Shared\NativeMethods.Kernel32.cs" />
     <Compile Include="..\Shared\NativeMethods.User32.cs" Link="Shared\NativeMethods.User32.cs" />
-    <PackageReference Include="Lib.Harmony" />
     <PackageReference Include="Microsoft.CSharp" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="Serialize.Linq" />
@@ -42,6 +40,9 @@
       <CopyToPublishDirectory>IfNewer</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+
+  <Import Project="..\Shared\Protocol\DeepFlowTest.Protocol.projitems" />
+  <Import Project="..\Shared\QueryModel\DeepFlowTest.QueryModel.projitems" />
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net461'">
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net461" PrivateAssets="all" />

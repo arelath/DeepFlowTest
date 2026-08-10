@@ -9,7 +9,6 @@ using System.Security.Cryptography;
 using System.Text;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
-using DeepFlowTest.Utility.WpfUtility.Tree;
 
 internal sealed class ElementMatcherPlanner(ElementFactory elementFactory)
 {
@@ -101,8 +100,8 @@ internal sealed class ElementMatcherPlanner(ElementFactory elementFactory)
 	public IReadOnlyList<string> GetPropNamesForMatcher(LambdaExpression matcherExpression, IReadOnlyList<string>? propNames)
 	{
 		var collectedPropertyNames = ElementPropertyAccessCollector.Collect(matcherExpression);
-		return MergePropertyNames(VisualTreePropertyExtractor.DefaultPropertyNames, propNames, collectedPropertyNames)
-			?? VisualTreePropertyExtractor.DefaultPropertyNames.ToArray();
+		return MergePropertyNames(KnownProperties.DefaultVisualTreePropertyNames, propNames, collectedPropertyNames)
+			?? KnownProperties.DefaultVisualTreePropertyNames.ToArray();
 	}
 
 	public IReadOnlyList<string> GetPropNamesForRootedMatcher(
@@ -112,12 +111,12 @@ internal sealed class ElementMatcherPlanner(ElementFactory elementFactory)
 	{
 		var collectedRootPropertyNames = ElementPropertyAccessCollector.Collect(rootMatcherExpression);
 		var collectedPropertyNames = ElementPropertyAccessCollector.Collect(matcherExpression);
-		return MergePropertyNames(VisualTreePropertyExtractor.DefaultPropertyNames, propNames, collectedRootPropertyNames, collectedPropertyNames)
-			?? VisualTreePropertyExtractor.DefaultPropertyNames.ToArray();
+		return MergePropertyNames(KnownProperties.DefaultVisualTreePropertyNames, propNames, collectedRootPropertyNames, collectedPropertyNames)
+			?? KnownProperties.DefaultVisualTreePropertyNames.ToArray();
 	}
 
 	public IReadOnlyList<string> GetClientSideMatcherPropNames(IReadOnlyList<string>? propNames) =>
-		MergePropertyNames(VisualTreePropertyExtractor.DefaultPropertyNames, ClientSideMatcherFallbackPropertyNames, propNames)
+		MergePropertyNames(KnownProperties.DefaultVisualTreePropertyNames, ClientSideMatcherFallbackPropertyNames, propNames)
 		?? ClientSideMatcherFallbackPropertyNames.ToArray();
 
 	public static IReadOnlyList<string>? MergePropertyNames(params IEnumerable<string>?[] sources)

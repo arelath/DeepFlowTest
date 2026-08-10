@@ -1,7 +1,6 @@
 namespace DeepFlowTest.Cli.Tests;
 
 using System.IO;
-using DeepFlowTest.AppDriverPayload;
 using NUnit.Framework;
 
 [TestFixture]
@@ -24,7 +23,11 @@ public sealed class SmokeTests
 	{
 		const string pipeName = "deepflowtest-cli-diagnostics";
 		const int processId = 654321;
-		var logPath = PayloadLog.GetLogPath(pipeName, processId);
+		var logPath = Path.Combine(
+			System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+			"DeepFlowTest",
+			"payload-logs",
+			$"{pipeName}-{processId}.log");
 		Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
 		File.WriteAllText(logPath, "payload log tail");
 		try

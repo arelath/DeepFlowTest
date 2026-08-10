@@ -16,6 +16,7 @@
   <PropertyGroup>
     <OutputPath Condition="'$(OutputPath)' == ''">$(RepositoryRoot)bin\$(Configuration)\</OutputPath>
     <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)' == ''">$(RepositoryRoot)output\obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+	<BaseIntermediateOutputPath Condition="'$(MSBuildProjectName)' == 'DeepFlowTest.Payload'">$(RepositoryRoot)artifacts\payload-obj\</BaseIntermediateOutputPath>
   </PropertyGroup>
 
   <PropertyGroup>

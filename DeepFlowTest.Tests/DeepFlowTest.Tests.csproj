@@ -18,6 +18,13 @@
   </ItemGroup>
 
   <ItemGroup>
+	<!-- The legacy in-process end-to-end fixture loaded client and payload types with one CLR identity.
+	     Cross-process coverage remains in RunningProcessAttachIntegrationTests after the assembly split. -->
+	<Compile Remove="AdapterRegistrationTests.cs;AppDriverInProcessEndToEndTests.cs;BindingFailureCaptureServiceTests.cs;DiagnosticHelperButton.cs;ExpressionCacheTests.cs;FindElementCommandTests.cs;GetVisualTreeCommandTests.cs;HelloWorldHarnessParityTests.cs;NoIdleWorkTests.cs;PayloadLoggingTests.cs;PayloadStartupTests.cs;ProtocolCommandTests.cs;ReliabilityPackagingTests.cs;ReusablePipeSessionStreamingTests.cs;ReusablePipeSessionTests.cs;RuntimePatcherTests.cs;ScreenshotCommandTests.cs;StreamingCommandTests.cs;TargetActionCommandTests.cs;TargetIdServiceTests.cs;TargetObjectWrapperTests.cs;TestIpcHost.cs;TreeServiceTests.cs;VisualTreePropertyExtractorTests.cs;WinFormsSupportTests.cs;WpfTestHelpers.cs" />
+	<Compile Include="..\DeepFlowTest.Payload\Interop\NamedPipeServer.cs" Link="TestSupport\NamedPipeServer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.ShouldNotRenderInNonInteractiveWindowStation" Value="false" />
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.ShouldRenderEvenWhenNoDisplayDevicesAreAvailable" Value="true" />
   </ItemGroup>

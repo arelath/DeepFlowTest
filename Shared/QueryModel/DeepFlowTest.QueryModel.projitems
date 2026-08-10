@@ -1,0 +1,9 @@
+<Project>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)IElementContext.cs" Link="Shared\QueryModel\IElementContext.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Element.Query.cs" Link="Shared\QueryModel\Element.Query.cs" />
+	<Compile Include="$(MSBuildThisFileDirectory)SnapshotElementContext.cs" Link="Shared\QueryModel\SnapshotElementContext.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Primitive.cs" Link="Shared\QueryModel\Primitive.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)PrimitiveExtensions.cs" Link="Shared\QueryModel\PrimitiveExtensions.cs" />
+  </ItemGroup>
+</Project>

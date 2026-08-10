@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>DeepFlowTest.Tests</RootNamespace>
+    <AssemblyName>DeepFlowTest.Payload.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+	<OutputPath>$(RepositoryRoot)artifacts\payload-tests-bin\$(Configuration)\$(TargetFramework)\</OutputPath>
+	<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <DefineConstants>$(DefineConstants);DEEPFLOWTEST_INJECTOR_TESTS</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <ProjectReference Include="..\DeepFlowTest.Payload\DeepFlowTest.Payload.csproj" />
+    <ProjectReference Include="..\TestHarnesses\HelloWorld\HelloWorld.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+	<Compile Include="PayloadAssemblyBoundaryTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\AdapterRegistrationTests.cs" Link="AdapterRegistrationTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\BindingFailureCaptureServiceTests.cs" Link="BindingFailureCaptureServiceTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\DiagnosticHelperButton.cs" Link="DiagnosticHelperButton.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\ExpressionCacheTests.cs" Link="ExpressionCacheTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\FindElementCommandTests.cs" Link="FindElementCommandTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\GetVisualTreeCommandTests.cs" Link="GetVisualTreeCommandTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\HelloWorldHarnessParityTests.cs" Link="HelloWorldHarnessParityTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\NoIdleWorkTests.cs" Link="NoIdleWorkTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\PayloadLoggingTests.cs" Link="PayloadLoggingTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\PayloadStartupTests.cs" Link="PayloadStartupTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\ProtocolCommandTests.cs" Link="ProtocolCommandTests.cs" />
+	<Compile Include="..\DeepFlowTest.Tests\ReliabilityPackagingTests.cs" Link="ReliabilityPackagingTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\ReusablePipeSessionStreamingTests.cs" Link="ReusablePipeSessionStreamingTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\ReusablePipeSessionTests.cs" Link="ReusablePipeSessionTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\RuntimePatcherTests.cs" Link="RuntimePatcherTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\ScreenshotCommandTests.cs" Link="ScreenshotCommandTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\StreamingCommandTests.cs" Link="StreamingCommandTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\TargetActionCommandTests.cs" Link="TargetActionCommandTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\TargetIdServiceTests.cs" Link="TargetIdServiceTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\TargetObjectWrapperTests.cs" Link="TargetObjectWrapperTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\TestIpcHost.cs" Link="TestIpcHost.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\TreeServiceTests.cs" Link="TreeServiceTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\VisualTreePropertyExtractorTests.cs" Link="VisualTreePropertyExtractorTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\WinFormsSupportTests.cs" Link="WinFormsSupportTests.cs" />
+    <Compile Include="..\DeepFlowTest.Tests\WpfTestHelpers.cs" Link="WpfTestHelpers.cs" />
+    <Compile Include="..\DeepFlowTest\Interop\NamedPipeClient.cs" Link="TestSupport\NamedPipeClient.cs" />
+    <Compile Include="..\DeepFlowTest\Interop\NamedPipeSessionException.cs" Link="TestSupport\NamedPipeSessionException.cs" />
+    <Compile Include="..\Shared\InjectorData.cs" Link="TestSupport\InjectorData.cs" />
+    <Compile Include="..\DeepFlowTest.InjectorLauncher\*.cs" Link="TestSupport\InjectorLauncher\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

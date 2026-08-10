@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 
 internal sealed class Build
 {
@@ -53,11 +54,15 @@ internal sealed class Build
 		var declaredTargets = new[]
 		{
 			new BuildTarget("Restore", Restore),
+			new BuildTarget("BuildClient", BuildClient, "Restore"),
+			new BuildTarget("BuildPayload", BuildPayload, "Restore"),
 			new BuildTarget("CompileNativeInjector", CompileNativeInjector),
-			new BuildTarget("RepackPayloads", RepackPayloads),
+			new BuildTarget("RepackPayloads", RepackPayloads, "BuildPayload"),
 			new BuildTarget("Compile", Compile, "Restore", "CompileNativeInjector"),
 			new BuildTarget("TestFast", TestFast, "Restore"),
 			new BuildTarget("TestCore", TestCore, "Restore"),
+			new BuildTarget("TestClient", TestCore, "BuildClient"),
+			new BuildTarget("TestPayload", TestPayload, "BuildPayload"),
 			new BuildTarget("TestCli", TestCli, "Restore"),
 			new BuildTarget("CompileTestHarnesses", CompileTestHarnesses, "Restore"),
 			new BuildTarget("TestIntegration", TestIntegration, "Compile", "CompileTestHarnesses"),
@@ -101,6 +106,16 @@ internal sealed class Build
 		RunDotNet("build", CliProject, "--configuration", configuration, "--no-restore", "/p:RootBuild=true");
 	}
 
+	private void BuildClient()
+	{
+		RunDotNet("build", ClientProject, "--configuration", configuration, "--no-restore", "/p:RootBuild=true");
+	}
+
+	private void BuildPayload()
+	{
+		RunDotNet("build", PayloadProject, "--configuration", configuration, "--no-restore", "/p:RootBuild=true");
+	}
+
 	private void CompileNativeInjector()
 	{
 		var msbuild = FindMsBuild();
@@ -122,7 +137,7 @@ internal sealed class Build
 
 		foreach (var mapping in mappings)
 		{
-			var source = Path.Combine(rootDirectory, "bin", configuration, mapping.TargetFramework);
+			var source = Path.Combine(rootDirectory, "artifacts", "payload-bin", configuration, mapping.TargetFramework);
 			var destination = Path.Combine(payloadRoot, mapping.PayloadFamily);
 
 			if (!Directory.Exists(source))
@@ -210,12 +225,19 @@ internal sealed class Build
 
 	private static void WritePayloadManifest(string destination, PayloadMapping mapping, IReadOnlyList<string> dependencies)
 	{
+		var payloadAssembly = Path.Combine(destination, "DeepFlowTest.dll");
+		var fileVersion = FileVersionInfo.GetVersionInfo(payloadAssembly).FileVersion ?? string.Empty;
+		var sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(payloadAssembly))).ToLowerInvariant();
 		var lines = new List<string>
 		{
 			"# DeepFlowTest Payload",
 			string.Empty,
 			$"- targetFramework: {mapping.TargetFramework}",
 			$"- payloadFamily: {mapping.PayloadFamily}",
+			"- protocolVersion: 1",
+			"- entryPoint: DeepFlowTest.AppDriverPayload.AppDriverPayload.Start",
+			$"- fileVersion: {fileVersion}",
+			$"- sha256: {sha256}",
 			$"- repacker: ILRepack",
 			"- internalizedDependencies:",
 		};
@@ -226,12 +248,18 @@ internal sealed class Build
 	private void TestFast()
 	{
 		RunDotNetTest(CoreTestsProject, "--configuration", configuration, "--no-restore");
+		RunDotNetTest(PayloadTestsProject, "--configuration", configuration, "--no-restore");
 		RunDotNetTest(CliTestsProject, "--configuration", configuration, "--no-restore");
 	}
 
 	private void TestCore()
 	{
 		RunDotNetTest(CoreTestsProject, "--configuration", configuration, "--no-restore");
+	}
+
+	private void TestPayload()
+	{
+		RunDotNetTest(PayloadTestsProject, "--configuration", configuration, "--no-restore");
 	}
 
 	private void TestCli()
@@ -470,7 +498,6 @@ internal sealed class Build
 
 	private static IReadOnlyList<string> LibraryRuntimeDependencies { get; } = new[]
 	{
-		"Lib.Harmony",
 		"Microsoft.CSharp",
 		"Newtonsoft.Json",
 		"Serialize.Linq",
@@ -657,6 +684,12 @@ internal sealed class Build
 	private string NativeInjectorProject => Path.Combine(rootDirectory, "DeepFlowTest.GenericInjector", "DeepFlowTest.GenericInjector.vcxproj");
 
 	private string CoreTestsProject => Path.Combine(rootDirectory, "DeepFlowTest.Tests", "DeepFlowTest.Tests.csproj");
+
+	private string ClientProject => Path.Combine(rootDirectory, "DeepFlowTest", "DeepFlowTest.csproj");
+
+	private string PayloadProject => Path.Combine(rootDirectory, "DeepFlowTest.Payload", "DeepFlowTest.Payload.csproj");
+
+	private string PayloadTestsProject => Path.Combine(rootDirectory, "DeepFlowTest.Payload.Tests", "DeepFlowTest.Payload.Tests.csproj");
 
 	private string CliTestsProject => Path.Combine(rootDirectory, "DeepFlowTest.Cli.Tests", "DeepFlowTest.Cli.Tests.csproj");
 

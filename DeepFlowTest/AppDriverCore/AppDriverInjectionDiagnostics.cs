@@ -3,7 +3,6 @@ namespace DeepFlowTest;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using DeepFlowTest.AppDriverPayload;
 
 internal static class AppDriverInjectionDiagnostics
 {
@@ -21,7 +20,7 @@ internal static class AppDriverInjectionDiagnostics
 		int maxCharacters = 4096)
 	{
 		var sections = new List<string>();
-		var payloadLogPath = PayloadLog.GetLogPath(pipeName, processId);
+		var payloadLogPath = PayloadDiagnosticsPaths.GetPayloadLogPath(pipeName, processId);
 		if (TryReadFileTail(payloadLogPath, out var payloadTail, maxCharacters))
 			sections.Add(FormatSection("Payload log tail", payloadLogPath, payloadTail));
 

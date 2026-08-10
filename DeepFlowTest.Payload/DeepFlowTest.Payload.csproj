@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <TargetFrameworks>net461;netcoreapp3.1;net5.0-windows</TargetFrameworks>
+    <AssemblyName>DeepFlowTest</AssemblyName>
+    <RootNamespace>DeepFlowTest</RootNamespace>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <IsPackable>false</IsPackable>
+	<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <OutputPath>$(RepositoryRoot)artifacts\payload-bin\$(Configuration)\$(TargetFramework)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+	<IntermediateOutputPath>$(BaseIntermediateOutputPath)$(Configuration)\$(TargetFramework)\</IntermediateOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+	<Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="AppDriverPayload\**\*.cs" />
+    <Compile Include="Utility\**\*.cs" />
+    <Compile Include="Interop\**\*.cs" />
+    <Compile Include="..\Shared\NativeMethods.cs" Link="Shared\NativeMethods.cs" />
+    <Compile Include="..\Shared\NativeMethods.Kernel32.cs" Link="Shared\NativeMethods.Kernel32.cs" />
+    <Compile Include="..\Shared\NativeMethods.User32.cs" Link="Shared\NativeMethods.User32.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" />
+    <PackageReference Include="Microsoft.CSharp" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="Serialize.Linq" />
+    <PackageReference Include="System.Buffers" />
+    <PackageReference Include="System.Memory" />
+    <PackageReference Include="System.ValueTuple" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net461'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net461" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Import Project="..\Shared\Protocol\DeepFlowTest.Protocol.projitems" />
+  <Import Project="..\Shared\QueryModel\DeepFlowTest.QueryModel.projitems" />
+</Project>

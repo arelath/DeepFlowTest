@@ -31,7 +31,7 @@ public sealed class ReliabilityPackagingTests
 	[Test]
 	public void PublishLayoutConfigurationIncludesPayloadAndResourceFolders()
 	{
-		var root = Path.Combine(TestContext.CurrentContext.TestDirectory, "..", "..", "..");
+		var root = FindRepositoryRoot();
 		var project = File.ReadAllText(Path.Combine(root, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj"));
 		var payloadLayoutTargets = File.ReadAllText(Path.Combine(root, "Shared", "DeepFlowTestPayloadLayout.targets"));
 
@@ -46,7 +46,7 @@ public sealed class ReliabilityPackagingTests
 	[Test]
 	public void CiWorkflowDeclaresFastAndPublishLanes()
 	{
-		var workflow = File.ReadAllText(Path.Combine(TestContext.CurrentContext.TestDirectory, "..", "..", "..", ".github", "workflows", "ci.yml"));
+		var workflow = File.ReadAllText(Path.Combine(FindRepositoryRoot(), ".github", "workflows", "ci.yml"));
 
 		Assert.That(workflow, Does.Contain("TestFast"));
 		Assert.That(workflow, Does.Contain("PublishCli"));
@@ -56,8 +56,22 @@ public sealed class ReliabilityPackagingTests
 	[Test]
 	public void PerformanceBudgetDocumentExists()
 	{
-		var path = Path.Combine(TestContext.CurrentContext.TestDirectory, "..", "..", "..", "Docs", "PerformanceBudgets.md");
+		var path = Path.Combine(FindRepositoryRoot(), "Docs", "PerformanceBudgets.md");
 
 		Assert.That(File.Exists(path), Is.True);
+	}
+
+	private static string FindRepositoryRoot()
+	{
+		var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+		while (directory is not null)
+		{
+			if (File.Exists(Path.Combine(directory.FullName, "DeepFlowTest.sln")))
+				return directory.FullName;
+
+			directory = directory.Parent;
+		}
+
+		throw new DirectoryNotFoundException("Could not locate the DeepFlowTest repository root.");
 	}
 }
