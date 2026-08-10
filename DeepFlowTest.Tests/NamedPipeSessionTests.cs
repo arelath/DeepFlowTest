@@ -167,6 +167,72 @@ public sealed class NamedPipeSessionTests
 	}
 
 	[Test]
+	public async Task ClientRecreatesPipeAfterResponseTimeout()
+	{
+		var pipeName = UniquePipeName();
+		var serverTask = Task.Run(() =>
+		{
+			using (var firstPipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte))
+			{
+				firstPipe.WaitForConnection();
+				_ = MessagePacker.ReadFrame(firstPipe);
+				var frameAfterTimeout = MessagePacker.ReadFrame(firstPipe);
+				if (frameAfterTimeout.HasFrame)
+					throw new InvalidOperationException("The timed-out client did not disconnect its pipe.");
+			}
+
+			using var secondPipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte);
+			secondPipe.WaitForConnection();
+			_ = MessagePacker.ReadFrame(secondPipe);
+			MessagePacker.WriteFrame(secondPipe, StandardIpcResponse.Ok());
+		});
+
+		using var client = new NamedPipeClient(pipeName);
+		Assert.That(
+			async () => await client.SendAsync(new HelloCommandRequest(), responseTimeoutMs: 50),
+			Throws.TypeOf<NamedPipeSessionException>().With.Property(nameof(NamedPipeSessionException.ErrorCode)).EqualTo(ProtocolConstants.ErrorCodes.CommandTimeout));
+
+		var response = MessagePacker.ConvertTo<StandardIpcResponse>(
+			await client.SendAsync(new HelloCommandRequest(), responseTimeoutMs: 2000));
+
+		Assert.That(response.Success, Is.True);
+		await serverTask;
+	}
+
+	[Test]
+	public async Task ClientSerializesConcurrentRequestResponseExchanges()
+	{
+		var pipeName = UniquePipeName();
+		var firstCommandReceived = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var releaseFirstResponse = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var serverTask = Task.Run(() =>
+		{
+			using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte);
+			pipe.WaitForConnection();
+			var first = MessagePacker.ConvertTo<IpcCommand>(MessagePacker.ReadFrame(pipe).Message!);
+			firstCommandReceived.SetResult(true);
+			releaseFirstResponse.Task.GetAwaiter().GetResult();
+			MessagePacker.WriteFrame(pipe, new StandardIpcResponse { Status = first.Kind });
+
+			var second = MessagePacker.ConvertTo<IpcCommand>(MessagePacker.ReadFrame(pipe).Message!);
+			MessagePacker.WriteFrame(pipe, new StandardIpcResponse { Status = second.Kind });
+		});
+
+		using var client = new NamedPipeClient(pipeName);
+		var firstSend = client.SendAsync(new HelloCommandRequest(), responseTimeoutMs: 2000);
+		await firstCommandReceived.Task;
+		var secondSend = client.SendAsync(new PingCommandRequest(), responseTimeoutMs: 2000);
+		releaseFirstResponse.SetResult(true);
+
+		var firstResponse = MessagePacker.ConvertTo<StandardIpcResponse>(await firstSend);
+		var secondResponse = MessagePacker.ConvertTo<StandardIpcResponse>(await secondSend);
+
+		Assert.That(firstResponse.Status, Is.EqualTo(ProtocolConstants.Commands.Hello));
+		Assert.That(secondResponse.Status, Is.EqualTo(ProtocolConstants.Commands.Ping));
+		await serverTask;
+	}
+
+	[Test]
 	public void ClientRechecksTargetExitAfterResponseTimeout()
 	{
 		var pipeName = UniquePipeName();
@@ -188,6 +254,31 @@ public sealed class NamedPipeSessionTests
 
 		releaseServer.SetResult(true);
 		Assert.That(serverTask.Wait(TimeSpan.FromSeconds(2)), Is.True);
+	}
+
+	[Test]
+	public async Task CommandSessionDoesNotMutateCallerCommandWhenApplyingDefaultTimeout()
+	{
+		var pipeName = UniquePipeName();
+		var receivedTimeout = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var serverTask = Task.Run(() =>
+		{
+			using var server = new NamedPipeServer(pipeName);
+			var receivedCommand = server.WaitForNextCommand();
+			receivedTimeout.SetResult(MessagePacker.ConvertTo<IpcCommand>(receivedCommand.Value).TimeoutMs);
+			receivedCommand.Respond(new HelloCommandResponse());
+		});
+		var command = new HelloCommandRequest();
+		using var connection = AppConnection.ForAttach(new FakeTargetProcess(), pipeName, "dotnet");
+		var session = new NamedPipeAppDriverCommandSession(
+			connection,
+			new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(250) });
+
+		_ = session.Send<HelloCommandResponse>(command);
+
+		Assert.That(command.TimeoutMs, Is.Null);
+		Assert.That(await receivedTimeout.Task, Is.EqualTo(250));
+		await serverTask;
 	}
 
 	private static string UniquePipeName()

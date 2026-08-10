@@ -7,14 +7,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.Contracts;
 
-public sealed class NamedPipeClient : IDisposable
+internal sealed class NamedPipeClient : IDisposable
 {
-	private readonly NamedPipeClientStream pipe;
+	private readonly SemaphoreSlim sendLock = new(1, 1);
 	private readonly Func<int?> getTargetExitCode;
 	private readonly Func<string?> readTargetCrashLog;
 	private readonly Action? requestReinjection;
 	private readonly int connectTimeoutMs;
 	private readonly int connectRetryCount;
+	private NamedPipeClientStream pipe;
+	private bool isDisposed;
 
 	public NamedPipeClient(
 		string pipeName,
@@ -30,14 +32,26 @@ public sealed class NamedPipeClient : IDisposable
 		this.requestReinjection = requestReinjection;
 		this.connectTimeoutMs = connectTimeoutMs;
 		this.connectRetryCount = Math.Max(1, connectRetryCount);
-		pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+		pipe = CreatePipe();
 	}
 
 	public string PipeName { get; }
 
 	public void Dispose()
 	{
-		pipe.Dispose();
+		sendLock.Wait();
+		try
+		{
+			if (isDisposed)
+				return;
+
+			isDisposed = true;
+			pipe.Dispose();
+		}
+		finally
+		{
+			sendLock.Release();
+		}
 	}
 
 	public object Send(object command, int responseTimeoutMs = TimeoutDefaults.CommandTimeoutMs)
@@ -48,37 +62,59 @@ public sealed class NamedPipeClient : IDisposable
 	public async Task<object> SendAsync(object command, int responseTimeoutMs = TimeoutDefaults.CommandTimeoutMs, CancellationToken cancellationToken = default)
 	{
 		_ = command ?? throw new ArgumentNullException(nameof(command));
+		if (responseTimeoutMs <= 0)
+			throw new ArgumentOutOfRangeException(nameof(responseTimeoutMs), responseTimeoutMs, "The response timeout must be greater than zero.");
 
-		ThrowIfTargetExited();
-		await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
-		ThrowIfTargetExited();
-
+		await sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
-			await TimeoutAfter(MessagePacker.WriteFrameAsync(pipe, command, cancellationToken), TimeSpan.FromMilliseconds(responseTimeoutMs), cancellationToken)
-				.ConfigureAwait(false);
+			ThrowIfDisposed();
+			ThrowIfTargetExited();
+			await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
 			ThrowIfTargetExited();
 
-			var responseFrame = await TimeoutAfter(MessagePacker.ReadFrameAsync(pipe, cancellationToken), TimeSpan.FromMilliseconds(responseTimeoutMs), cancellationToken)
-				.ConfigureAwait(false);
-			if (!responseFrame.HasFrame || responseFrame.Message is null)
-				throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.ProtocolError, "The pipe closed before a response frame was received.");
+			using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+			timeoutSource.CancelAfter(TimeSpan.FromMilliseconds(responseTimeoutMs));
+			var operationToken = timeoutSource.Token;
 
-			return responseFrame.Message;
+			try
+			{
+				await MessagePacker.WriteFrameAsync(pipe, command, operationToken).ConfigureAwait(false);
+				ThrowIfTargetExited();
+
+				var responseFrame = await MessagePacker.ReadFrameAsync(pipe, operationToken).ConfigureAwait(false);
+				if (!responseFrame.HasFrame || responseFrame.Message is null)
+				{
+					ResetPipe();
+					throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.ProtocolError, "The pipe closed before a response frame was received.");
+				}
+
+				return responseFrame.Message;
+			}
+			catch (OperationCanceledException ex)
+			{
+				ResetPipe();
+				ThrowIfTargetExited();
+				if (cancellationToken.IsCancellationRequested)
+					throw;
+
+				throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.CommandTimeout, $"Command timed out after {responseTimeoutMs} ms.", ex);
+			}
+			catch (IOException ex)
+			{
+				ResetPipe();
+				ThrowIfTargetExited();
+				throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.ProtocolError, "The pipe disconnected while processing a command.", ex);
+			}
+			catch (ProtocolException ex)
+			{
+				ResetPipe();
+				throw new NamedPipeSessionException(ex.ErrorCode, "The pipe returned a malformed response.", ex);
+			}
 		}
-		catch (TimeoutException ex)
+		finally
 		{
-			ThrowIfTargetExited();
-			throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.CommandTimeout, $"Command timed out after {responseTimeoutMs} ms.", ex);
-		}
-		catch (IOException ex)
-		{
-			ThrowIfTargetExited();
-			throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.ProtocolError, "The pipe disconnected while processing a command.", ex);
-		}
-		catch (ProtocolException ex)
-		{
-			throw new NamedPipeSessionException(ex.ErrorCode, "The pipe returned a malformed response.", ex);
+			sendLock.Release();
 		}
 	}
 
@@ -105,6 +141,24 @@ public sealed class NamedPipeClient : IDisposable
 
 		ThrowIfTargetExited();
 		throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.ProtocolError, $"Could not connect to pipe '{PipeName}'.", lastTimeout!);
+	}
+
+	private NamedPipeClientStream CreatePipe()
+	{
+		return new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+	}
+
+	private void ResetPipe()
+	{
+		pipe.Dispose();
+		if (!isDisposed)
+			pipe = CreatePipe();
+	}
+
+	private void ThrowIfDisposed()
+	{
+		if (isDisposed)
+			throw new ObjectDisposedException(nameof(NamedPipeClient));
 	}
 
 	private void ThrowIfTargetExited()
@@ -138,30 +192,4 @@ public sealed class NamedPipeClient : IDisposable
 		}
 	}
 
-	private static async Task TimeoutAfter(Task task, TimeSpan timeout, CancellationToken cancellationToken)
-	{
-		using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-		var completed = await Task.WhenAny(task, Task.Delay(timeout, timeoutSource.Token)).ConfigureAwait(false);
-		if (completed == task)
-		{
-			timeoutSource.Cancel();
-			await task.ConfigureAwait(false);
-			return;
-		}
-
-		throw new TimeoutException();
-	}
-
-	private static async Task<T> TimeoutAfter<T>(Task<T> task, TimeSpan timeout, CancellationToken cancellationToken)
-	{
-		using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-		var completed = await Task.WhenAny(task, Task.Delay(timeout, timeoutSource.Token)).ConfigureAwait(false);
-		if (completed == task)
-		{
-			timeoutSource.Cancel();
-			return await task.ConfigureAwait(false);
-		}
-
-		throw new TimeoutException();
-	}
 }

@@ -20,8 +20,8 @@ public sealed class NamedPipeAppDriverCommandSession(AppConnection connection, A
 		// Have the payload honour the same timeout the client is waiting for. Without this, the
 		// payload falls back to its short default command timeout, which is too tight for slow UI
 		// actions like Click on a complex WPF menu.
-		command.TimeoutMs ??= timeoutMs;
-		var response = client.Send(command, timeoutMs);
+		var commandWithTimeout = command with { TimeoutMs = command.TimeoutMs ?? timeoutMs };
+		var response = client.Send(commandWithTimeout, timeoutMs);
 		return MessagePacker.ConvertTo<TResponse>(response);
 	}
 
