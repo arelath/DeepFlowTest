@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using DeepFlowTest.Contracts;
 
 public sealed class VirtualPointerOptions
@@ -37,8 +38,17 @@ public sealed class VirtualPointerOptions
 public class AppDriverOptions
 {
 	private IReadOnlyList<TimeSpan> elementPollBackoff = CreateDefaultElementPollBackoff();
+	private long timeoutTicks = TimeoutDefaults.AppDriverTimeout.Ticks;
 
-	public TimeSpan Timeout { get; init; } = TimeoutDefaults.AppDriverTimeout;
+	public TimeSpan Timeout
+	{
+		get => TimeSpan.FromTicks(Interlocked.Read(ref timeoutTicks));
+		set
+		{
+			_ = DurationUtility.ToMilliseconds(value, nameof(Timeout));
+			Interlocked.Exchange(ref timeoutTicks, value.Ticks);
+		}
+	}
 
 	public bool AllowInjection { get; init; } = true;
 

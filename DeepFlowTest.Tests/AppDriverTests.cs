@@ -203,6 +203,18 @@ public sealed class AppDriverTests
 	}
 
 	[Test]
+	public void TimeoutCanBeChangedAtRuntimeAndRejectsInvalidAssignmentsImmediately()
+	{
+		var options = new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(250) };
+
+		options.Timeout = TimeSpan.FromSeconds(2);
+
+		Assert.That(options.Timeout, Is.EqualTo(TimeSpan.FromSeconds(2)));
+		Assert.Throws<ArgumentOutOfRangeException>(() => options.Timeout = TimeSpan.Zero);
+		Assert.That(options.Timeout, Is.EqualTo(TimeSpan.FromSeconds(2)));
+	}
+
+	[Test]
 	public void OptionAndSelectorCollectionsAreDefensiveCopies()
 	{
 		var pollBackoff = new[] { TimeSpan.FromMilliseconds(12) };

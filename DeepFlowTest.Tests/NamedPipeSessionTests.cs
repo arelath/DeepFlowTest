@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Tests;
 
 using System;
+using System.Collections.Generic;
 using System.IO.Pipes;
 using System.Threading.Tasks;
 using DeepFlowTest.Contracts;
@@ -279,6 +280,33 @@ public sealed class NamedPipeSessionTests
 		Assert.That(command.TimeoutMs, Is.Null);
 		Assert.That(await receivedTimeout.Task, Is.EqualTo(250));
 		await serverTask;
+	}
+
+	[Test]
+	public async Task ExistingCommandSessionUsesRuntimeTimeoutChanges()
+	{
+		var pipeName = UniquePipeName();
+		var receivedTimeouts = new List<int?>();
+		var serverTask = Task.Run(() =>
+		{
+			for (var index = 0; index < 2; index++)
+			{
+				using var server = new NamedPipeServer(pipeName);
+				var receivedCommand = server.WaitForNextCommand();
+				receivedTimeouts.Add(MessagePacker.ConvertTo<IpcCommand>(receivedCommand.Value).TimeoutMs);
+				receivedCommand.Respond(new HelloCommandResponse());
+			}
+		});
+		var options = new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(250) };
+		using var connection = AppConnection.ForAttach(new FakeTargetProcess(), pipeName, "dotnet");
+		var session = new NamedPipeAppDriverCommandSession(connection, options);
+
+		_ = session.Send<HelloCommandResponse>(new HelloCommandRequest());
+		options.Timeout = TimeSpan.FromMilliseconds(875);
+		_ = session.Send<HelloCommandResponse>(new HelloCommandRequest());
+
+		await serverTask;
+		Assert.That(receivedTimeouts, Is.EqualTo(new int?[] { 250, 875 }));
 	}
 
 	private static string UniquePipeName()

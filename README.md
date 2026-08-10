@@ -137,6 +137,17 @@ throw. An explicitly started semantic recorder can use `CompleteAsync()` when
 its recording failures should be reported to the caller, while its `Dispose()`
 also remains failure-safe.
 
+The default command timeout can be adjusted on an active driver. The next
+command, selector wait, binding-failure checkpoint, or newly started stream uses
+the updated value:
+
+```csharp
+driver.Options.Timeout = TimeSpan.FromSeconds(30);
+```
+
+Assignments are validated immediately; zero, negative, and unsupported timeout
+values are rejected without changing the current timeout.
+
 For this repo's integration lane, use:
 
 ```powershell

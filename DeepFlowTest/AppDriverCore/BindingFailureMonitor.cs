@@ -14,7 +14,7 @@ internal sealed class BindingFailureMonitor : IDisposable
 {
 	private readonly object sync = new();
 	private readonly IUnsafeAppDriverCommandSession session;
-	private readonly int timeoutMs;
+	private readonly AppDriverOptions driverOptions;
 	private BindingFailureOptions options = new();
 	private readonly List<BindingFailureDto> observedFailures = [];
 	private IAppDriverStreamSession? streamSession;
@@ -29,8 +29,7 @@ internal sealed class BindingFailureMonitor : IDisposable
 	public BindingFailureMonitor(IUnsafeAppDriverCommandSession session, AppDriverOptions driverOptions)
 	{
 		this.session = session ?? throw new ArgumentNullException(nameof(session));
-		_ = driverOptions ?? throw new ArgumentNullException(nameof(driverOptions));
-		timeoutMs = (int)Math.Max(1, driverOptions.Timeout.TotalMilliseconds);
+		this.driverOptions = driverOptions ?? throw new ArgumentNullException(nameof(driverOptions));
 	}
 
 	public event EventHandler<BindingFailureEventArgs>? FailureReceived;
@@ -125,6 +124,7 @@ internal sealed class BindingFailureMonitor : IDisposable
 			lastSequenceNumber = ReadCheckpoint(afterSequenceNumber: null, maxCount: 0).LastSequenceNumber;
 
 		options.Validate();
+		var timeoutMs = GetTimeoutMs();
 		var intervalMs = Math.Max(TimeoutDefaults.BindingFailureStreamMinimumIntervalMs, DurationUtility.ToMilliseconds(options.StreamInterval, nameof(options.StreamInterval)));
 		var request = new StartSendingCommandRequest
 		{
@@ -176,6 +176,7 @@ internal sealed class BindingFailureMonitor : IDisposable
 		{
 			if (!string.IsNullOrWhiteSpace(stream.Start.SubscriptionId))
 			{
+				var timeoutMs = GetTimeoutMs();
 				session.Send<StopSendingCommandResponse>(new StopSendingCommandRequest
 				{
 					SubscriptionId = stream.Start.SubscriptionId,
@@ -212,7 +213,7 @@ internal sealed class BindingFailureMonitor : IDisposable
 		{
 			AfterSequenceNumber = afterSequenceNumber,
 			MaxCount = maxCount,
-			TimeoutMs = timeoutMs,
+			TimeoutMs = GetTimeoutMs(),
 		});
 
 	private long GetLastSequenceNumber()
@@ -223,11 +224,11 @@ internal sealed class BindingFailureMonitor : IDisposable
 
 	private void ReadLoop(IAppDriverStreamSession stream, int intervalMs, CancellationToken token)
 	{
-		var readTimeout = Math.Max(timeoutMs, intervalMs * 2);
 		while (!token.IsCancellationRequested)
 		{
 			try
 			{
+				var readTimeout = Math.Max(GetTimeoutMs(), intervalMs * 2);
 				var frame = stream.ReadFrame(readTimeout, token);
 				if (frame is null)
 					continue;
@@ -253,6 +254,9 @@ internal sealed class BindingFailureMonitor : IDisposable
 			}
 		}
 	}
+
+	private int GetTimeoutMs() =>
+		DurationUtility.ToMilliseconds(driverOptions.Timeout, nameof(driverOptions.Timeout));
 
 	private void ProcessBatch(BindingFailureBatchDto batch)
 	{
