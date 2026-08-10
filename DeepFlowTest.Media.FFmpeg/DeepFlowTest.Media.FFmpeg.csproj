@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <PackageId>DeepFlowTest.Media.FFmpeg</PackageId>
+    <Description>Optional FFmpeg binary used by DeepFlowTest video recording.</Description>
+    <PackageTags>DeepFlowTest;FFmpeg;Media;Recording</PackageTags>
+    <PackageProjectUrl>https://deepflowtest.local</PackageProjectUrl>
+    <RepositoryUrl>https://deepflowtest.local/repository</RepositoryUrl>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>LGPL-3.0-or-later</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="tools\ffmpeg.exe" Pack="true" PackagePath="contentFiles\any\any\DeepFlowTestResources\ffmpeg.exe" PackageCopyToOutput="true" />
+    <None Include="ffmpeg.sha256" Pack="true" PackagePath="provenance\ffmpeg.sha256" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+    <None Include="NOTICE.md" Pack="true" PackagePath="NOTICE.md" />
+    <None Include="DeepFlowTest.Media.FFmpeg.targets" Pack="true" PackagePath="build\DeepFlowTest.Media.FFmpeg.targets" />
+  </ItemGroup>
+
+  <Target Name="ValidateFfmpegBinary" BeforeTargets="GenerateNuspec">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\tools\ffmpeg.exe')" Text="The FFmpeg package source executable is missing." />
+    <ReadLinesFromFile File="$(MSBuildProjectDirectory)\ffmpeg.sha256">
+      <Output TaskParameter="Lines" ItemName="_ExpectedFfmpegHash" />
+    </ReadLinesFromFile>
+    <PropertyGroup>
+      <_ExpectedFfmpegHashValue>@(_ExpectedFfmpegHash)</_ExpectedFfmpegHashValue>
+      <_ExpectedFfmpegHashValue>$(_ExpectedFfmpegHashValue.ToUpperInvariant())</_ExpectedFfmpegHashValue>
+    </PropertyGroup>
+    <GetFileHash Files="$(MSBuildProjectDirectory)\tools\ffmpeg.exe" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_ActualFfmpegHash" />
+    </GetFileHash>
+    <Error
+      Condition="'%(_ActualFfmpegHash.FileHash)' != '$(_ExpectedFfmpegHashValue)'"
+      Text="The FFmpeg executable does not match ffmpeg.sha256." />
+  </Target>
+</Project>

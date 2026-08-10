@@ -129,7 +129,7 @@ public sealed class ExpressionPayloadSerializerTests
 			DeepFlowTest.AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
 			session);
 
-		var elements = driver.GetElements(element => element["Name"] == "Run", timeoutMs: 1);
+		var elements = driver.GetElements(element => element["Name"] == "Run", timeout: TimeSpan.FromMilliseconds(1));
 
 		Assert.That(elements.Single().TargetId, Is.EqualTo("target"));
 		var command = session.SentCommands.OfType<FindElementCommandRequest>().Single();

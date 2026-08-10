@@ -27,6 +27,7 @@ public sealed class DefaultAppDriverBackend : IAppDriverBackend
 	public AppConnection Launch(string executablePath, AppDriverLaunchOptions options)
 	{
 		_ = options ?? throw new ArgumentNullException(nameof(options));
+		options.Validate();
 		if (string.IsNullOrWhiteSpace(executablePath))
 			throw new ArgumentException("Executable path is required.", nameof(executablePath));
 
@@ -46,6 +47,7 @@ public sealed class DefaultAppDriverBackend : IAppDriverBackend
 	public AppConnection AttachTo(int processId, AppDriverAttachOptions options)
 	{
 		_ = options ?? throw new ArgumentNullException(nameof(options));
+		options.Validate();
 		var process = processCatalog.GetById(processId);
 		var connection = AppConnection.ForAttach(process, ResolvePipeName(options, process.Id));
 		InitializeConnection(connection, options, PayloadStartupModes.ReusableCli);
@@ -55,6 +57,7 @@ public sealed class DefaultAppDriverBackend : IAppDriverBackend
 	public AppConnection AttachTo(string processName, AppDriverAttachOptions options)
 	{
 		_ = options ?? throw new ArgumentNullException(nameof(options));
+		options.Validate();
 		var process = AppDriverProcessResolver.ResolveByName(processCatalog.GetProcesses(), processName, options.AllowContainsProcessNameMatch);
 		var connection = AppConnection.ForAttach(process, ResolvePipeName(options, process.Id));
 		InitializeConnection(connection, options, PayloadStartupModes.ReusableCli);

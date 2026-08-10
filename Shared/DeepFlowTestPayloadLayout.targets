@@ -1,37 +1,19 @@
 <Project>
   <Target Name="PrepareDeepFlowTestPayloadLayout" AfterTargets="Build">
-    <MakeDir Directories="$(OutDir)payloads\netframework;$(OutDir)payloads\netcoreapp;$(OutDir)payloads\dotnet;$(OutDir)DeepFlowTestResources\x86;$(OutDir)DeepFlowTestResources\x64;$(OutDir)contentFiles\any\any\DeepFlowTestResources" />
     <ItemGroup>
-      <_DeepFlowPayloadNetFramework Include="$(RepositoryRoot)output\payloads\netframework\**\*.*" />
-      <_DeepFlowPayloadNetCoreApp Include="$(RepositoryRoot)output\payloads\netcoreapp\**\*.*" />
-      <_DeepFlowPayloadDotNet Include="$(RepositoryRoot)output\payloads\dotnet\**\*.*" />
-      <_DeepFlowResourcesX86 Include="$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x86\*.dll;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x86\*.exe;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x86\*.config;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x86\*.pdb" />
-      <_DeepFlowResourcesX64 Include="$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x64\*.dll;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x64\*.exe;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x64\*.config;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x64\*.pdb" />
-      <_DeepFlowToolResources Include="$(RepositoryRoot)Tools\DeepFlowTestResources\**\*.*" />
+      <_DeepFlowPayload Include="$(ArtifactsStagingRoot)payloads\**\*.*" />
+      <_DeepFlowResource Include="$(ArtifactsStagingRoot)DeepFlowTestResources\**\*.dll;$(ArtifactsStagingRoot)DeepFlowTestResources\**\*.exe;$(ArtifactsStagingRoot)DeepFlowTestResources\**\*.config;$(ArtifactsStagingRoot)DeepFlowTestResources\**\*.pdb" />
     </ItemGroup>
-    <Copy SourceFiles="@(_DeepFlowPayloadNetFramework)" DestinationFiles="@(_DeepFlowPayloadNetFramework->'$(OutDir)payloads\netframework\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_DeepFlowPayloadNetCoreApp)" DestinationFiles="@(_DeepFlowPayloadNetCoreApp->'$(OutDir)payloads\netcoreapp\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_DeepFlowPayloadDotNet)" DestinationFiles="@(_DeepFlowPayloadDotNet->'$(OutDir)payloads\dotnet\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_DeepFlowResourcesX86)" DestinationFiles="@(_DeepFlowResourcesX86->'$(OutDir)DeepFlowTestResources\x86\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_DeepFlowResourcesX64)" DestinationFiles="@(_DeepFlowResourcesX64->'$(OutDir)DeepFlowTestResources\x64\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_DeepFlowToolResources)" DestinationFiles="@(_DeepFlowToolResources->'$(OutDir)contentFiles\any\any\DeepFlowTestResources\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_DeepFlowPayload)" DestinationFiles="@(_DeepFlowPayload->'$(OutDir)payloads\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_DeepFlowResource)" DestinationFiles="@(_DeepFlowResource->'$(OutDir)DeepFlowTestResources\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="PrepareDeepFlowTestPayloadPublishLayout" AfterTargets="Publish">
-    <MakeDir Directories="$(PublishDir)payloads\netframework;$(PublishDir)payloads\netcoreapp;$(PublishDir)payloads\dotnet;$(PublishDir)DeepFlowTestResources\x86;$(PublishDir)DeepFlowTestResources\x64;$(PublishDir)contentFiles\any\any\DeepFlowTestResources" />
     <ItemGroup>
-      <_DeepFlowPublishPayloadNetFramework Include="$(RepositoryRoot)output\payloads\netframework\**\*.*" />
-      <_DeepFlowPublishPayloadNetCoreApp Include="$(RepositoryRoot)output\payloads\netcoreapp\**\*.*" />
-      <_DeepFlowPublishPayloadDotNet Include="$(RepositoryRoot)output\payloads\dotnet\**\*.*" />
-      <_DeepFlowPublishResourcesX86 Include="$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x86\*.dll;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x86\*.exe;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x86\*.config;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x86\*.pdb" />
-      <_DeepFlowPublishResourcesX64 Include="$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x64\*.dll;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x64\*.exe;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x64\*.config;$(RepositoryRoot)bin\$(Configuration)\DeepFlowTestResources\x64\*.pdb" />
-      <_DeepFlowPublishToolResources Include="$(RepositoryRoot)Tools\DeepFlowTestResources\**\*.*" />
+      <_DeepFlowPublishPayload Include="$(ArtifactsStagingRoot)payloads\**\*.*" />
+      <_DeepFlowPublishResource Include="$(ArtifactsStagingRoot)DeepFlowTestResources\**\*.dll;$(ArtifactsStagingRoot)DeepFlowTestResources\**\*.exe;$(ArtifactsStagingRoot)DeepFlowTestResources\**\*.config;$(ArtifactsStagingRoot)DeepFlowTestResources\**\*.pdb" />
     </ItemGroup>
-    <Copy SourceFiles="@(_DeepFlowPublishPayloadNetFramework)" DestinationFiles="@(_DeepFlowPublishPayloadNetFramework->'$(PublishDir)payloads\netframework\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_DeepFlowPublishPayloadNetCoreApp)" DestinationFiles="@(_DeepFlowPublishPayloadNetCoreApp->'$(PublishDir)payloads\netcoreapp\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_DeepFlowPublishPayloadDotNet)" DestinationFiles="@(_DeepFlowPublishPayloadDotNet->'$(PublishDir)payloads\dotnet\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_DeepFlowPublishResourcesX86)" DestinationFiles="@(_DeepFlowPublishResourcesX86->'$(PublishDir)DeepFlowTestResources\x86\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_DeepFlowPublishResourcesX64)" DestinationFiles="@(_DeepFlowPublishResourcesX64->'$(PublishDir)DeepFlowTestResources\x64\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_DeepFlowPublishToolResources)" DestinationFiles="@(_DeepFlowPublishToolResources->'$(PublishDir)contentFiles\any\any\DeepFlowTestResources\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_DeepFlowPublishPayload)" DestinationFiles="@(_DeepFlowPublishPayload->'$(PublishDir)payloads\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_DeepFlowPublishResource)" DestinationFiles="@(_DeepFlowPublishResource->'$(PublishDir)DeepFlowTestResources\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

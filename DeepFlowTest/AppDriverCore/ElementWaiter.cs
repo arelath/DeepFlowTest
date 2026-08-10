@@ -69,10 +69,10 @@ internal sealed class ElementWaiter(AppDriverOptions options)
 
 	private int GetElementPollDelayMs(int attempt)
 	{
-		var backoff = options.ElementPollBackoffMs ?? [];
+		var backoff = options.ElementPollBackoff;
 		var index = attempt - 1;
-		if (index >= 0 && index < backoff.Length)
-			return Math.Max(0, backoff[index]);
+		if (index >= 0 && index < backoff.Count)
+			return DurationUtility.ToMilliseconds(backoff[index], nameof(options.ElementPollBackoff), allowZero: true);
 
 		return TimeoutDefaults.ElementPollFallbackDelayMs;
 	}

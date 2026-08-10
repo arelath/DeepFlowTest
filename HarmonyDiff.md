@@ -55,13 +55,11 @@ Source refs:
 
 DeepFlowTest does not have an equivalent payload-side `LoadDependencies(...)` or explicit `Load("0Harmony.dll")` call in `AppDriverPayload`.
 
-Instead, the build repacks payload dependencies into per-framework payload assemblies. `.build/Build.cs` includes `0Harmony.dll` in `GetPayloadDependencies(...)`, then writes payloads under `output/payloads/<family>/DeepFlowTest.dll`.
+Instead, the payload project marks Harmony as an internalized payload dependency. `Shared/DeepFlowTest.PayloadRepack.targets` consumes that MSBuild metadata and writes payloads under `artifacts/staging/payloads/<family>/DeepFlowTest.dll`.
 
 Source refs:
-- `.build/Build.cs:136`
-- `.build/Build.cs:145`
-- `.build/Build.cs:167`
-- `.build/Build.cs:173`
+- `DeepFlowTest.Payload/DeepFlowTest.Payload.csproj`
+- `Shared/DeepFlowTest.PayloadRepack.targets`
 
 Impact:
 - WpfPilot2 expects `0Harmony.dll` to be present beside the injected payload.

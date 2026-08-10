@@ -1,56 +1,96 @@
 namespace DeepFlowTest;
 
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Linq;
 using DeepFlowTest.Contracts;
 
 public sealed class VirtualPointerOptions
 {
-	internal const int DefaultHideDelayMs = 800;
+	internal static readonly TimeSpan DefaultHideDelay = TimeSpan.FromMilliseconds(800);
 
-	public bool Enabled { get; set; }
+	public bool Enabled { get; init; }
 
-	public bool ShowClickRipples { get; set; } = true;
+	public bool ShowClickRipples { get; init; } = true;
 
-	public bool ShowDragTrail { get; set; } = true;
+	public bool ShowDragTrail { get; init; } = true;
 
-	public int HideDelayMs { get; set; } = DefaultHideDelayMs;
+	public TimeSpan HideDelay { get; init; } = DefaultHideDelay;
 
-	public bool IncludeInScreenshots { get; set; }
+	public bool IncludeInScreenshots { get; init; }
 
 	internal bool IsDefault =>
 		!Enabled
 		&& ShowClickRipples
 		&& ShowDragTrail
-		&& HideDelayMs == DefaultHideDelayMs
+		&& HideDelay == DefaultHideDelay
 		&& !IncludeInScreenshots;
+
+	internal void Validate()
+	{
+		_ = DurationUtility.ToMilliseconds(HideDelay, nameof(HideDelay), allowZero: true);
+	}
 }
 
 public class AppDriverOptions
 {
-	public TimeSpan Timeout { get; set; } = TimeoutDefaults.AppDriverTimeout;
+	private IReadOnlyList<TimeSpan> elementPollBackoff = CreateDefaultElementPollBackoff();
 
-	public bool AllowInjection { get; set; } = true;
+	public TimeSpan Timeout { get; init; } = TimeoutDefaults.AppDriverTimeout;
 
-	public string? PipeName { get; set; }
+	public bool AllowInjection { get; init; } = true;
 
-	public string PayloadRoot { get; set; } = AppContext.BaseDirectory;
+	public string? PipeName { get; init; }
 
-	public string InjectorLauncherPath { get; set; } = ResolveDefaultInjectorLauncherPath();
+	public string PayloadRoot { get; init; } = AppContext.BaseDirectory;
 
-	public int[] ElementPollBackoffMs { get; set; } = TimeoutDefaults.CreateElementPollBackoffMs();
+	public string InjectorLauncherPath { get; init; } = ResolveDefaultInjectorLauncherPath();
 
-	public bool FailOnBindingFailures { get; set; }
+	public IReadOnlyList<TimeSpan> ElementPollBackoff
+	{
+		get => elementPollBackoff;
+		init => elementPollBackoff = Copy(value, nameof(ElementPollBackoff));
+	}
 
-	public BindingFailureOptions BindingFailures { get; } = new();
+	public bool FailOnBindingFailures { get; init; }
 
-	public bool AutoSemanticRecordingEnabled { get; set; } = true;
+	public BindingFailureOptions BindingFailures { get; init; } = new();
 
-	public string? AutoSemanticRecordingOutputPath { get; set; }
+	public AutomaticDiagnosticsOptions AutomaticDiagnostics { get; init; } = new();
 
-	public SemanticRecordingOptions AutoSemanticRecordingOptions { get; } = new();
+	public bool AutoSemanticRecordingEnabled { get; init; }
 
-	public VirtualPointerOptions VirtualPointer { get; } = new();
+	public string? AutoSemanticRecordingOutputPath { get; init; }
+
+	public SemanticRecordingOptions AutoSemanticRecordingOptions { get; init; } = new();
+
+	public VirtualPointerOptions VirtualPointer { get; init; } = new();
+
+	internal void Validate()
+	{
+		_ = DurationUtility.ToMilliseconds(Timeout, nameof(Timeout));
+		if (string.IsNullOrWhiteSpace(PayloadRoot))
+			throw new ArgumentException("A payload root is required.", nameof(PayloadRoot));
+		if (string.IsNullOrWhiteSpace(InjectorLauncherPath))
+			throw new ArgumentException("An injector launcher path is required.", nameof(InjectorLauncherPath));
+		if (elementPollBackoff is null)
+			throw new ArgumentNullException(nameof(ElementPollBackoff));
+		foreach (var delay in elementPollBackoff)
+			_ = DurationUtility.ToMilliseconds(delay, nameof(ElementPollBackoff), allowZero: true);
+
+		(BindingFailures ?? throw new ArgumentNullException(nameof(BindingFailures))).Validate();
+		(AutomaticDiagnostics ?? throw new ArgumentNullException(nameof(AutomaticDiagnostics))).Validate();
+		(AutoSemanticRecordingOptions ?? throw new ArgumentNullException(nameof(AutoSemanticRecordingOptions))).Validate();
+		(VirtualPointer ?? throw new ArgumentNullException(nameof(VirtualPointer))).Validate();
+	}
+
+	private static IReadOnlyList<TimeSpan> CreateDefaultElementPollBackoff() =>
+		new ReadOnlyCollection<TimeSpan>(TimeoutDefaults.CreateElementPollBackoffMs().Select(static milliseconds => TimeSpan.FromMilliseconds(milliseconds)).ToArray());
+
+	private static IReadOnlyList<TimeSpan> Copy(IReadOnlyList<TimeSpan>? source, string parameterName) =>
+		new ReadOnlyCollection<TimeSpan>((source ?? throw new ArgumentNullException(parameterName)).ToArray());
 
 	private static string ResolveDefaultInjectorLauncherPath()
 	{
@@ -68,16 +108,16 @@ public class AppDriverOptions
 
 public sealed class AppDriverLaunchOptions : AppDriverOptions
 {
-	public string? Arguments { get; set; }
+	public string? Arguments { get; init; }
 
-	public string? WorkingDirectory { get; set; }
+	public string? WorkingDirectory { get; init; }
 
-	public ProcessStartInfo? ProcessStartInfo { get; set; }
+	public ProcessStartInfo? ProcessStartInfo { get; init; }
 
-	public bool OwnsProcess { get; set; } = true;
+	public bool OwnsProcess { get; init; } = true;
 }
 
 public sealed class AppDriverAttachOptions : AppDriverOptions
 {
-	public bool AllowContainsProcessNameMatch { get; set; } = true;
+	public bool AllowContainsProcessNameMatch { get; init; } = true;
 }

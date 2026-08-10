@@ -13,7 +13,7 @@ using DeepFlowTest.Interop;
 internal sealed class BindingFailureMonitor : IDisposable
 {
 	private readonly object sync = new();
-	private readonly IAppDriverCommandSession session;
+	private readonly IUnsafeAppDriverCommandSession session;
 	private readonly int timeoutMs;
 	private BindingFailureOptions options = new();
 	private readonly List<BindingFailureDto> observedFailures = [];
@@ -26,7 +26,7 @@ internal sealed class BindingFailureMonitor : IDisposable
 	private Exception? backgroundError;
 	private bool disposed;
 
-	public BindingFailureMonitor(IAppDriverCommandSession session, AppDriverOptions driverOptions)
+	public BindingFailureMonitor(IUnsafeAppDriverCommandSession session, AppDriverOptions driverOptions)
 	{
 		this.session = session ?? throw new ArgumentNullException(nameof(session));
 		_ = driverOptions ?? throw new ArgumentNullException(nameof(driverOptions));
@@ -124,7 +124,8 @@ internal sealed class BindingFailureMonitor : IDisposable
 		else
 			lastSequenceNumber = ReadCheckpoint(afterSequenceNumber: null, maxCount: 0).LastSequenceNumber;
 
-		var intervalMs = Math.Max(TimeoutDefaults.BindingFailureStreamMinimumIntervalMs, options.StreamIntervalMs);
+		options.Validate();
+		var intervalMs = Math.Max(TimeoutDefaults.BindingFailureStreamMinimumIntervalMs, DurationUtility.ToMilliseconds(options.StreamInterval, nameof(options.StreamInterval)));
 		var request = new StartSendingCommandRequest
 		{
 			StreamKind = ProtocolConstants.StreamKinds.BindingFailures,
@@ -377,16 +378,15 @@ internal sealed class BindingFailureMonitor : IDisposable
 
 	private static BindingFailureOptions Clone(BindingFailureOptions source)
 	{
-		var clone = new BindingFailureOptions
+		return new BindingFailureOptions
 		{
-			StreamIntervalMs = source.StreamIntervalMs,
+			StreamInterval = source.StreamInterval,
 			MaxBufferedFailures = source.MaxBufferedFailures,
 			MinimumSeverity = source.MinimumSeverity,
 			IncludeExistingFailures = source.IncludeExistingFailures,
 			AssertOnDispose = source.AssertOnDispose,
+			Ignore = source.Ignore,
 		};
-		clone.Ignore.AddRange(source.Ignore);
-		return clone;
 	}
 
 	private void ThrowIfDisposed()

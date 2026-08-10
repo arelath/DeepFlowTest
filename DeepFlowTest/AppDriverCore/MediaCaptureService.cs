@@ -156,7 +156,7 @@ internal sealed class MediaCaptureService(DriverCommandClient commandClient)
 		if (path is not null)
 			return path;
 
-		throw new FileNotFoundException("FFmpeg was not found. Expected ffmpeg.exe under DeepFlowTestResources next to the DeepFlowTest assembly.", candidates[0]);
+		throw new FileNotFoundException("FFmpeg was not found. Install DeepFlowTest.Media.FFmpeg, set AppDriver.RecordingFfmpegPathOverride, or place ffmpeg.exe under DeepFlowTestResources next to the DeepFlowTest assembly.", candidates[0]);
 	}
 
 	private static string EscapeFfmpegArgument(string value) =>

@@ -102,18 +102,42 @@ library and CLI. Build through the solution or `.\build.ps1 Compile` so the
 output contains `payloads\*` and both `DeepFlowTestResources\x86` and
 `DeepFlowTestResources\x64`.
 
+Video recording requires an FFmpeg executable. It is intentionally not bundled
+with the core automation package. Install the optional
+`DeepFlowTest.Media.FFmpeg` package, or set
+`AppDriver.RecordingFfmpegPathOverride` to an externally managed FFmpeg path.
+
 ## Semantic Recordings for Tests
 
-`AppDriver` writes condensed semantic recording files automatically while it is
-attached to a target. This is on by default so a failing run leaves a readable
-UX trace without needing to remember an opt-in switch.
+`AppDriver` uses `FailureOnly` automatic diagnostics by default. Semantic frames
+are kept in a bounded in-memory ring buffer and are written only when the test or
+driver is marked as failed. A failure artifact set can include the semantic
+trace, final screenshot, final visual-tree snapshot, injector and payload logs,
+protocol diagnostics, and a versioned manifest. The default artifact sink uses
+the test runner's result directory and test name when available.
 
-By default, recordings are written under `semantic-recordings` next to the test
-assembly. The DeepFlowTest integration test helper overrides that path to use
-the NUnit work directory and test name.
+Select a different lifecycle with `AppDriverOptions.AutomaticDiagnostics`:
 
-Set `AppDriverOptions.AutoSemanticRecordingEnabled = false` when you
-intentionally want to turn them off. For this repo's integration lane, use:
+```csharp
+var options = new AppDriverOptions
+{
+    AutomaticDiagnostics = new AutomaticDiagnosticsOptions
+    {
+        Mode = AutomaticDiagnosticsMode.Always, // FailureOnly, Always, Manual, or Off
+        MaximumArtifactSizeBytes = 32 * 1024 * 1024,
+        RetentionPolicy = DiagnosticsRetentionPolicy.KeepAll,
+    },
+};
+```
+
+Use `driver.MarkDiagnosticsFailure(exception)` for failures raised outside a
+DeepFlowTest command or assertion. Automatic recording and artifact errors are
+available through `driver.Diagnostics`; they never make `AppDriver.Dispose()`
+throw. An explicitly started semantic recorder can use `CompleteAsync()` when
+its recording failures should be reported to the caller, while its `Dispose()`
+also remains failure-safe.
+
+For this repo's integration lane, use:
 
 ```powershell
 dotnet test .\DeepFlowTest.Tests\DeepFlowTest.Tests.csproj --filter "FullyQualifiedName~RunningProcessAttachIntegrationTests"

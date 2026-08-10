@@ -3,7 +3,7 @@ param(
   [Parameter(Mandatory = $true)]
   [int]$Pid,
 
-  [string]$CliPath = ".\artifacts\DeepFlowTest.Cli\Release\DeepFlowTest.Cli.exe"
+  [string]$CliPath = ".\artifacts\publish\DeepFlowTest.Cli\Release\DeepFlowTest.Cli.exe"
 )
 
 Set-StrictMode -Version 2.0

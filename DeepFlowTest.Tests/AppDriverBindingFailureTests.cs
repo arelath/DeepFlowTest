@@ -14,7 +14,7 @@ public sealed class AppDriverBindingFailureTests
 	{
 		var session = new BindingFailureSession();
 		session.EnqueueCheckpoint(new BindingFailureBatchDto { LastSequenceNumber = 0 });
-		session.EnqueueCommandResponse(StandardIpcResponse.Ok());
+		session.EnqueueCommandResponse(new ScreenshotCommandResponse());
 		session.EnqueueCheckpoint(new BindingFailureBatchDto
 		{
 			LastSequenceNumber = 1,
@@ -29,11 +29,15 @@ public sealed class AppDriverBindingFailureTests
 				},
 			},
 		});
-		var options = new AppDriverOptions { FailOnBindingFailures = true, Timeout = TimeSpan.FromMilliseconds(100) };
-		options.BindingFailures.AssertOnDispose = false;
+		var options = new AppDriverOptions
+		{
+			FailOnBindingFailures = true,
+			Timeout = TimeSpan.FromMilliseconds(100),
+			BindingFailures = new BindingFailureOptions { AssertOnDispose = false },
+		};
 		using var driver = AppDriver.CreateForTests(AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"), session, options);
 
-		var exception = Assert.Throws<AssertionException>(() => driver.Send<StandardIpcResponse>(new PingCommandRequest()));
+		var exception = Assert.Throws<AssertionException>(() => driver.CaptureScreenshot());
 
 		Assert.That(exception!.Message, Does.Contain("WPF binding failures detected"));
 		Assert.That(exception.Message, Does.Contain("strict failure"));
@@ -45,7 +49,7 @@ public sealed class AppDriverBindingFailureTests
 	{
 		var session = new BindingFailureSession();
 		session.EnqueueCheckpoint(new BindingFailureBatchDto { LastSequenceNumber = 0 });
-		session.EnqueueCommandResponse(StandardIpcResponse.Ok());
+		session.EnqueueCommandResponse(new ScreenshotCommandResponse());
 		session.EnqueueCheckpoint(new BindingFailureBatchDto
 		{
 			LastSequenceNumber = 1,
@@ -60,14 +64,21 @@ public sealed class AppDriverBindingFailureTests
 				},
 			},
 		});
-		var options = new AppDriverOptions { FailOnBindingFailures = true, Timeout = TimeSpan.FromMilliseconds(100) };
-		options.BindingFailures.AssertOnDispose = false;
-		options.BindingFailures.Ignore.Add(BindingFailureFilter.Contains("Known noisy"));
+		var options = new AppDriverOptions
+		{
+			FailOnBindingFailures = true,
+			Timeout = TimeSpan.FromMilliseconds(100),
+			BindingFailures = new BindingFailureOptions
+			{
+				AssertOnDispose = false,
+				Ignore = new[] { BindingFailureFilter.Contains("Known noisy") },
+			},
+		};
 		using var driver = AppDriver.CreateForTests(AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"), session, options);
 		BindingFailureEventArgs? received = null;
 		driver.BindingFailureReceived += (_, args) => received = args;
 
-		Assert.DoesNotThrow(() => driver.Send<StandardIpcResponse>(new PingCommandRequest()));
+		Assert.DoesNotThrow(() => driver.CaptureScreenshot());
 
 		Assert.That(received, Is.Not.Null);
 		Assert.That(received!.IsIgnored, Is.True);
@@ -77,8 +88,12 @@ public sealed class AppDriverBindingFailureTests
 	[Test]
 	public void StrictModeRequiresStreamingSessionSupport()
 	{
-		var options = new AppDriverOptions { FailOnBindingFailures = true, Timeout = TimeSpan.FromMilliseconds(100) };
-		options.BindingFailures.AssertOnDispose = false;
+		var options = new AppDriverOptions
+		{
+			FailOnBindingFailures = true,
+			Timeout = TimeSpan.FromMilliseconds(100),
+			BindingFailures = new BindingFailureOptions { AssertOnDispose = false },
+		};
 
 		var exception = Assert.Throws<AppDriverException>(() =>
 			AppDriver.CreateForTests(
@@ -89,7 +104,7 @@ public sealed class AppDriverBindingFailureTests
 		Assert.That(exception!.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.UnsupportedProtocol));
 	}
 
-	private sealed class BindingFailureSession : IAppDriverCommandSession, IAppDriverStreamingSession
+	private sealed class BindingFailureSession : IUnsafeAppDriverCommandSession, IAppDriverStreamingSession
 	{
 		private readonly Queue<object> commandResponses = new();
 		private readonly Queue<BindingFailureBatchDto> checkpoints = new();
@@ -143,7 +158,7 @@ public sealed class AppDriverBindingFailureTests
 		}
 	}
 
-	private sealed class NonStreamingSession : IAppDriverCommandSession
+	private sealed class NonStreamingSession : IUnsafeAppDriverCommandSession
 	{
 		public TResponse Send<TResponse>(IpcCommand command)
 		{

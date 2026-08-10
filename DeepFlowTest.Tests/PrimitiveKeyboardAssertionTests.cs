@@ -116,7 +116,7 @@ public sealed class PrimitiveKeyboardAssertionTests
 		var driver = CreateDriver(session);
 		var element = driver.GetElement(ElementSelector.ByName("inputBox"));
 		var keyboard = driver.Keyboard;
-		keyboard.DelayMs = 12;
+		keyboard.Delay = TimeSpan.FromMilliseconds(12);
 		keyboard.EnsureForeground = false;
 
 		keyboard.Type(element, "hello", clearFirst: true);
@@ -138,10 +138,10 @@ public sealed class PrimitiveKeyboardAssertionTests
 	{
 		var driver = CreateDriver(new FakeSession());
 
-		driver.Keyboard.DelayMs = 0;
+		driver.Keyboard.Delay = TimeSpan.Zero;
 
 		Assert.That(driver.Keyboard, Is.SameAs(driver.Keyboard));
-		Assert.That(driver.Keyboard.DelayMs, Is.EqualTo(0));
+		Assert.That(driver.Keyboard.Delay, Is.EqualTo(TimeSpan.Zero));
 	}
 
 	[Test]
@@ -183,7 +183,7 @@ public sealed class PrimitiveKeyboardAssertionTests
 		Assert.That(exception.Message, Does.Contain("Cancel"));
 	}
 
-	private static AppDriver CreateDriver(IAppDriverCommandSession session)
+	private static AppDriver CreateDriver(IUnsafeAppDriverCommandSession session)
 	{
 		return AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),

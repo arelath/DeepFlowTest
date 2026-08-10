@@ -2,6 +2,8 @@ namespace DeepFlowTest;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 using DeepFlowTest.Contracts;
 
 public sealed class ElementSelector
@@ -57,7 +59,11 @@ public sealed class ElementSelector
 
 	public ElementSelector WithRequestedProperties(params string[] propertyNames)
 	{
-		RequestedPropertyNames = propertyNames ?? [];
+		_ = propertyNames ?? throw new ArgumentNullException(nameof(propertyNames));
+		if (propertyNames.Any(string.IsNullOrWhiteSpace))
+			throw new ArgumentException("Requested property names cannot be empty.", nameof(propertyNames));
+
+		RequestedPropertyNames = new ReadOnlyCollection<string>(propertyNames.ToArray());
 		return this;
 	}
 

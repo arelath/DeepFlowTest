@@ -2,43 +2,70 @@ namespace DeepFlowTest;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 using DeepFlowTest.Contracts;
 
 public sealed class SemanticRecordingOptions
 {
 	private SemanticRecordingOutputFormat outputFormat = SemanticRecordingOutputFormat.CondensedAgent;
+	private IReadOnlyList<string>? propNames;
 
-	public int IntervalMs { get; set; } = TimeoutDefaults.StreamIntervalMs;
+	public TimeSpan Interval { get; init; } = TimeSpan.FromMilliseconds(TimeoutDefaults.StreamIntervalMs);
 
-	public IReadOnlyList<string>? PropNames { get; set; }
+	public IReadOnlyList<string>? PropNames
+	{
+		get => propNames;
+		init => propNames = value is null ? null : new ReadOnlyCollection<string>(value.ToArray());
+	}
 
-	public string? RootTargetId { get; set; }
+	public string? RootTargetId { get; init; }
 
-	public bool IncludeInitialSnapshot { get; set; } = true;
+	public bool IncludeInitialSnapshot { get; init; } = true;
 
-	public int TextIdleMs { get; set; } = 400;
+	public TimeSpan TextIdleDuration { get; init; } = TimeSpan.FromMilliseconds(400);
 
-	public int MaxQueuedActions { get; set; } = 1000;
+	public int MaxQueuedActions { get; init; } = 1000;
 
-	public int MaxBatchFrames { get; set; } = 100;
+	public int MaxBatchFrames { get; init; } = 100;
 
-	public int MaxNodeCount { get; set; } = VisualTreeDefaults.DefaultMaxNodeCount;
+	public int MaxNodeCount { get; init; } = VisualTreeDefaults.DefaultMaxNodeCount;
 
-	public int? TimeoutMs { get; set; }
+	public TimeSpan? Timeout { get; init; }
 
-	public Action<SemanticRecordingBatch>? BatchReceived { get; set; }
+	public long MaximumArtifactSizeBytes { get; init; } = 64 * 1024 * 1024;
 
-	public Action<Exception>? BatchReceivedError { get; set; }
+	public Action<SemanticRecordingBatch>? BatchReceived { get; init; }
+
+	public Action<Exception>? BatchReceivedError { get; init; }
 
 	public SemanticRecordingOutputFormat OutputFormat
 	{
 		get => outputFormat;
-		set => outputFormat = value;
+		init => outputFormat = value;
 	}
 
 	public bool CompactOutput
 	{
 		get => outputFormat == SemanticRecordingOutputFormat.CompactJson;
-		set => outputFormat = value ? SemanticRecordingOutputFormat.CompactJson : SemanticRecordingOutputFormat.RawJson;
+		init => outputFormat = value ? SemanticRecordingOutputFormat.CompactJson : SemanticRecordingOutputFormat.RawJson;
+	}
+
+	internal void Validate()
+	{
+		_ = DurationUtility.ToMilliseconds(Interval, nameof(Interval));
+		_ = DurationUtility.ToMilliseconds(TextIdleDuration, nameof(TextIdleDuration), allowZero: true);
+		if (Timeout is TimeSpan timeout)
+			_ = DurationUtility.ToMilliseconds(timeout, nameof(Timeout));
+		if (MaxQueuedActions <= 0)
+			throw new ArgumentOutOfRangeException(nameof(MaxQueuedActions));
+		if (MaxBatchFrames <= 0)
+			throw new ArgumentOutOfRangeException(nameof(MaxBatchFrames));
+		if (MaxNodeCount <= 0)
+			throw new ArgumentOutOfRangeException(nameof(MaxNodeCount));
+		if (MaximumArtifactSizeBytes <= 0)
+			throw new ArgumentOutOfRangeException(nameof(MaximumArtifactSizeBytes));
+		if (propNames?.Any(static name => string.IsNullOrWhiteSpace(name)) == true)
+			throw new ArgumentException("Requested property names cannot contain empty values.", nameof(PropNames));
 	}
 }

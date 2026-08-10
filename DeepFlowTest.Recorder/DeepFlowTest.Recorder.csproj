@@ -8,7 +8,7 @@
     <IsPackable>false</IsPackable>
     <SelfContained>false</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
-    <PublishDir>$(RepositoryRoot)artifacts\DeepFlowTest.Recorder\$(Configuration)\</PublishDir>
+    <PublishDir>$(ArtifactsRoot)publish\$(MSBuildProjectName)\$(Configuration)\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>

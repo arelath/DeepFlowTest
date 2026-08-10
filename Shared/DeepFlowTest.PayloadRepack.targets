@@ -1,0 +1,69 @@
+<Project>
+  <UsingTask TaskName="ILRepack" AssemblyFile="$(PkgILRepack_Lib_MSBuild_Task)\build\ILRepack.Lib.MSBuild.Task.dll" Condition="'$(PkgILRepack_Lib_MSBuild_Task)' != ''" />
+
+  <Target Name="RepackPayloads" Condition="'$(IsCrossTargetingBuild)' == 'true'">
+    <PropertyGroup>
+      <_EvaluatedPayloadFrameworks>@(PayloadFramework, ';')</_EvaluatedPayloadFrameworks>
+    </PropertyGroup>
+    <Error Condition="'$(_EvaluatedPayloadFrameworks)' != '$(DeepFlowTestTargetFrameworks)'" Text="DeepFlowTestTargetFrameworks must match the PayloadFramework item identities and order." />
+    <Error Condition="'%(PayloadFramework.Family)' == ''" Text="PayloadFramework '%(PayloadFramework.Identity)' must declare Family metadata." />
+    <MSBuild
+      Projects="$(MSBuildProjectFullPath)"
+      Targets="RepackPayloadFramework"
+      Properties="Configuration=$(Configuration);TargetFramework=%(PayloadFramework.Identity);PayloadFamily=%(PayloadFramework.Family)"
+      BuildInParallel="false" />
+    <WriteLinesToFile
+      File="$(ArtifactsStagingRoot)payloads\REPACKING.md"
+      Lines="Payload assemblies are generated with ILRepack and internalize payload third-party dependencies. Loose third-party payload DLLs are not expected in framework-family folders."
+      Overwrite="true"
+      Encoding="UTF-8" />
+  </Target>
+
+  <Target Name="RepackPayloadFramework" DependsOnTargets="Build" Condition="'$(TargetFramework)' != '' and '$(PayloadFamily)' != ''">
+    <PropertyGroup>
+      <_PayloadDestination>$(ArtifactsStagingRoot)payloads\$(PayloadFamily)\</_PayloadDestination>
+      <_PayloadAssembly>$(_PayloadDestination)DeepFlowTest.dll</_PayloadAssembly>
+      <_ILRepackLibraryPath Condition="'$(TargetFramework)' == 'netcoreapp3.1'">$(NuGetPackageRoot)microsoft.netcore.app.ref\3.1.0\ref\netcoreapp3.1</_ILRepackLibraryPath>
+      <_ILRepackLibraryPath Condition="'$(TargetFramework)' == 'net5.0-windows'">$(NuGetPackageRoot)microsoft.netcore.app.ref\5.0.0\ref\net5.0</_ILRepackLibraryPath>
+    </PropertyGroup>
+
+    <Error Condition="'$(PkgILRepack_Lib_MSBuild_Task)' == ''" Text="ILRepack package path was not resolved. Restore the payload project before repacking." />
+    <Error Condition="!Exists('$(TargetPath)')" Text="Primary payload assembly was not found at $(TargetPath)." />
+
+    <ItemGroup>
+      <_PayloadDependency Include="@(PayloadDependency->'$(TargetDir)%(AssemblyFile)')" Condition="Exists('$(TargetDir)%(PayloadDependency.AssemblyFile)')" />
+      <_PayloadInput Include="$(TargetPath);@(_PayloadDependency)" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(_PayloadDestination)" />
+    <MakeDir Directories="$(_PayloadDestination)" />
+    <ILRepack
+      Parallel="true"
+      DebugInfo="true"
+      Internalize="true"
+      AllowDuplicateResources="false"
+      InputAssemblies="@(_PayloadInput)"
+      LibraryPath="$(_ILRepackLibraryPath)"
+      TargetKind="SameAsPrimaryAssembly"
+      OutputFile="$(_PayloadAssembly)" />
+    <Copy SourceFiles="$(TargetDir)DeepFlowTest.pdb" DestinationFolder="$(_PayloadDestination)" Condition="Exists('$(TargetDir)DeepFlowTest.pdb')" />
+    <Copy SourceFiles="$(TargetDir)DeepFlowTest.xml" DestinationFolder="$(_PayloadDestination)" Condition="Exists('$(TargetDir)DeepFlowTest.xml')" />
+    <GetFileHash Files="$(_PayloadAssembly)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_PayloadHash" />
+    </GetFileHash>
+
+    <ItemGroup>
+      <_PayloadManifestLine Include="# DeepFlowTest Payload" />
+      <_PayloadManifestLine Include="- targetFramework: $(TargetFramework)" />
+      <_PayloadManifestLine Include="- payloadFamily: $(PayloadFamily)" />
+      <_PayloadManifestLine Include="- protocolVersion: 1" />
+      <_PayloadManifestLine Include="- entryPoint: DeepFlowTest.AppDriverPayload.AppDriverPayload.Start" />
+      <_PayloadManifestLine Include="- fileVersion: $(FileVersion)" />
+      <_PayloadManifestLine Include="- sha256: %(_PayloadHash.FileHash)" />
+      <_PayloadManifestLine Include="- repacker: ILRepack" />
+      <_PayloadManifestLine Include="- internalizedDependencies:" />
+      <_PayloadManifestLine Include="@(_PayloadDependency->'  - %(Filename)%(Extension)')" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_PayloadDestination)DeepFlowTest.payload.md" Lines="@(_PayloadManifestLine)" Overwrite="true" Encoding="UTF-8" />
+  </Target>
+</Project>

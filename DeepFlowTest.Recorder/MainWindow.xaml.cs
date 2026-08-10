@@ -86,8 +86,8 @@ public partial class MainWindow : Window
 					attachedDriver = AppDriver.AttachTo(selected.ProcessId, attachOptions);
 					var session = attachedDriver.StartSemanticRecording(outputPath, new SemanticRecordingOptions
 					{
-						IntervalMs = 250,
-						TimeoutMs = 30_000,
+						Interval = TimeSpan.FromMilliseconds(250),
+						Timeout = TimeSpan.FromSeconds(30),
 						OutputFormat = SemanticRecordingOutputFormat.CondensedAgent,
 						BatchReceived = batch => Dispatcher.BeginInvoke(new Action(() => ReceiveRecordingBatch(batch))),
 						BatchReceivedError = ex => Dispatcher.BeginInvoke(new Action(() => ShowVisualizerFailure(ex))),

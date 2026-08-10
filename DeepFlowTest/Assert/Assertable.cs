@@ -20,11 +20,13 @@ public sealed class Assertable
 
 	public Element Value { get; }
 
-	public Assertable IsTrue(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs = TimeoutDefaults.AssertionTimeoutMs)
+	public Assertable IsTrue(Expression<Func<Element, bool?>> predicateExpression, TimeSpan? timeout = null)
 	{
 		_ = predicateExpression ?? throw new ArgumentNullException(nameof(predicateExpression));
+		var effectiveTimeout = timeout ?? TimeSpan.FromMilliseconds(TimeoutDefaults.AssertionTimeoutMs);
+		_ = DurationUtility.ToMilliseconds(effectiveTimeout, nameof(timeout));
 
-		var deadline = DateTime.UtcNow.AddMilliseconds(Math.Max(1, timeoutMs));
+		var deadline = DateTime.UtcNow.Add(effectiveTimeout);
 		Exception? lastException = null;
 		do
 		{
@@ -40,7 +42,10 @@ public sealed class Assertable
 			}
 
 			if (DateTime.UtcNow < deadline)
-				Thread.Sleep(Math.Min(TimeoutDefaults.AssertionPollDelayMs, Math.Max(1, timeoutMs)));
+			{
+				var remaining = deadline - DateTime.UtcNow;
+				Thread.Sleep(Math.Min(TimeoutDefaults.AssertionPollDelayMs, Math.Max(1, (int)Math.Ceiling(remaining.TotalMilliseconds))));
+			}
 		}
 		while (DateTime.UtcNow < deadline);
 

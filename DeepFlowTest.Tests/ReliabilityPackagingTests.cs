@@ -34,13 +34,14 @@ public sealed class ReliabilityPackagingTests
 		var root = FindRepositoryRoot();
 		var project = File.ReadAllText(Path.Combine(root, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj"));
 		var payloadLayoutTargets = File.ReadAllText(Path.Combine(root, "Shared", "DeepFlowTestPayloadLayout.targets"));
+		var frameworkProps = File.ReadAllText(Path.Combine(root, "Shared", "DeepFlowTest.Frameworks.props"));
 
 		Assert.That(project, Does.Contain("DeepFlowTestPayloadLayout.targets"));
-		Assert.That(payloadLayoutTargets, Does.Contain("payloads\\netframework"));
-		Assert.That(payloadLayoutTargets, Does.Contain("payloads\\netcoreapp"));
-		Assert.That(payloadLayoutTargets, Does.Contain("payloads\\dotnet"));
-		Assert.That(payloadLayoutTargets, Does.Contain("DeepFlowTestResources\\x86"));
-		Assert.That(payloadLayoutTargets, Does.Contain("DeepFlowTestResources\\x64"));
+		Assert.That(payloadLayoutTargets, Does.Contain("$(ArtifactsStagingRoot)payloads\\**\\*.*"));
+		Assert.That(payloadLayoutTargets, Does.Contain("$(ArtifactsStagingRoot)DeepFlowTestResources"));
+		Assert.That(frameworkProps, Does.Contain("Family=\"netframework\""));
+		Assert.That(frameworkProps, Does.Contain("Family=\"netcoreapp\""));
+		Assert.That(frameworkProps, Does.Contain("Family=\"dotnet\""));
 	}
 
 	[Test]

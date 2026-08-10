@@ -31,25 +31,61 @@ internal static class TestSemanticRecording
 	internal static Func<string, string?> ParameterProvider { get; set; } =
 		static name => TestContext.Parameters.Get(name, null);
 
-	public static void Configure(AppDriverOptions options, string? label = null)
+	public static AppDriverOptions Configure(AppDriverOptions options, string? label = null)
 	{
 		_ = options ?? throw new ArgumentNullException(nameof(options));
-		if (!IsEnabled())
-		{
-			options.AutoSemanticRecordingEnabled = false;
-			return;
-		}
+		var enabled = IsEnabled();
+		var outputPath = enabled ? CreateOutputPath(label) : null;
+		if (outputPath is not null)
+			TestContext.Progress.WriteLine($"DeepFlowTest semantic recording: {outputPath}");
 
-		var outputPath = CreateOutputPath(label);
-		options.AutoSemanticRecordingEnabled = true;
-		options.AutoSemanticRecordingOutputPath = outputPath;
-		options.AutoSemanticRecordingOptions.IntervalMs = 100;
-		options.AutoSemanticRecordingOptions.TextIdleMs = 25;
-		options.AutoSemanticRecordingOptions.MaxBatchFrames = 20;
-		options.AutoSemanticRecordingOptions.PropNames = DefaultPropertyNames;
-		options.AutoSemanticRecordingOptions.TimeoutMs = 30_000;
-		TestContext.Progress.WriteLine($"DeepFlowTest semantic recording: {outputPath}");
+		return new AppDriverOptions
+		{
+			Timeout = options.Timeout,
+			AllowInjection = options.AllowInjection,
+			PipeName = options.PipeName,
+			PayloadRoot = options.PayloadRoot,
+			InjectorLauncherPath = options.InjectorLauncherPath,
+			ElementPollBackoff = options.ElementPollBackoff,
+			FailOnBindingFailures = options.FailOnBindingFailures,
+			BindingFailures = options.BindingFailures,
+			AutoSemanticRecordingEnabled = enabled,
+			AutoSemanticRecordingOutputPath = outputPath,
+			AutoSemanticRecordingOptions = enabled ? CreateRecordingOptions() : options.AutoSemanticRecordingOptions,
+			VirtualPointer = options.VirtualPointer,
+		};
 	}
+
+	public static AppDriverAttachOptions Configure(AppDriverAttachOptions options, string? label = null)
+	{
+		_ = options ?? throw new ArgumentNullException(nameof(options));
+		var configured = Configure((AppDriverOptions)options, label);
+		return new AppDriverAttachOptions
+		{
+			Timeout = configured.Timeout,
+			AllowInjection = configured.AllowInjection,
+			PipeName = configured.PipeName,
+			PayloadRoot = configured.PayloadRoot,
+			InjectorLauncherPath = configured.InjectorLauncherPath,
+			ElementPollBackoff = configured.ElementPollBackoff,
+			FailOnBindingFailures = configured.FailOnBindingFailures,
+			BindingFailures = configured.BindingFailures,
+			AutoSemanticRecordingEnabled = configured.AutoSemanticRecordingEnabled,
+			AutoSemanticRecordingOutputPath = configured.AutoSemanticRecordingOutputPath,
+			AutoSemanticRecordingOptions = configured.AutoSemanticRecordingOptions,
+			VirtualPointer = configured.VirtualPointer,
+			AllowContainsProcessNameMatch = options.AllowContainsProcessNameMatch,
+		};
+	}
+
+	private static SemanticRecordingOptions CreateRecordingOptions() => new()
+	{
+		Interval = TimeSpan.FromMilliseconds(100),
+		TextIdleDuration = TimeSpan.FromMilliseconds(25),
+		MaxBatchFrames = 20,
+		PropNames = DefaultPropertyNames,
+		Timeout = TimeSpan.FromSeconds(30),
+	};
 
 	public static bool IsEnabled()
 	{

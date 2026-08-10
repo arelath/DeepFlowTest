@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
   <PropertyGroup>
-    <TargetFrameworks>net461;netcoreapp3.1;net5.0-windows</TargetFrameworks>
+    <TargetFrameworks>$(DeepFlowTestTargetFrameworks)</TargetFrameworks>
     <RootNamespace>DeepFlowTest</RootNamespace>
     <AssemblyName>DeepFlowTest</AssemblyName>
     <UseWPF>true</UseWPF>
@@ -11,6 +11,11 @@
     <PackageTags>WPF;Automation;Testing;UI</PackageTags>
     <PackageProjectUrl>https://deepflowtest.local</PackageProjectUrl>
     <RepositoryUrl>https://deepflowtest.local/repository</RepositoryUrl>
+    <IsPackable>true</IsPackable>
+    <PackageId>DeepFlowTest</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Payload and native injector DLLs are executable content, not compile references. -->
+    <NoWarn>$(NoWarn);NU5100</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,22 +28,10 @@
     <PackageReference Include="System.Buffers" />
     <PackageReference Include="System.Memory" />
     <PackageReference Include="System.ValueTuple" />
-    <Content Include="contentFiles\**">
-      <Pack>True</Pack>
-      <PackagePath>contentFiles</PackagePath>
-      <IncludeInPackage>True</IncludeInPackage>
-      <PackageCopyToOutput>True</PackageCopyToOutput>
-      <CopyToOutputDirectory>IfNewer</CopyToOutputDirectory>
-      <CopyToPublishDirectory>IfNewer</CopyToPublishDirectory>
-    </Content>
-    <Content Include="$(RepositoryRoot)Tools\DeepFlowTestResources\ffmpeg.exe" Link="contentFiles\any\any\DeepFlowTestResources\ffmpeg.exe" Condition="Exists('$(RepositoryRoot)Tools\DeepFlowTestResources\ffmpeg.exe')">
-      <Pack>True</Pack>
-      <PackagePath>contentFiles\any\any\DeepFlowTestResources\ffmpeg.exe</PackagePath>
-      <IncludeInPackage>True</IncludeInPackage>
-      <PackageCopyToOutput>True</PackageCopyToOutput>
-      <CopyToOutputDirectory>IfNewer</CopyToOutputDirectory>
-      <CopyToPublishDirectory>IfNewer</CopyToPublishDirectory>
-    </Content>
+    <None Include="$(ArtifactsStagingRoot)payloads\**\*.*" Pack="true" PackagePath="contentFiles\any\any\payloads\%(RecursiveDir)%(Filename)%(Extension)" PackageCopyToOutput="true" Visible="false" />
+    <None Include="$(ArtifactsStagingRoot)DeepFlowTestResources\**\*.*" Pack="true" PackagePath="contentFiles\any\any\DeepFlowTestResources\%(RecursiveDir)%(Filename)%(Extension)" PackageCopyToOutput="true" Visible="false" />
+    <None Include="DeepFlowTest.targets" Pack="true" PackagePath="build\DeepFlowTest.targets" />
+    <None Include="..\README.md" Pack="true" PackagePath="README.md" />
   </ItemGroup>
 
   <Import Project="..\Shared\Protocol\DeepFlowTest.Protocol.projitems" />
@@ -48,7 +41,13 @@
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net461" PrivateAssets="all" />
   </ItemGroup>
 
-  <Target Name="BlockIncompleteDirectSdkPack" BeforeTargets="Pack" Condition="'$(DeepFlowTestAllowDirectPack)' != 'true'">
-    <Error Text="Direct SDK packing of DeepFlowTest.csproj does not stage generated payload and injector resources. Use '.\build.ps1 Pack' for the supported package workflow, or set /p:DeepFlowTestAllowDirectPack=true only after staging equivalent contentFiles resources." />
+  <Target Name="ValidateDeepFlowTestPackageInputs" BeforeTargets="GenerateNuspec">
+    <PropertyGroup>
+      <_EvaluatedPayloadFrameworks>@(PayloadFramework, ';')</_EvaluatedPayloadFrameworks>
+    </PropertyGroup>
+    <Error Condition="'$(_EvaluatedPayloadFrameworks)' != '$(DeepFlowTestTargetFrameworks)'" Text="DeepFlowTestTargetFrameworks must match the PayloadFramework item identities and order." />
+    <Error Condition="'%(PayloadFramework.Family)' == ''" Text="PayloadFramework '%(PayloadFramework.Identity)' must declare Family metadata." />
+    <Error Condition="!Exists('$(ArtifactsStagingRoot)payloads')" Text="Payload staging is missing. Build the payloads before packing." />
+    <Error Condition="!Exists('$(ArtifactsStagingRoot)DeepFlowTestResources')" Text="Injector staging is missing. Build the native injectors before packing." />
   </Target>
 </Project>

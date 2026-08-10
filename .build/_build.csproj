@@ -8,8 +8,4 @@
     <EnableSourceLink>false</EnableSourceLink>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="ILRepack.Lib.MSBuild.Task" />
-    <PackageReference Include="NuGet.Packaging" />
-  </ItemGroup>
 </Project>

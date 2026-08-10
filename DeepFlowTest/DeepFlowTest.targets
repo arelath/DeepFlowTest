@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <_DeepFlowTestPackageContentRoot>$(MSBuildThisFileDirectory)..\contentFiles\any\any</_DeepFlowTestPackageContentRoot>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(_DeepFlowTestPackageContentRoot)')">
+    <None Include="$(_DeepFlowTestPackageContentRoot)\payloads\**\*.*" Link="payloads\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(_DeepFlowTestPackageContentRoot)\DeepFlowTestResources\**\*.*" Link="DeepFlowTestResources\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

@@ -31,13 +31,13 @@ public sealed class TestSemanticRecordingTests
 	{
 		var options = new AppDriverOptions();
 
-		TestSemanticRecording.Configure(options, "hello world");
+		options = TestSemanticRecording.Configure(options, "hello world");
 
 		Assert.That(options.AutoSemanticRecordingEnabled, Is.True);
 		Assert.That(options.AutoSemanticRecordingOutputPath, Is.Not.Null);
 		Assert.That(options.AutoSemanticRecordingOutputPath, Does.Contain("hello_world"));
 		Assert.That(Path.GetFileName(options.AutoSemanticRecordingOutputPath!), Does.Contain("hello_world"));
-		Assert.That(options.AutoSemanticRecordingOptions.IntervalMs, Is.EqualTo(100));
+		Assert.That(options.AutoSemanticRecordingOptions.Interval, Is.EqualTo(TimeSpan.FromMilliseconds(100)));
 		Assert.That(options.AutoSemanticRecordingOptions.OutputFormat, Is.EqualTo(SemanticRecordingOutputFormat.CondensedAgent));
 		Assert.That(options.AutoSemanticRecordingOptions.MaxNodeCount, Is.EqualTo(VisualTreeDefaults.DefaultMaxNodeCount));
 		Assert.That(options.AutoSemanticRecordingOptions.PropNames, Does.Contain(KnownProperties.AutomationId));
@@ -53,7 +53,7 @@ public sealed class TestSemanticRecordingTests
 		parameters[TestSemanticRecording.EnabledParameterName] = value;
 		var options = new AppDriverOptions();
 
-		TestSemanticRecording.Configure(options, "demo");
+		options = TestSemanticRecording.Configure(options, "demo");
 
 		Assert.That(TestSemanticRecording.IsEnabled(), Is.False);
 		Assert.That(options.AutoSemanticRecordingEnabled, Is.False);
@@ -82,7 +82,7 @@ public sealed class TestSemanticRecordingTests
 		parameters[TestSemanticRecording.OutputDirectoryParameterName] = directory;
 		var options = new AppDriverOptions();
 
-		TestSemanticRecording.Configure(options, "default-dir");
+		options = TestSemanticRecording.Configure(options, "default-dir");
 
 		Assert.That(options.AutoSemanticRecordingOutputPath, Is.Not.Null);
 		Assert.That(options.AutoSemanticRecordingOutputPath, Does.StartWith(directory));
@@ -94,7 +94,7 @@ public sealed class TestSemanticRecordingTests
 	{
 		var options = new AppDriverOptions();
 
-		TestSemanticRecording.Configure(options, "default-dir");
+		options = TestSemanticRecording.Configure(options, "default-dir");
 
 		var expectedDirectory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "semantic-recordings");
 		Assert.That(options.AutoSemanticRecordingOutputPath, Is.Not.Null);
@@ -109,7 +109,7 @@ public sealed class TestSemanticRecordingTests
 		parameters[TestSemanticRecording.OutputDirectoryParameterName] = directory;
 		var options = new AppDriverOptions();
 
-		TestSemanticRecording.Configure(options, "bad:name with spaces");
+		options = TestSemanticRecording.Configure(options, "bad:name with spaces");
 
 		var fileName = Path.GetFileName(options.AutoSemanticRecordingOutputPath!);
 		Assert.That(fileName, Does.Contain("bad_name_with_spaces"));

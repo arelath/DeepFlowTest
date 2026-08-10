@@ -75,6 +75,9 @@ public sealed class RepositoryConfigurationTests
 		Assert.That(ReadProperty(props, "CentralPackageTransitivePinningEnabled"), Is.EqualTo("true").IgnoreCase);
 		Assert.That(ReadProperty(props, "DisableWinExeOutputInference"), Is.EqualTo("true").IgnoreCase);
 		Assert.That(ReadProperty(props, "ProduceReferenceAssembly"), Is.EqualTo("false").IgnoreCase);
+		Assert.That(ReadProperty(props, "BaseOutputPath"), Is.EqualTo(@"$(ArtifactsBinRoot)$(MSBuildProjectName)\"));
+		Assert.That(ReadProperty(props, "BaseIntermediateOutputPath"), Is.EqualTo(@"$(ArtifactsObjRoot)$(MSBuildProjectName)\"));
+		Assert.That(ReadProperty(props, "PackageOutputPath"), Is.EqualTo(@"$(ArtifactsPackagesRoot)$(Configuration)\"));
 	}
 
 	[Test]
@@ -125,7 +128,9 @@ public sealed class RepositoryConfigurationTests
 	public void ProjectsDeclareExpectedTargetFrameworks()
 	{
 		var root = FindRepositoryRoot();
-		Assert.That(ReadProjectProperty(root, "DeepFlowTest", "DeepFlowTest.csproj", "TargetFrameworks"), Is.EqualTo("net461;netcoreapp3.1;net5.0-windows"));
+		Assert.That(ReadProjectProperty(root, "Shared", "DeepFlowTest.Frameworks.props", "DeepFlowTestTargetFrameworks"), Is.EqualTo("net461;netcoreapp3.1;net5.0-windows"));
+		Assert.That(ReadProjectProperty(root, "DeepFlowTest", "DeepFlowTest.csproj", "TargetFrameworks"), Is.EqualTo("$(DeepFlowTestTargetFrameworks)"));
+		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Payload", "DeepFlowTest.Payload.csproj", "TargetFrameworks"), Is.EqualTo("$(DeepFlowTestTargetFrameworks)"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Recorder", "DeepFlowTest.Recorder.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Tests", "DeepFlowTest.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
@@ -159,7 +164,7 @@ public sealed class RepositoryConfigurationTests
 	public void PayloadFoldersUseExpectedNamesWhenPresent()
 	{
 		var root = FindRepositoryRoot();
-		var payloadRoot = Path.Combine(root, "output", "payloads");
+		var payloadRoot = Path.Combine(root, "artifacts", "staging", "payloads");
 		if (!Directory.Exists(payloadRoot))
 			return;
 
@@ -208,7 +213,7 @@ public sealed class RepositoryConfigurationTests
 		Assert.That(buildDoc, Does.Contain("DeepFlowTestTestRecordings"));
 		Assert.That(readme, Does.Contain("no-test-recordings"));
 		Assert.That(buildDoc, Does.Contain("Packaging Workflow"));
-		Assert.That(payloadDoc, Does.Contain("output/payloads/"));
+		Assert.That(payloadDoc, Does.Contain("artifacts/staging/payloads/"));
 		Assert.That(payloadDoc, Does.Contain("ILRepack"));
 		Assert.That(payloadDoc, Does.Contain("No dependency has an accepted exemption"));
 	}
@@ -233,10 +238,12 @@ public sealed class RepositoryConfigurationTests
 		var solution = File.ReadAllText(Path.Combine(root, "DeepFlowTest.sln"));
 		var payloadLayoutTargets = File.ReadAllText(Path.Combine(root, "Shared", "DeepFlowTestPayloadLayout.targets"));
 
-		Assert.That(launcherProject, Does.Contain(@"DeepFlowTestResources\$(PlatformTarget)\"));
+		Assert.That(launcherProject, Does.Contain("$(ArtifactsBinRoot)"));
+		Assert.That(launcherProject, Does.Contain("StageInjectorLauncher"));
 		Assert.That(launcherProject, Does.Contain("CompileX86InjectorLauncher"));
 		Assert.That(launcherProject, Does.Contain("CompileX64InjectorLauncher"));
-		Assert.That(nativeProject, Does.Contain(@"DeepFlowTestResources\$(ArchitectureName)\"));
+		Assert.That(nativeProject, Does.Contain("$(ArtifactsRoot)bin"));
+		Assert.That(nativeProject, Does.Contain("StageGenericInjector"));
 		Assert.That(nativeProject, Does.Contain("CompileX86GenericInjector"));
 		Assert.That(nativeProject, Does.Contain("CompileX64GenericInjector"));
 		Assert.That(cliProject, Does.Contain("DeepFlowTestPayloadLayout.targets"));
@@ -245,14 +252,9 @@ public sealed class RepositoryConfigurationTests
 		Assert.That(solution, Does.Contain("{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5} = {BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}"));
 		Assert.That(solution, Does.Contain("{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Debug|Any CPU.Build.0 = Debug|Win32"));
 		Assert.That(solution, Does.Contain("{BF1982E4-0690-47C2-9000-EA2AB9A4E8C5}.Release|Any CPU.Build.0 = Release|Win32"));
-		Assert.That(payloadLayoutTargets, Does.Contain(@"DeepFlowTestResources\x86"));
-		Assert.That(payloadLayoutTargets, Does.Contain(@"DeepFlowTestResources\x64"));
-		Assert.That(payloadLayoutTargets, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x86"));
-		Assert.That(payloadLayoutTargets, Does.Contain(@"$(PublishDir)DeepFlowTestResources\x64"));
-		Assert.That(payloadLayoutTargets, Does.Not.Contain(@"DeepFlowTestResources\x86\**\*.*"));
-		Assert.That(payloadLayoutTargets, Does.Not.Contain(@"DeepFlowTestResources\x64\**\*.*"));
-		Assert.That(payloadLayoutTargets, Does.Contain(@"DeepFlowTestResources\x86\*.dll"));
-		Assert.That(payloadLayoutTargets, Does.Contain(@"DeepFlowTestResources\x64\*.exe"));
+		Assert.That(payloadLayoutTargets, Does.Contain(@"$(ArtifactsStagingRoot)payloads\**\*.*"));
+		Assert.That(payloadLayoutTargets, Does.Contain(@"$(ArtifactsStagingRoot)DeepFlowTestResources\**\*.dll"));
+		Assert.That(payloadLayoutTargets, Does.Contain(@"$(PublishDir)DeepFlowTestResources\%(RecursiveDir)"));
 		Assert.That(nativeProject, Does.Contain("$(ArchitecturePreprocessorDefinition)"));
 		Assert.That(nativeProject, Does.Contain("DEEPFLOWTEST_ARCH_X86"));
 	}
@@ -263,13 +265,14 @@ public sealed class RepositoryConfigurationTests
 		var buildScript = File.ReadAllText(Path.Combine(FindRepositoryRoot(), ".build", "Build.cs"));
 		var libraryProject = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "DeepFlowTest", "DeepFlowTest.csproj"));
 
-		Assert.That(buildScript, Does.Contain("contentFiles"));
-		Assert.That(buildScript, Does.Contain("DeepFlowTestResources"));
-		Assert.That(buildScript, Does.Contain("IsPackageResourceFile"));
-		Assert.That(buildScript, Does.Not.Contain(".lib"));
-		Assert.That(buildScript, Does.Not.Contain(".exp"));
-		Assert.That(libraryProject, Does.Contain("BlockIncompleteDirectSdkPack"));
-		Assert.That(libraryProject, Does.Contain("DeepFlowTestAllowDirectPack"));
+		Assert.That(buildScript, Does.Contain("RunDotNet(\"pack\", ClientProject"));
+		Assert.That(buildScript, Does.Contain("RunDotNet(\"pack\", MediaPackageProject"));
+		Assert.That(buildScript, Does.Not.Contain("WritePackageNuspec"));
+		Assert.That(buildScript, Does.Not.Contain("Directory.Packages.props"));
+		Assert.That(libraryProject, Does.Contain("$(ArtifactsStagingRoot)payloads"));
+		Assert.That(libraryProject, Does.Contain("PackageCopyToOutput=\"true\""));
+		Assert.That(libraryProject, Does.Not.Contain("ffmpeg.exe"));
+		Assert.That(libraryProject, Does.Not.Contain("BlockIncompleteDirectSdkPack"));
 	}
 
 	[Test]
@@ -299,7 +302,7 @@ public sealed class RepositoryConfigurationTests
 			.ToList();
 
 		Assert.That(generatedFiles, Is.Empty);
-		Assert.That(Directory.Exists(Path.Combine(root, "bin")), Is.True);
+		Assert.That(Directory.Exists(Path.Combine(root, "artifacts", "bin")), Is.True);
 	}
 
 	private static IEnumerable<string> FindDisallowedNames(string file, string text)

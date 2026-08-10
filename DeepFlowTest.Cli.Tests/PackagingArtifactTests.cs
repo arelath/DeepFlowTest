@@ -2,6 +2,9 @@ namespace DeepFlowTest.Cli.Tests;
 
 using System;
 using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Xml.Linq;
 using NUnit.Framework;
 
 [TestFixture]
@@ -10,7 +13,8 @@ public sealed class PackagingArtifactTests
 	[Test]
 	public void ProducedCliLayoutContainsPayloadsAndNativeInjectorConfigs()
 	{
-		var output = TestContext.CurrentContext.TestDirectory;
+		var configuration = Directory.GetParent(TestContext.CurrentContext.TestDirectory)?.Name ?? "Debug";
+		var output = Path.Combine(FindRepositoryRoot(), "artifacts", "bin", "DeepFlowTest.Cli", configuration, "net8.0-windows");
 
 		AssertNonEmptyFile(Path.Combine(output, "DeepFlowTest.Cli.exe"));
 		AssertNonEmptyFile(Path.Combine(output, "payloads", "netframework", "DeepFlowTest.dll"));
@@ -22,27 +26,58 @@ public sealed class PackagingArtifactTests
 		AssertNonEmptyFile(Path.Combine(output, "DeepFlowTestResources", "x64", "DeepFlowTest.GenericInjector.x64.dll"));
 		AssertNonEmptyFile(Path.Combine(output, "DeepFlowTestResources", "x64", "DeepFlowTest.InjectorLauncher.x64.exe"));
 		AssertNonEmptyFile(Path.Combine(output, "DeepFlowTestResources", "x64", "DeepFlowTest.InjectorLauncher.x64.exe.config"));
-		AssertNonEmptyFile(Path.Combine(output, "contentFiles", "any", "any", "DeepFlowTestResources", "ffmpeg.exe"));
+		Assert.That(File.Exists(Path.Combine(output, "DeepFlowTestResources", "ffmpeg.exe")), Is.False);
 	}
 
 	[Test]
 	public void ProducedPackageContentFilesLayoutContainsPayloadsAndNativeInjectorConfigs()
 	{
 		var root = FindRepositoryRoot();
-		var contentRoot = Path.Combine(root, "artifacts", "packages", "Debug", "DeepFlowTest", "contentFiles", "any", "any");
-		if (!Directory.Exists(contentRoot))
-			Assert.Ignore("Run build.ps1 Pack to produce the package contentFiles artifact.");
+		var packageRoot = Path.Combine(root, "artifacts", "packages", "Debug");
+		var version = File.ReadAllText(Path.Combine(root, "version.txt")).Trim();
+		var corePackage = Path.Combine(packageRoot, $"DeepFlowTest.{version}.nupkg");
+		if (!File.Exists(corePackage))
+			Assert.Ignore("Run build.ps1 Pack to produce the package artifact.");
 
-		AssertNonEmptyFile(Path.Combine(contentRoot, "payloads", "netframework", "DeepFlowTest.dll"));
-		AssertNonEmptyFile(Path.Combine(contentRoot, "payloads", "netcoreapp", "DeepFlowTest.dll"));
-		AssertNonEmptyFile(Path.Combine(contentRoot, "payloads", "dotnet", "DeepFlowTest.dll"));
-		AssertNonEmptyFile(Path.Combine(contentRoot, "DeepFlowTestResources", "x86", "DeepFlowTest.GenericInjector.x86.dll"));
-		AssertNonEmptyFile(Path.Combine(contentRoot, "DeepFlowTestResources", "x86", "DeepFlowTest.InjectorLauncher.x86.exe.config"));
-		AssertNonEmptyFile(Path.Combine(contentRoot, "DeepFlowTestResources", "x64", "DeepFlowTest.GenericInjector.x64.dll"));
-		AssertNonEmptyFile(Path.Combine(contentRoot, "DeepFlowTestResources", "x64", "DeepFlowTest.InjectorLauncher.x64.exe.config"));
-		AssertNonEmptyFile(Path.Combine(contentRoot, "DeepFlowTestResources", "ffmpeg.exe"));
-		Assert.That(Directory.GetFiles(contentRoot, "*.lib", SearchOption.AllDirectories), Is.Empty);
-		Assert.That(Directory.GetFiles(contentRoot, "*.exp", SearchOption.AllDirectories), Is.Empty);
+		using var archive = ZipFile.OpenRead(corePackage);
+		var entries = archive.Entries.Select(entry => entry.FullName).ToArray();
+		Assert.That(entries, Does.Contain("contentFiles/any/any/payloads/netframework/DeepFlowTest.dll"));
+		Assert.That(entries, Does.Contain("contentFiles/any/any/payloads/netcoreapp/DeepFlowTest.dll"));
+		Assert.That(entries, Does.Contain("contentFiles/any/any/payloads/dotnet/DeepFlowTest.dll"));
+		Assert.That(entries, Does.Contain("contentFiles/any/any/DeepFlowTestResources/x86/DeepFlowTest.GenericInjector.x86.dll"));
+		Assert.That(entries, Does.Contain("contentFiles/any/any/DeepFlowTestResources/x64/DeepFlowTest.GenericInjector.x64.dll"));
+		Assert.That(entries.Any(entry => entry.EndsWith("ffmpeg.exe", StringComparison.OrdinalIgnoreCase)), Is.False);
+		Assert.That(entries.Any(entry => entry.EndsWith(".lib", StringComparison.OrdinalIgnoreCase)), Is.False);
+		Assert.That(entries.Any(entry => entry.EndsWith(".exp", StringComparison.OrdinalIgnoreCase)), Is.False);
+
+		var nuspecEntry = archive.Entries.Single(entry => entry.FullName.EndsWith(".nuspec", StringComparison.OrdinalIgnoreCase));
+		using var nuspecStream = nuspecEntry.Open();
+		var nuspec = XDocument.Load(nuspecStream);
+		var dependencyGroups = nuspec.Descendants()
+			.Single(element => element.Name.LocalName == "dependencies")
+			.Elements()
+			.Where(element => element.Name.LocalName == "group")
+			.Select(element => (string?)element.Attribute("targetFramework"))
+			.Where(value => value is not null)
+			.ToArray();
+		Assert.That(dependencyGroups, Is.EquivalentTo(new[] { ".NETFramework4.6.1", ".NETCoreApp3.1", "net5.0-windows7.0" }));
+	}
+
+	[Test]
+	public void OptionalMediaPackageOwnsFfmpegAndProvenance()
+	{
+		var root = FindRepositoryRoot();
+		var packageRoot = Path.Combine(root, "artifacts", "packages", "Debug");
+		var version = File.ReadAllText(Path.Combine(root, "version.txt")).Trim();
+		var mediaPackage = Path.Combine(packageRoot, $"DeepFlowTest.Media.FFmpeg.{version}.nupkg");
+		if (!File.Exists(mediaPackage))
+			Assert.Ignore("Run build.ps1 Pack to produce the optional media package.");
+
+		using var archive = ZipFile.OpenRead(mediaPackage);
+		var entries = archive.Entries.Select(entry => entry.FullName).ToArray();
+		Assert.That(entries, Does.Contain("contentFiles/any/any/DeepFlowTestResources/ffmpeg.exe"));
+		Assert.That(entries, Does.Contain("provenance/ffmpeg.sha256"));
+		Assert.That(entries, Does.Contain("NOTICE.md"));
 	}
 
 	private static void AssertNonEmptyFile(string path)

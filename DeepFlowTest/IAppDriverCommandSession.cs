@@ -4,7 +4,8 @@ using System;
 using System.Threading;
 using DeepFlowTest.Contracts;
 
-public interface IAppDriverCommandSession
+/// <summary>Direct wire-protocol access that bypasses the typed AppDriver API.</summary>
+public interface IUnsafeAppDriverCommandSession
 {
 	TResponse Send<TResponse>(IpcCommand command);
 }

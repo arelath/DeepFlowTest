@@ -57,7 +57,7 @@ public sealed class AppDriverInProcessEndToEndTests
 			inputElement
 				.Type("hello", clearFirst: true)
 				.SetProperty("Text", "updated");
-			driver.Keyboard.DelayMs = 1;
+			driver.Keyboard.Delay = TimeSpan.FromMilliseconds(1);
 			driver.Keyboard.Shortcut(inputElement, "Control", "A");
 			driver.Keyboard.Press(inputElement, "Backspace");
 			driver.GetElement(ElementSelector.ByName("inProcessCheckBox"))
@@ -100,7 +100,7 @@ public sealed class AppDriverInProcessEndToEndTests
 				new InProcessPayloadSession());
 			var target = driver.GetElement(ElementSelector.ByName("messageBoxHookButton"));
 
-			var responseTask = Task.Run(() => driver.Send<StandardIpcResponse>(new ClickCommandRequest
+			var responseTask = Task.Run(() => driver.UnsafeCommands.Send<StandardIpcResponse>(new ClickCommandRequest
 			{
 				TargetId = target.TargetId,
 				TimeoutMs = 1_000,
@@ -196,7 +196,7 @@ public sealed class AppDriverInProcessEndToEndTests
 		Dispatcher.PushFrame(frame);
 	}
 
-	private sealed class InProcessPayloadSession : IAppDriverCommandSession
+	private sealed class InProcessPayloadSession : IUnsafeAppDriverCommandSession
 	{
 		public TResponse Send<TResponse>(IpcCommand command)
 		{

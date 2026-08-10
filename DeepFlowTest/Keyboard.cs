@@ -13,13 +13,22 @@ using WpfKeyInterop = System.Windows.Input.KeyInterop;
 public sealed class Keyboard
 {
 	private readonly AppDriver driver;
+	private TimeSpan delay = TimeSpan.FromMilliseconds(TimeoutDefaults.KeyboardDelayMs);
 
 	public Keyboard(AppDriver driver)
 	{
 		this.driver = driver ?? throw new ArgumentNullException(nameof(driver));
 	}
 
-	public int DelayMs { get; set; } = TimeoutDefaults.KeyboardDelayMs;
+	public TimeSpan Delay
+	{
+		get => delay;
+		set
+		{
+			_ = DurationUtility.ToMilliseconds(value, nameof(value), allowZero: true);
+			delay = value;
+		}
+	}
 
 	public bool EnsureForeground { get; set; } = true;
 
@@ -46,8 +55,9 @@ public sealed class Keyboard
 
 				SendVirtualKey(key, isKeyDown: true);
 				SendVirtualKey(key, isKeyDown: false);
-				if (DelayMs > 0)
-					Thread.Sleep(DelayMs);
+				var delayMs = DelayMilliseconds;
+				if (delayMs > 0)
+					Thread.Sleep(delayMs);
 			}
 		}
 		finally
@@ -84,8 +94,9 @@ public sealed class Keyboard
 				ReleaseShiftState(modifiers);
 			}
 
-			if (DelayMs > 0)
-				Thread.Sleep(Math.Min(DelayMs, TimeoutDefaults.KeyboardPhysicalDelayCapMs));
+			var delayMs = DelayMilliseconds;
+			if (delayMs > 0)
+				Thread.Sleep(Math.Min(delayMs, TimeoutDefaults.KeyboardPhysicalDelayCapMs));
 		}
 
 		driver.RefreshAfterPhysicalInput();
@@ -114,16 +125,18 @@ public sealed class Keyboard
 
 	private void SendKey(string targetId, string keys)
 	{
-		var response = driver.Send<StandardIpcResponse>(new KeyPressCommandRequest
+		var response = driver.SendCommand<StandardIpcResponse>(new KeyPressCommandRequest
 		{
 			TargetId = targetId,
 			Keys = keys,
-			DelayMs = DelayMs,
+			DelayMs = DelayMilliseconds,
 			EnsureForeground = EnsureForeground,
 		});
 		if (response.Success != true)
 			throw new AppDriverException(response.ErrorCode ?? ProtocolConstants.ErrorCodes.ProtocolError, response.Error ?? "Keyboard command failed.");
 	}
+
+	private int DelayMilliseconds => DurationUtility.ToMilliseconds(Delay, nameof(Delay), allowZero: true);
 
 	private static bool IsModifierKey(WpfKey key) =>
 		key == WpfKey.LeftCtrl

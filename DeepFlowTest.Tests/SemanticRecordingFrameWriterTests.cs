@@ -467,14 +467,12 @@ public sealed class SemanticRecordingFrameWriterTests
 		Assert.That(options.OutputFormat, Is.EqualTo(SemanticRecordingOutputFormat.CondensedAgent));
 		Assert.That(options.CompactOutput, Is.False);
 
-		options.CompactOutput = true;
+		var compactOptions = new SemanticRecordingOptions { CompactOutput = true };
+		Assert.That(compactOptions.OutputFormat, Is.EqualTo(SemanticRecordingOutputFormat.CompactJson));
+		Assert.That(compactOptions.CompactOutput, Is.True);
 
-		Assert.That(options.OutputFormat, Is.EqualTo(SemanticRecordingOutputFormat.CompactJson));
-		Assert.That(options.CompactOutput, Is.True);
-
-		options.CompactOutput = false;
-
-		Assert.That(options.OutputFormat, Is.EqualTo(SemanticRecordingOutputFormat.RawJson));
+		var rawOptions = new SemanticRecordingOptions { CompactOutput = false };
+		Assert.That(rawOptions.OutputFormat, Is.EqualTo(SemanticRecordingOutputFormat.RawJson));
 	}
 
 	private static SemanticRecordingFrame CreateLayoutSnapshotFrame() =>

@@ -196,11 +196,58 @@ public sealed class AppDriverTests
 	[Test]
 	public void TimeoutOptionsExposeDeterministicElementPollingBackoff()
 	{
-		var options = new AppDriverAttachOptions();
+		var options = new AppDriverAttachOptions { Timeout = TimeSpan.FromMilliseconds(1234) };
 
-		Assert.That(options.ElementPollBackoffMs, Is.EqualTo(TimeoutDefaults.CreateElementPollBackoffMs()));
-		options.Timeout = TimeSpan.FromMilliseconds(1234);
+		Assert.That(options.ElementPollBackoff, Is.EqualTo(TimeoutDefaults.CreateElementPollBackoffMs().Select(static milliseconds => TimeSpan.FromMilliseconds(milliseconds))));
 		Assert.That(options.Timeout, Is.EqualTo(TimeSpan.FromMilliseconds(1234)));
+	}
+
+	[Test]
+	public void OptionAndSelectorCollectionsAreDefensiveCopies()
+	{
+		var pollBackoff = new[] { TimeSpan.FromMilliseconds(12) };
+		var ignoredFailures = new[] { BindingFailureFilter.Contains("first") };
+		var recordingProperties = new[] { KnownProperties.Name };
+		var requestedProperties = new[] { KnownProperties.AutomationId };
+		var options = new AppDriverOptions
+		{
+			ElementPollBackoff = pollBackoff,
+			BindingFailures = new BindingFailureOptions { Ignore = ignoredFailures },
+			AutoSemanticRecordingOptions = new SemanticRecordingOptions { PropNames = recordingProperties },
+		};
+		var selector = ElementSelector.ByName("button").WithRequestedProperties(requestedProperties);
+
+		pollBackoff[0] = TimeSpan.FromSeconds(9);
+		ignoredFailures[0] = BindingFailureFilter.Contains("changed");
+		recordingProperties[0] = KnownProperties.Text;
+		requestedProperties[0] = KnownProperties.Content;
+
+		Assert.That(options.ElementPollBackoff, Is.EqualTo(new[] { TimeSpan.FromMilliseconds(12) }));
+		Assert.That(options.BindingFailures.Ignore.Single().Pattern, Is.EqualTo("first"));
+		Assert.That(options.AutoSemanticRecordingOptions.PropNames, Is.EqualTo(new[] { KnownProperties.Name }));
+		Assert.That(selector.RequestedPropertyNames, Is.EqualTo(new[] { KnownProperties.AutomationId }));
+		Assert.Throws<NotSupportedException>(() => ((IList<TimeSpan>)options.ElementPollBackoff)[0] = TimeSpan.Zero);
+	}
+
+	[Test]
+	public void SessionOptionsAreValidatedBeforeLaunchingTheTarget()
+	{
+		var backend = new FakeBackend();
+		var factory = CreateBackendOnlyFactory(backend);
+
+		Assert.Throws<ArgumentOutOfRangeException>(() => factory.Launch(
+			"target.exe",
+			new AppDriverLaunchOptions { Timeout = TimeSpan.Zero }));
+
+		Assert.That(backend.LaunchedExecutablePath, Is.Null);
+	}
+
+	[Test]
+	public void RawCommandsAreExposedOnlyThroughTheUnsafeInterface()
+	{
+		Assert.That(typeof(AppDriver).GetMethods().Any(static method => method.Name == "Send"), Is.False);
+		Assert.That(typeof(AppDriver).GetProperty(nameof(AppDriver.UnsafeCommands))!.PropertyType, Is.EqualTo(typeof(IUnsafeAppDriverCommandSession)));
+		Assert.That(typeof(NamedPipeAppDriverCommandSession).IsNotPublic, Is.True);
 	}
 
 	[Test]
@@ -218,7 +265,7 @@ public sealed class AppDriverTests
 		var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
 			session,
-			new AppDriverOptions { ElementPollBackoffMs = new[] { 1 }, Timeout = TimeSpan.FromMilliseconds(2500) });
+			new AppDriverOptions { ElementPollBackoff = new[] { TimeSpan.FromMilliseconds(1) }, Timeout = TimeSpan.FromMilliseconds(2500) });
 
 		var element = driver.GetElement(ElementSelector.ByName("late"));
 
@@ -248,9 +295,9 @@ public sealed class AppDriverTests
 		var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
 			session,
-			new AppDriverOptions { ElementPollBackoffMs = new[] { 1 }, Timeout = TimeSpan.FromSeconds(1) });
+			new AppDriverOptions { ElementPollBackoff = new[] { TimeSpan.FromMilliseconds(1) }, Timeout = TimeSpan.FromSeconds(1) });
 
-		var elements = driver.GetElements(x => x["Name"] == "late", timeoutMs: 1500);
+		var elements = driver.GetElements(x => x["Name"] == "late", timeout: TimeSpan.FromMilliseconds(1500));
 
 		Assert.That(elements.Single().TargetId, Is.EqualTo("late-target"));
 		Assert.That(session.SentCommands.Count, Is.EqualTo(3));
@@ -364,7 +411,7 @@ public sealed class AppDriverTests
 		var exception = Assert.Throws<AppDriverException>(() =>
 			driver.GetElement(
 				element => element.TypeName == "MenuItem" && element["Header"].ToString().Replace("_", string.Empty).Trim() == normalizedHeader,
-				timeoutMs: 1,
+				timeout: TimeSpan.FromMilliseconds(1),
 				propNames: MatcherPropertyNames));
 
 		Assert.That(exception!.ErrorCode, Is.EqualTo(AppDriverErrorCodes.AmbiguousTarget));
@@ -420,7 +467,7 @@ public sealed class AppDriverTests
 			&& element["Header"] == "Build"
 			&& element["IsEnabled"];
 
-		var element = driver.GetElement(candidate => predicate(candidate), timeoutMs: 1);
+		var element = driver.GetElement(candidate => predicate(candidate), timeout: TimeSpan.FromMilliseconds(1));
 
 		Assert.That(element.TargetId, Is.EqualTo("build"));
 		Assert.That(session.SentCommands.OfType<FindElementCommandRequest>(), Is.Empty);
@@ -453,14 +500,14 @@ public sealed class AppDriverTests
 		var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
 			session,
-			new AppDriverOptions { ElementPollBackoffMs = new[] { 1 }, Timeout = TimeSpan.FromMilliseconds(250) });
+			new AppDriverOptions { ElementPollBackoff = new[] { TimeSpan.FromMilliseconds(1) }, Timeout = TimeSpan.FromMilliseconds(250) });
 		var expectedContent = "Late";
 		Func<Element, bool> predicate = element =>
 			element.TypeName == "Button"
 			&& element["Content"] == expectedContent
 			&& element["IsEnabled"];
 
-		var element = driver.GetElement(candidate => predicate(candidate), timeoutMs: 250);
+		var element = driver.GetElement(candidate => predicate(candidate), timeout: TimeSpan.FromMilliseconds(250));
 
 		Assert.That(element.TargetId, Is.EqualTo("late"));
 		Assert.That(session.SentCommands.OfType<GetVisualTreeCommandRequest>().Count(), Is.EqualTo(2));
@@ -515,7 +562,7 @@ public sealed class AppDriverTests
 			&& element["Header"].ToString().IndexOf("build", StringComparison.OrdinalIgnoreCase) >= 0
 			&& element["IsEnabled"];
 
-		var elements = driver.GetElements(candidate => predicate(candidate), timeoutMs: 1);
+		var elements = driver.GetElements(candidate => predicate(candidate), timeout: TimeSpan.FromMilliseconds(1));
 
 		Assert.That(elements.Select(static element => element.TargetId), Is.EqualTo(new[] { "build", "rebuild" }));
 		Assert.That(session.SentCommands.OfType<GetVisualTreeCommandRequest>().Single().PropNames, Does.Contain("Header"));
@@ -606,7 +653,7 @@ public sealed class AppDriverTests
 		var element = driver.GetElement(
 			candidate => string.Equals(candidate.TypeName, "MenuItem", StringComparison.Ordinal)
 				&& ElementOrDescendantTextMatches(candidate, normalizedHeader, 4),
-			timeoutMs: 1,
+			timeout: TimeSpan.FromMilliseconds(1),
 			propNames: MatcherPropertyNames);
 
 		Assert.That(element.TargetId, Is.EqualTo("menu"));
@@ -661,7 +708,7 @@ public sealed class AppDriverTests
 		var child = driver.GetElement(
 			root,
 			element => element.TypeName == "Button" && element["Content"] == "Open" && element["IsEnabled"],
-			timeoutMs: 1,
+			timeout: TimeSpan.FromMilliseconds(1),
 			propNames: ["Content", "IsEnabled"]);
 
 		Assert.That(child.TargetId, Is.EqualTo("child"));
@@ -688,7 +735,7 @@ public sealed class AppDriverTests
 			driver.GetElement(
 				root,
 				element => element.TypeName == "MenuItem" && element["Header"] == "Build",
-				timeoutMs: 1,
+				timeout: TimeSpan.FromMilliseconds(1),
 				propNames: MatcherPropertyNames));
 
 		Assert.That(exception!.ErrorCode, Is.EqualTo(AppDriverErrorCodes.TargetNotFound));
@@ -733,7 +780,7 @@ public sealed class AppDriverTests
 		var child = driver.GetElement(
 			root => root.TypeName == "GroupBox" && root["Header"] == "Actions",
 			element => element.TypeName == "Button" && element["Content"] == "Open" && element["IsEnabled"],
-			timeoutMs: 1,
+			timeout: TimeSpan.FromMilliseconds(1),
 			propNames: ["Header", "Content", "IsEnabled"]);
 
 		Assert.That(child.TargetId, Is.EqualTo("child"));
@@ -806,7 +853,7 @@ public sealed class AppDriverTests
 		}
 	}
 
-	private sealed class RootNoMatchDiagnosticSession : IAppDriverCommandSession
+	private sealed class RootNoMatchDiagnosticSession : IUnsafeAppDriverCommandSession
 	{
 		public List<IpcCommand> SentCommands { get; } = [];
 

@@ -3,7 +3,7 @@ namespace DeepFlowTest.Tests.Fakes;
 using System.Collections.Generic;
 using DeepFlowTest.Contracts;
 
-internal sealed class FakeAppDriverCommandSession : IAppDriverCommandSession
+internal sealed class FakeAppDriverCommandSession : IUnsafeAppDriverCommandSession
 {
 	private readonly Queue<object> responses;
 

@@ -139,17 +139,17 @@ public sealed class AppConnection : IDisposable
 
 public sealed class AppConnectionOptions
 {
-	public ITargetProcess? TargetProcess { get; set; }
+	public ITargetProcess? TargetProcess { get; init; }
 
-	public bool OwnsProcess { get; set; }
+	public bool OwnsProcess { get; init; }
 
-	public bool ReusesPipe { get; set; }
+	public bool ReusesPipe { get; init; }
 
-	public string PipeName { get; set; } = string.Empty;
+	public string PipeName { get; init; } = string.Empty;
 
-	public string PayloadFrameworkFamily { get; set; } = string.Empty;
+	public string PayloadFrameworkFamily { get; init; } = string.Empty;
 
-	public AppConnectionInjectorState InjectorState { get; set; } = AppConnectionInjectorState.NotInjected;
+	public AppConnectionInjectorState InjectorState { get; init; } = AppConnectionInjectorState.NotInjected;
 }
 
 public enum AppConnectionInjectorState
@@ -170,9 +170,9 @@ public interface IAppConnectionInjector
 
 public sealed class AppConnectionInjectionResult
 {
-	public string? PayloadFrameworkFamily { get; set; }
+	public string? PayloadFrameworkFamily { get; init; }
 
-	public string? StartupLogTail { get; set; }
+	public string? StartupLogTail { get; init; }
 }
 
 public sealed class AppConnectionException : Exception

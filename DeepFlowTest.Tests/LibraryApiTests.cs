@@ -24,9 +24,12 @@ public sealed class LibraryApiTests
 		var options = new AppDriverOptions
 		{
 			AutoSemanticRecordingEnabled = false,
+			VirtualPointer = new VirtualPointerOptions
+			{
+				Enabled = true,
+				HideDelay = TimeSpan.FromMilliseconds(250),
+			},
 		};
-		options.VirtualPointer.Enabled = true;
-		options.VirtualPointer.HideDelayMs = 250;
 
 		using var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
@@ -158,8 +161,8 @@ public sealed class LibraryApiTests
 
 		using (var recording = driver.StartSemanticRecording(path, new SemanticRecordingOptions
 		{
-			IntervalMs = 60,
-			TextIdleMs = 123,
+			Interval = TimeSpan.FromMilliseconds(60),
+			TextIdleDuration = TimeSpan.FromMilliseconds(123),
 			MaxBatchFrames = 7,
 			OutputFormat = SemanticRecordingOutputFormat.CompactJson,
 		}))
@@ -226,8 +229,8 @@ public sealed class LibraryApiTests
 
 		using (driver.StartSemanticRecording(path, new SemanticRecordingOptions
 		{
-			IntervalMs = 60,
-			TextIdleMs = 123,
+			Interval = TimeSpan.FromMilliseconds(60),
+			TextIdleDuration = TimeSpan.FromMilliseconds(123),
 			MaxBatchFrames = 7,
 			OutputFormat = SemanticRecordingOutputFormat.CompactJson,
 		}))
@@ -242,26 +245,30 @@ public sealed class LibraryApiTests
 	}
 
 	[Test]
-	public void AutoSemanticRecordingStartsByDefaultWhenOptionsAreProvidedAndSessionSupportsStreaming()
+	public void FailureOnlyDiagnosticsStartsBufferedRecordingByDefaultWithoutKeepingSuccessArtifacts()
 	{
 		var session = new FakeSemanticRecordingCommandSession();
-		var options = new AppDriverOptions();
+		var outputDirectory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-failure-only-success");
+		if (Directory.Exists(outputDirectory))
+			Directory.Delete(outputDirectory, recursive: true);
+		var options = new AppDriverOptions
+		{
+			AutomaticDiagnostics = new AutomaticDiagnosticsOptions { OutputDirectory = outputDirectory },
+		};
 
-		using (AppDriver.CreateForTests(
+		using (var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
 			session,
 			options))
 		{
 			Assert.That(session.StartRequest, Is.Not.Null);
-			Assert.That(options.AutoSemanticRecordingOutputPath, Is.Not.Null);
-			Assert.That(Path.GetFileName(options.AutoSemanticRecordingOutputPath!), Does.EndWith(".dft.txt"));
-			Assert.That(SpinWait.SpinUntil(() => File.Exists(options.AutoSemanticRecordingOutputPath!) && ReadAllTextShared(options.AutoSemanticRecordingOutputPath!).Contains("@1 action", StringComparison.Ordinal), TimeSpan.FromSeconds(2)), Is.True);
+			Assert.That(options.AutoSemanticRecordingOutputPath, Is.Null);
+			Assert.That(driver.AutomaticSemanticRecordingOutputPath, Is.Null);
+			Assert.That(SpinWait.SpinUntil(() => session.SentCommands.OfType<StartSendingCommandRequest>().Any(), TimeSpan.FromSeconds(2)), Is.True);
 		}
 
-		var recordingText = File.ReadAllText(options.AutoSemanticRecordingOutputPath!);
-		Assert.That(recordingText, Does.StartWith("dft-condensed/1 profile=agent source=compact-json"));
-		Assert.That(recordingText, Does.Contain("@1 action"));
 		Assert.That(session.SentCommands.OfType<StopSendingCommandRequest>().Single().SubscriptionId, Is.EqualTo("sub-1"));
+		Assert.That(Directory.Exists(outputDirectory), Is.False);
 	}
 
 	[Test]
@@ -270,7 +277,7 @@ public sealed class LibraryApiTests
 		var session = new FakeSemanticRecordingCommandSession();
 		var options = new AppDriverOptions
 		{
-			AutoSemanticRecordingEnabled = false,
+			AutomaticDiagnostics = new AutomaticDiagnosticsOptions { Mode = AutomaticDiagnosticsMode.Off },
 		};
 
 		using (AppDriver.CreateForTests(
@@ -313,9 +320,12 @@ public sealed class LibraryApiTests
 		var options = new AppDriverOptions
 		{
 			AutoSemanticRecordingOutputPath = path,
+			AutoSemanticRecordingOptions = new SemanticRecordingOptions
+			{
+				Interval = TimeSpan.FromMilliseconds(75),
+				TextIdleDuration = TimeSpan.FromMilliseconds(25),
+			},
 		};
-		options.AutoSemanticRecordingOptions.IntervalMs = 75;
-		options.AutoSemanticRecordingOptions.TextIdleMs = 25;
 
 		using (AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
@@ -335,7 +345,7 @@ public sealed class LibraryApiTests
 	}
 
 	[Test]
-	public void AutoSemanticRecordingStartFailureDisposesConnection()
+	public void AutomaticSemanticRecordingStartFailureDoesNotFailDriverConstruction()
 	{
 		var process = new FakeTargetProcess();
 		using var connection = AppConnection.ForAttach(process, "pipe");
@@ -344,10 +354,12 @@ public sealed class LibraryApiTests
 			AutoSemanticRecordingOutputPath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "library-auto-semantic-recording-failure.json"),
 		};
 
-		var exception = Assert.Throws<AppDriverException>(() =>
-			AppDriver.CreateForTests(connection, new FakeSession(), options));
+		using (var driver = AppDriver.CreateForTests(connection, new FakeSession(), options))
+		{
+			Assert.That(driver.Diagnostics.Select(static diagnostic => diagnostic.Code), Does.Contain("automatic-recording-start-failed"));
+			Assert.That(connection.IsDisposed, Is.False);
+		}
 
-		Assert.That(exception!.Message, Does.Contain("does not support streaming recording"));
 		Assert.That(connection.IsDisposed, Is.True);
 		Assert.That(process.DisposeCount, Is.EqualTo(1));
 	}
@@ -617,7 +629,7 @@ public sealed class LibraryApiTests
 		}
 	}
 
-	private sealed class FakeSemanticRecordingCommandSession : IAppDriverCommandSession, IAppDriverStreamingSession
+	private sealed class FakeSemanticRecordingCommandSession : IUnsafeAppDriverCommandSession, IAppDriverStreamingSession
 	{
 		private readonly int firstFrameDelayMs;
 

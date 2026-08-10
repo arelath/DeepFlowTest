@@ -1,6 +1,13 @@
 <Project>
+  <Import Project="$(MSBuildThisFileDirectory)Shared\DeepFlowTest.Frameworks.props" />
+
   <PropertyGroup>
     <RepositoryRoot>$(MSBuildThisFileDirectory)</RepositoryRoot>
+    <ArtifactsRoot>$(RepositoryRoot)artifacts\</ArtifactsRoot>
+    <ArtifactsBinRoot>$(ArtifactsRoot)bin\</ArtifactsBinRoot>
+    <ArtifactsObjRoot>$(ArtifactsRoot)obj\</ArtifactsObjRoot>
+    <ArtifactsStagingRoot>$(ArtifactsRoot)staging\</ArtifactsStagingRoot>
+    <ArtifactsPackagesRoot>$(ArtifactsRoot)packages\</ArtifactsPackagesRoot>
     <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
     <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
@@ -14,9 +21,10 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <OutputPath Condition="'$(OutputPath)' == ''">$(RepositoryRoot)bin\$(Configuration)\</OutputPath>
-    <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)' == ''">$(RepositoryRoot)output\obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
-	<BaseIntermediateOutputPath Condition="'$(MSBuildProjectName)' == 'DeepFlowTest.Payload'">$(RepositoryRoot)artifacts\payload-obj\</BaseIntermediateOutputPath>
+    <BaseOutputPath Condition="'$(BaseOutputPath)' == ''">$(ArtifactsBinRoot)$(MSBuildProjectName)\</BaseOutputPath>
+    <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)' == ''">$(ArtifactsObjRoot)$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <PackageOutputPath Condition="'$(PackageOutputPath)' == ''">$(ArtifactsPackagesRoot)$(Configuration)\</PackageOutputPath>
+    <Version Condition="Exists('$(RepositoryRoot)version.txt')">$([System.IO.File]::ReadAllText('$(RepositoryRoot)version.txt').Trim())</Version>
   </PropertyGroup>
 
   <PropertyGroup>

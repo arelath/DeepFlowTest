@@ -3,18 +3,49 @@ namespace DeepFlowTest;
 using System;
 using DeepFlowTest.Contracts;
 
-internal sealed class DriverCommandClient(IAppDriverCommandSession session, Action? afterSuccessfulCommand = null)
+internal sealed class DriverCommandClient(
+	IUnsafeAppDriverCommandSession session,
+	Action? afterSuccessfulCommand = null,
+	Action<Exception>? onFailure = null)
 {
-	private readonly IAppDriverCommandSession session = session ?? throw new ArgumentNullException(nameof(session));
+	private readonly IUnsafeAppDriverCommandSession session = session ?? throw new ArgumentNullException(nameof(session));
 	private readonly Action? afterSuccessfulCommand = afterSuccessfulCommand;
+	private readonly Action<Exception>? onFailure = onFailure;
 
 	public TResponse Send<TResponse>(IpcCommand command)
 	{
-		var response = session.Send<TResponse>(command);
-		if (!IsFailure(response, out _, out _))
-			afterSuccessfulCommand?.Invoke();
+		try
+		{
+			var response = session.Send<TResponse>(command);
+			if (IsFailure(response, out var errorCode, out var errorMessage))
+			{
+				NotifyFailure(new AppDriverException(
+					errorCode ?? ProtocolConstants.ErrorCodes.ProtocolError,
+					errorMessage ?? "The driver command failed."));
+			}
+			else
+			{
+				afterSuccessfulCommand?.Invoke();
+			}
 
-		return response;
+			return response;
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			NotifyFailure(ex);
+			throw;
+		}
+	}
+
+	private void NotifyFailure(Exception exception)
+	{
+		try
+		{
+			onFailure?.Invoke(exception);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+		}
 	}
 
 	public static bool IsFailure<TResponse>(TResponse response, string errorCode) =>

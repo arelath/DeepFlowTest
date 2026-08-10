@@ -8,8 +8,6 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-	<OutputPath>$(RepositoryRoot)artifacts\payload-tests-bin\$(Configuration)\$(TargetFramework)\</OutputPath>
-	<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <DefineConstants>$(DefineConstants);DEEPFLOWTEST_INJECTOR_TESTS</DefineConstants>
   </PropertyGroup>
 

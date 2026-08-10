@@ -97,38 +97,38 @@ public partial class Element
 	public virtual Element Invoke(string methodName, bool allowUnsafeCode = false) =>
 		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = methodName, AllowUnsafeCode = allowUnsafeCode });
 
-	public virtual Element Invoke<TInput>(Expression<Action<TInput>> code, int timeoutMs = TimeoutDefaults.CommandTimeoutMs) =>
-		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+	public virtual Element Invoke<TInput>(Expression<Action<TInput>> code, TimeSpan? timeout = null) =>
+		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = EffectiveCommandTimeout(timeout) });
 
-	public virtual TOutput? Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
+	public virtual TOutput? Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, TimeSpan? timeout = null)
 	{
-		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = EffectiveCommandTimeout(timeout) });
 		ElementCommandExecutor.ThrowIfUnserializableResult(response, nameof(Invoke));
 		return ElementCommandExecutor.ConvertResponseValue<TOutput>(response.Value);
 	}
 
-	public virtual Element Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, out TOutput? result, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
+	public virtual Element Invoke<TInput, TOutput>(Expression<Func<TInput, TOutput>> code, out TOutput? result, TimeSpan? timeout = null)
 	{
-		result = Invoke(code, timeoutMs);
+		result = Invoke(code, timeout);
 		return this;
 	}
 
-	public virtual Element InvokeAsync<TInput>(Expression<Func<TInput, Task>> code, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
+	public virtual Element InvokeAsync<TInput>(Expression<Func<TInput, Task>> code, TimeSpan? timeout = null)
 	{
-		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = EffectiveCommandTimeout(timeout) });
 		return this;
 	}
 
-	public virtual TOutput? InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
+	public virtual TOutput? InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, TimeSpan? timeout = null)
 	{
-		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = timeoutMs });
+		var response = SendTargetedWithRepairResponse(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = EffectiveCommandTimeout(timeout) });
 		ElementCommandExecutor.ThrowIfUnserializableResult(response, nameof(InvokeAsync));
 		return ElementCommandExecutor.ConvertResponseValue<TOutput>(response.Value);
 	}
 
-	public virtual Element InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, out TOutput? result, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
+	public virtual Element InvokeAsync<TInput, TOutput>(Expression<Func<TInput, Task<TOutput>>> code, out TOutput? result, TimeSpan? timeout = null)
 	{
-		result = InvokeAsync(code, timeoutMs);
+		result = InvokeAsync(code, timeout);
 		return this;
 	}
 
@@ -143,12 +143,12 @@ public partial class Element
 			PropertyValue = Eval.SerializeCode(getValue),
 		});
 
-	public virtual Element Assert(Expression<Func<Element, bool?>> predicateExpression, int timeoutMs = TimeoutDefaults.CommandTimeoutMs)
+	public virtual Element Assert(Expression<Func<Element, bool?>> predicateExpression, TimeSpan? timeout = null)
 	{
 		_ = predicateExpression ?? throw new ArgumentNullException(nameof(predicateExpression));
 		var parameter = DebugValueExpressionVisitor.GetDebugExpression(TypeName, this);
 		var assertable = Assertable.FromValueExpression(this, parameter, RefreshFromCurrentSnapshot);
-		assertable.IsTrue(predicateExpression, timeoutMs);
+		assertable.IsTrue(predicateExpression, timeout);
 		return this;
 	}
 
@@ -174,10 +174,11 @@ public partial class Element
 		if (options is null)
 			return request;
 
-		request.DurationMs = options.DurationMs;
-		request.HoldMs = options.HoldMs;
-		request.StepIntervalMs = options.StepIntervalMs;
-		request.PostDropWaitMs = options.PostDropWaitMs;
+		options.Validate();
+		request.DurationMs = DurationUtility.ToMilliseconds(options.Duration, nameof(options.Duration), allowZero: true);
+		request.HoldMs = DurationUtility.ToMilliseconds(options.HoldDuration, nameof(options.HoldDuration), allowZero: true);
+		request.StepIntervalMs = DurationUtility.ToMilliseconds(options.StepInterval, nameof(options.StepInterval));
+		request.PostDropWaitMs = DurationUtility.ToMilliseconds(options.PostDropDelay, nameof(options.PostDropDelay), allowZero: true);
 		request.SourceAnchorX = options.SourceAnchorX;
 		request.SourceAnchorY = options.SourceAnchorY;
 		request.DestinationAnchorX = options.DestinationAnchorX;
@@ -185,7 +186,7 @@ public partial class Element
 		request.UseInjectedEvents = options.UseInjectedEvents;
 		request.EnsureForeground = options.EnsureForeground;
 		request.ValidateSameProcess = options.ValidateSameProcess;
-		request.TimeoutMs = options.TimeoutMs;
+		request.TimeoutMs = options.Timeout is TimeSpan timeout ? DurationUtility.ToMilliseconds(timeout, nameof(options.Timeout)) : null;
 		return request;
 	}
 
@@ -193,6 +194,11 @@ public partial class Element
 	{
 		return Commands.SendTargetedWithRepairResponse(this, commandFactory);
 	}
+
+	private static int EffectiveCommandTimeout(TimeSpan? timeout) =>
+		DurationUtility.ToMilliseconds(
+			timeout ?? TimeSpan.FromMilliseconds(TimeoutDefaults.CommandTimeoutMs),
+			nameof(timeout));
 
 	private void RefreshFromCurrentSnapshot()
 	{

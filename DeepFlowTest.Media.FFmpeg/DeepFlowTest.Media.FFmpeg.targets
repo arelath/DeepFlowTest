@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <_DeepFlowTestFfmpegPackageRoot>$(MSBuildThisFileDirectory)..\contentFiles\any\any\DeepFlowTestResources</_DeepFlowTestFfmpegPackageRoot>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(_DeepFlowTestFfmpegPackageRoot)\ffmpeg.exe')">
+    <None Include="$(_DeepFlowTestFfmpegPackageRoot)\ffmpeg.exe" Link="DeepFlowTestResources\ffmpeg.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

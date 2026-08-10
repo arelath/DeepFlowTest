@@ -17,7 +17,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1 PublishCli --configuration 
 powershell -ExecutionPolicy Bypass -File .\build.ps1 Pack --configuration Release
 ```
 
-`Compile` builds both native injector architectures, managed projects, and repacked payloads. `TestFast` runs the core and CLI unit tests. `TestIntegration` launches the desktop harness and exercises real-process attachment. `TestFull` combines the declared test lanes.
+`Compile` builds both native injector architectures, managed projects, and repacked payloads. `TestFast` runs the client, payload, and CLI unit tests. `TestIntegration` launches the desktop harness and exercises real-process attachment. `TestFull` combines the declared test lanes.
 
 ## Fast iteration
 
@@ -38,5 +38,16 @@ Integration tests produce semantic recordings by default. Pass `--no-test-record
 
 ## Packaging Workflow
 
-Run `Compile`, `PublishCli`, and `Pack` from a clean checkout. Inspect the staged payloads, native injector resources, published CLI, and NuGet package before release. See `PayloadRepacking.md` for payload rules.
+Run `Compile`, `PublishCli`, and `Pack` from a clean checkout. `Pack` invokes standard SDK `dotnet pack` for `DeepFlowTest.csproj` and the optional `DeepFlowTest.Media.FFmpeg` project; NuGet derives dependency groups from the evaluated project references. Inspect `artifacts/staging`, `artifacts/publish`, and `artifacts/packages/<configuration>` before release. See `PayloadRepacking.md` for payload rules.
+
+All managed projects use project-isolated outputs:
+
+```text
+artifacts/bin/<project>/<configuration>/<tfm>/
+artifacts/obj/<project>/<configuration>/<tfm>/
+artifacts/staging/payloads/<runtime-family>/
+artifacts/packages/<configuration>/
+```
+
+The core package contains automation payloads and native injectors, but not FFmpeg. Install `DeepFlowTest.Media.FFmpeg` only for video recording, or configure `AppDriver.RecordingFfmpegPathOverride` with a separately managed executable.
 

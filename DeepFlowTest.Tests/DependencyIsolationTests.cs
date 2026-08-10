@@ -22,18 +22,21 @@ public sealed class DependencyIsolationTests
 	{
 		var root = FindRepositoryRoot();
 		var buildScript = File.ReadAllText(Path.Combine(root, ".build", "Build.cs"));
-		var repackProject = File.ReadAllText(Path.Combine(root, ".build", "PayloadRepack.proj"));
+		var payloadProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.Payload", "DeepFlowTest.Payload.csproj"));
+		var repackTargets = File.ReadAllText(Path.Combine(root, "Shared", "DeepFlowTest.PayloadRepack.targets"));
 
-		Assert.That(buildScript, Does.Contain("RunILRepack"));
-		Assert.That(repackProject, Does.Contain("TaskName=\"ILRepack\""));
-		Assert.That(repackProject, Does.Contain("Internalize=\"true\""));
+		Assert.That(buildScript, Does.Contain("/t:RepackPayloads"));
+		Assert.That(buildScript, Does.Not.Contain("GetPayloadDependencies"));
+		Assert.That(payloadProject, Does.Contain("PayloadDependency"));
+		Assert.That(repackTargets, Does.Contain("TaskName=\"ILRepack\""));
+		Assert.That(repackTargets, Does.Contain("Internalize=\"true\""));
 	}
 
 	[Test]
 	public void RepackedPayloadFoldersContainOnlyProductPayloadFiles()
 	{
 		var root = FindRepositoryRoot();
-		var payloadRoot = Path.Combine(root, "output", "payloads");
+		var payloadRoot = Path.Combine(root, "artifacts", "staging", "payloads");
 		Assert.That(Directory.Exists(payloadRoot), Is.True, "Repacked payload root should exist. Run .\\build.ps1 Compile before this test lane.");
 
 		foreach (var family in new[] { "netframework", "netcoreapp", "dotnet" })
@@ -54,7 +57,7 @@ public sealed class DependencyIsolationTests
 	public void RepackedDotnetPayloadDoesNotReferenceLooseThirdPartyAssemblies()
 	{
 		var root = FindRepositoryRoot();
-		var payloadPath = Path.Combine(root, "output", "payloads", "dotnet", "DeepFlowTest.dll");
+		var payloadPath = Path.Combine(root, "artifacts", "staging", "payloads", "dotnet", "DeepFlowTest.dll");
 		Assert.That(File.Exists(payloadPath), Is.True, "Repacked dotnet payload should exist. Run .\\build.ps1 Compile before this test lane.");
 
 		var references = Assembly.LoadFile(payloadPath)
@@ -71,7 +74,7 @@ public sealed class DependencyIsolationTests
 	public async Task RepackedPayloadCanAnswerHelloWithNewtonsoftAlreadyLoaded()
 	{
 		var root = FindRepositoryRoot();
-		var payloadPath = Path.Combine(root, "output", "payloads", "dotnet", "DeepFlowTest.dll");
+		var payloadPath = Path.Combine(root, "artifacts", "staging", "payloads", "dotnet", "DeepFlowTest.dll");
 		Assert.That(File.Exists(payloadPath), Is.True, "Repacked dotnet payload should exist. Run .\\build.ps1 Compile before this test lane.");
 
 		Assert.That(typeof(Newtonsoft.Json.JsonConvert).Assembly.GetName().Name, Is.EqualTo("Newtonsoft.Json"));

@@ -170,7 +170,7 @@ public sealed class ElementApiTests
 			second,
 			StandardIpcResponse.Ok());
 		var driver = CreateDriver(session);
-		var element = driver.GetElement(x => x.TypeName == "Button" && x["Name"] == "Submit", timeoutMs: 1);
+		var element = driver.GetElement(x => x.TypeName == "Button" && x["Name"] == "Submit", timeout: TimeSpan.FromMilliseconds(1));
 
 		element.Click();
 
@@ -392,10 +392,10 @@ public sealed class ElementApiTests
 		var source = driver.GetElement(ElementSelector.ByName("drag-source"));
 		var options = new DragAndDropOptions
 		{
-			DurationMs = 350,
-			HoldMs = 40,
-			StepIntervalMs = 7,
-			PostDropWaitMs = 15,
+			Duration = TimeSpan.FromMilliseconds(350),
+			HoldDuration = TimeSpan.FromMilliseconds(40),
+			StepInterval = TimeSpan.FromMilliseconds(7),
+			PostDropDelay = TimeSpan.FromMilliseconds(15),
 			SourceAnchorX = 0.1,
 			SourceAnchorY = 0.2,
 			DestinationAnchorX = 0.8,
@@ -403,7 +403,7 @@ public sealed class ElementApiTests
 			UseInjectedEvents = true,
 			EnsureForeground = false,
 			ValidateSameProcess = false,
-			TimeoutMs = 1234,
+			Timeout = TimeSpan.FromMilliseconds(1234),
 		};
 
 		var returned = source.DragAndDropTo(ElementSelector.ByName("drop-target"), options);
@@ -464,7 +464,7 @@ public sealed class ElementApiTests
 		var driver = CreateDriver(new FakeSession(match, refreshed, refreshed, refreshed));
 		var element = driver.GetElement(ElementSelector.ByName("submit"));
 
-		var exception = Assert.Throws<AssertionException>(() => element.Assert(x => x["Content"] == "Save", timeoutMs: 1));
+		var exception = Assert.Throws<AssertionException>(() => element.Assert(x => x["Content"] == "Save", timeout: TimeSpan.FromMilliseconds(1)));
 
 		Assert.That(exception!.Message, Does.Contain("Expected:"));
 		Assert.That(exception.Message, Does.Contain("Actual:"));
@@ -539,7 +539,7 @@ public sealed class ElementApiTests
 		Assert.That(session.SentCommands.OfType<ScreenshotCommandRequest>().Count(), Is.EqualTo(3));
 	}
 
-	private static AppDriver CreateDriver(IAppDriverCommandSession session)
+	private static AppDriver CreateDriver(IUnsafeAppDriverCommandSession session)
 	{
 		return AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "test-pipe"),
