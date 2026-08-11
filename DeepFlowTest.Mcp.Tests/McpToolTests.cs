@@ -586,7 +586,8 @@ public sealed class McpToolTests
 		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
 
 		var result = AgentTools.Observe(
-			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Resources, fixture.Options, contextId);
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Resources, fixture.Options, contextId,
+			format: McpObservationFormat.Json, properties: [KnownProperties.Text], includeElements: true);
 		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
 		var uri = json.RootElement.GetProperty("resourceUri").GetString()!;
 
@@ -626,12 +627,41 @@ public sealed class McpToolTests
 		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
 
 		var result = AgentTools.Observe(
-			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Resources, fixture.Options, contextId);
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Resources, fixture.Options, contextId,
+			format: McpObservationFormat.Json, properties: [KnownProperties.Text], includeElements: true);
 		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
 
 		Assert.That(result.IsError, Is.False);
 		Assert.That(json.RootElement.GetProperty("elements").GetArrayLength(), Is.EqualTo(1));
 		Assert.That(json.RootElement.GetRawText(), Does.Not.Contain(nameof(PropertyExtractionError)));
+	}
+
+	[Test]
+	public void AgentObserveDefaultsToOneCompactUiRepresentation()
+	{
+		using var fixture = McpTestHost.CreateHost();
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+
+		var result = AgentTools.Observe(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Resources, fixture.Options, contextId);
+		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
+		var compactText = result.Content.OfType<TextContentBlock>().Single().Text;
+
+		Assert.That(json.RootElement.GetProperty("elements").GetArrayLength(), Is.Zero);
+		Assert.That(json.RootElement.TryGetProperty("text", out _), Is.False);
+		Assert.That(compactText, Does.Contain("dft-condensed/1"));
+		Assert.That(json.RootElement.GetRawText().Length, Is.LessThan(1_000));
+	}
+
+	[Test]
+	public void AgentStructuredResultsAreNotRepeatedAsText()
+	{
+		var response = McpToolResponse.Ok(new { value = "large structured value" });
+
+		var result = McpCallToolResults.FromLegacy(response, static data => data!);
+
+		Assert.That(result.Content.OfType<TextContentBlock>().Single().Text, Is.EqualTo("Result returned as structured content."));
+		Assert.That(JsonSerializer.Serialize(result.StructuredContent), Does.Contain("large structured value"));
 	}
 
 	[Test]

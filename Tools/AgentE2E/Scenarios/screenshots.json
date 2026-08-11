@@ -2,6 +2,7 @@
   "id": "screenshots",
   "targetExecutable": "artifacts\\bin\\HelloWorld\\{{CONFIGURATION}}\\net8.0-windows\\HelloWorld.exe",
   "promptFile": "screenshots.prompt.txt",
+  "maximumNonImagePayloadBytes": 75000,
   "maximumToolFailures": 0,
   "allowedFailureCodes": [],
   "requiredToolSuccessCounts": {

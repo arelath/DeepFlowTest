@@ -2,6 +2,7 @@
   "id": "winforms-controls",
   "targetExecutable": "artifacts\\bin\\WinFormsExampleApp\\{{CONFIGURATION}}\\net8.0-windows\\WinFormsExampleApp.exe",
   "promptFile": "winforms-controls.prompt.txt",
+  "maximumNonImagePayloadBytes": 100000,
   "maximumToolFailures": 1,
   "allowedFailureCodes": ["no-match", "command-timeout"],
   "requiredToolSuccessCounts": {

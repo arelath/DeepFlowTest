@@ -4,6 +4,8 @@ Target process ID: {{TARGET_PID}}
 
 Attach, observe, and use deepflow_find before each action so handles are exercised. Complete these operations:
 
+Keep MCP results token-efficient: use the default condensed observation without structured elements, hidden elements, extra properties, or an enlarged limit. Use deepflow_find for exact controls and property values. Do not request a full JSON tree.
+
 1. Replace SearchTextBox with exactly `Basic WPF E2E` and verify Text.
 2. Click PrimaryButton once.
 3. Expand DetailsExpander with the `Expand` invoke operation and verify IsExpanded is true. Do not try a click first.

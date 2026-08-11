@@ -303,6 +303,7 @@ internal sealed record class McpObservationResult
 
 	public string Format { get; init; } = string.Empty;
 
+	[JsonIgnore]
 	public string? Text { get; init; }
 
 	public IReadOnlyList<TreeNodeData> Nodes { get; init; } = [];
@@ -401,6 +402,7 @@ internal sealed record class McpActionResult
 
 	public McpVerificationResult? Verification { get; init; }
 
+	[JsonIgnore]
 	public string? Observation { get; init; }
 
 	public McpActionDelta? Delta { get; init; }
@@ -589,7 +591,7 @@ internal static class McpCallToolResults
 		{
 			IsError = false,
 			StructuredContent = structured,
-			Content = content?.Invoke(result) ?? [new TextContentBlock { Text = structured.GetRawText() }],
+			Content = content?.Invoke(result) ?? [new TextContentBlock { Text = "Result returned as structured content." }],
 		};
 	}
 

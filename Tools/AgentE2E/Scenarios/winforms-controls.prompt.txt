@@ -4,6 +4,8 @@ Target process ID: {{TARGET_PID}}
 
 Attach and observe. Use deepflow_find before each action and prefer returned handles. Complete these checks:
 
+Keep MCP results token-efficient: use the default condensed observation without structured elements, hidden elements, extra properties, or an enlarged limit. Use deepflow_find for exact controls and property values. Do not request a full JSON tree.
+
 1. Replace the TextBox named `Input Text Box` with exactly `WinForms E2E by Luna` and verify Text.
 2. Click the Button named `Primary Button`; verify the Label named `Status Label` contains `Clicked: WinForms E2E by Luna`.
 3. Uncheck the CheckBox named `Enabled Check Box` using the `Uncheck` invoke operation and verify Checked is false.

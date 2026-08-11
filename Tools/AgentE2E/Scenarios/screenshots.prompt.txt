@@ -4,6 +4,8 @@ Target process ID: {{TARGET_PID}}
 
 Attach and observe. Then:
 
+Keep MCP results token-efficient: use the default condensed observation without structured elements, hidden elements, extra properties, or an enlarged limit. Use deepflow_find for exact controls. Do not request a full JSON tree.
+
 1. Capture the full target window as PNG.
 2. Capture the full target window as JPEG.
 3. Find TextBox1 and capture that element as BMP through its returned handle.

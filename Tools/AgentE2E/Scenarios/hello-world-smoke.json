@@ -2,6 +2,7 @@
   "id": "hello-world-smoke",
   "targetExecutable": "artifacts\\bin\\HelloWorld\\{{CONFIGURATION}}\\net8.0-windows\\HelloWorld.exe",
   "promptFile": "..\\hello-world.prompt.txt",
+  "maximumNonImagePayloadBytes": 50000,
   "maximumToolFailures": 0,
   "allowedFailureCodes": [],
   "requiredToolSuccessCounts": {

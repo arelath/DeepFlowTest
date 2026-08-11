@@ -481,6 +481,30 @@ if (Test-Path -LiteralPath $codexEvents -PathType Leaf) {
 }
 $commandExecutions = @($codexEventObjects | Where-Object { $_.type -eq "item.completed" -and $_.item.type -eq "command_execution" })
 $completedMcpCalls = @($codexEventObjects | Where-Object { $_.type -eq "item.completed" -and $_.item.type -eq "mcp_tool_call" })
+$mcpPayloadRows = @($completedMcpCalls | ForEach-Object {
+	$contentJson = $_.item.result.content | ConvertTo-Json -Compress -Depth 50
+	$structuredJson = $_.item.result.structured_content | ConvertTo-Json -Compress -Depth 50
+	$contentBytes = [Text.Encoding]::UTF8.GetByteCount($contentJson)
+	$structuredBytes = [Text.Encoding]::UTF8.GetByteCount($structuredJson)
+	$imageBase64Bytes = [long] (@($_.item.result.content | Where-Object type -EQ "image" | ForEach-Object { ([string] $_.data).Length }) | Measure-Object -Sum).Sum
+	[pscustomobject]@{
+		tool = [string] $_.item.tool
+		contentBytes = [long] $contentBytes
+		structuredBytes = [long] $structuredBytes
+		imageBase64Bytes = $imageBase64Bytes
+		nonImageBytes = [long] ($contentBytes + $structuredBytes - $imageBase64Bytes)
+		totalBytes = [long] ($contentBytes + $structuredBytes)
+	}
+})
+$mcpPayloadByTool = @($mcpPayloadRows | Group-Object tool | ForEach-Object {
+	[pscustomobject]@{
+		tool = $_.Name
+		calls = $_.Count
+		nonImageBytes = [long] ($_.Group | Measure-Object nonImageBytes -Sum).Sum
+		totalBytes = [long] ($_.Group | Measure-Object totalBytes -Sum).Sum
+		largestCallBytes = [long] ($_.Group | Measure-Object totalBytes -Maximum).Maximum
+	}
+} | Sort-Object totalBytes -Descending)
 $skillLoadPattern = "Get-Content\s+-Raw\s+.+\\+\.codex\\+skills\\+.+\\+SKILL\.md"
 $skillLoads = @($commandExecutions | Where-Object { $_.item.command -match $skillLoadPattern })
 $unexpectedCommands = @($commandExecutions | Where-Object { $_.item.command -notmatch $skillLoadPattern })
@@ -520,6 +544,10 @@ if ($null -ne $scenario.requiredCaptureFormats) {
 if ($toolStarts.Count -ne $completedMcpCalls.Count) {
 	$validationFailures.Add("MCP activity counted $($toolStarts.Count) calls, but Codex recorded $($completedMcpCalls.Count) completed MCP calls.")
 }
+$nonImagePayloadBytes = [long] ($mcpPayloadRows | Measure-Object nonImageBytes -Sum).Sum
+if ($null -ne $scenario.PSObject.Properties["maximumNonImagePayloadBytes"] -and $nonImagePayloadBytes -gt [long] $scenario.maximumNonImagePayloadBytes) {
+	$validationFailures.Add("MCP results used $nonImagePayloadBytes non-image bytes; the scenario budget is $($scenario.maximumNonImagePayloadBytes).")
+}
 
 foreach ($oracleResult in $oracleResults) {
     if (-not $oracleResult.verified) {
@@ -553,6 +581,13 @@ $report = [ordered]@{
         toolFailures = $toolFailures.Count
         toolsAttempted = @($toolStarts | ForEach-Object { $_.Name })
         failedTools = @($toolFailures | ForEach-Object { [ordered]@{ name = $_.Name; summary = $_.Summary } })
+		payload = [ordered]@{
+			nonImageBytes = $nonImagePayloadBytes
+			imageBase64Bytes = [long] ($mcpPayloadRows | Measure-Object imageBase64Bytes -Sum).Sum
+			totalBytes = [long] ($mcpPayloadRows | Measure-Object totalBytes -Sum).Sum
+			largestCallBytes = [long] ($mcpPayloadRows | Measure-Object totalBytes -Maximum).Maximum
+			byTool = $mcpPayloadByTool
+		}
     }
     codex = [ordered]@{
 		completedMcpCalls = $completedMcpCalls.Count
@@ -579,6 +614,7 @@ $report = [ordered]@{
 Write-Host "Codex/MCP agent run: $scenarioId/$runId"
 Write-Host "Passed: $($report.passed)"
 Write-Host "MCP tool calls: $($report.mcp.toolCalls) ($($report.mcp.toolFailures) failed)"
+Write-Host "MCP result payload: $($report.mcp.payload.nonImageBytes) non-image bytes ($($report.mcp.payload.totalBytes) total)"
 Write-Host "Report: $reportPath"
 if (-not $report.passed) {
     foreach ($failure in $validationFailures) {

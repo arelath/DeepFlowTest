@@ -45,6 +45,7 @@ public sealed class McpEndToEndTests
 			var observed = await mcp.CallRawAsync("deepflow_observe", new Dictionary<string, object?>
 			{
 				["contextId"] = contextId,
+				["includeElements"] = true,
 				["refresh"] = true,
 			});
 			Assert.That(observed.IsError, Is.False);

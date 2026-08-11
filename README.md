@@ -180,9 +180,11 @@ recoverable execution failures set MCP `isError: true`. Screenshots are returned
 as native MCP image content and linked to immutable context-qualified resources.
 
 `deepflow_observe` uses the condensed semantic format by default and applies
-semantic pruning. Pass `format: "json"` when a client needs structured tree
-nodes. Start the server with `--tool-profile full` to additionally expose the
-granular legacy tools and streams.
+semantic pruning. Structured element records are opt-in with `includeElements`;
+use `deepflow_find` when only particular controls are needed. Pass
+`format: "json"` with a small `limit` when a client needs explicit tree nodes.
+Start the server with `--tool-profile full` to additionally expose the granular
+legacy tools and streams.
 
 Inputs use discriminated objects. For example, open with
 `target: { "mode": "attach", "processId": 1234 }`, find with
@@ -196,11 +198,13 @@ start a process, `--allow-actions` to permit mutating UI tools, and
 `--allow-file-writes` when screenshot tools should write to disk. See
 `Docs/McpUsage.md` for HTTP client configuration and sample workflows.
 
-For a real-agent smoke test, run `Tools/Run-CodexMcpAgentE2E.ps1`. It launches
-the MCP server and HelloWorld harness, drives them with Codex using
-`gpt-5.6-luna`, independently verifies the resulting UI state, shuts down all
-processes, and writes a timestamped report plus Codex and MCP JSONL logs under
-`artifacts/agent-e2e`.
+For comprehensive real-agent validation, run `Tools/Run-CodexMcpAgentSuite.ps1`.
+It runs isolated WPF control/navigation, standalone and hosted WinForms, and
+PNG/JPEG/BMP screenshot scenarios with Codex using `gpt-5.6-luna`, independently
+verifies durable UI state, enforces non-image MCP payload budgets, shuts down
+all processes, and writes aggregate and per-scenario reports under
+`artifacts/agent-e2e-suites`. Use
+`Tools/Run-CodexMcpAgentE2E.ps1` for the smaller smoke scenario.
 
 For model-level CLI/MCP comparison, run
 `Tools/Run-AgentParityBenchmark.ps1` with the same model-backed agent runner and

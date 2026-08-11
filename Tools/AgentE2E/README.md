@@ -14,14 +14,14 @@ For a quick smoke run, use `pwsh .\Tools\Run-CodexMcpAgentE2E.ps1`. After Codex 
 
 Suite reports are written below `artifacts\agent-e2e-suites\<suite-id>`. Individual smoke runs default to `artifacts\agent-e2e\<scenario-id>\<run-id>`:
 
-- `run-report.json`: authoritative pass/fail summary and metrics.
+- `run-report.json`: authoritative pass/fail summary, including per-tool MCP result payload sizes.
 - `codex-events.jsonl`: complete non-interactive Codex event stream.
 - `codex-final.json`: schema-constrained agent result.
 - `mcp-activity.jsonl`: ordered MCP server and tool activity.
 - `oracle-*.json`: independent UI state verification.
 - `*.stderr.log` and `*.stdout.log`: process diagnostics.
 
-A run fails for a timeout, nonzero Codex exit, failed agent result, any failed MCP call, unexpected shell execution, missing required MCP operations, MCP/Codex call-count disagreement, or failed independent UI verification. Reading a required Codex skill file is recorded separately from unexpected shell use.
+A run fails for a timeout, nonzero Codex exit, failed agent result, too many or unexpected MCP failures, an exceeded non-image payload budget, unexpected shell execution, missing required MCP operations, MCP/Codex call-count disagreement, or failed independent UI verification. Reading a required Codex skill file is recorded separately from unexpected shell use.
 
 ## Options
 

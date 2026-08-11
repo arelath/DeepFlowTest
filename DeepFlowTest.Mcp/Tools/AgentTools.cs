@@ -67,7 +67,8 @@ internal static class AgentTools
 			_ => McpToolResponse.Fail(CliErrorCodes.InvalidArguments, "Unsupported context target."),
 		};
 
-		return McpCallToolResults.FromLegacy(response, static data => ToContextResult((McpTargetStatus)data!));
+		return McpCallToolResults.FromLegacy(response, static data => ToContextResult((McpTargetStatus)data!), result =>
+			[new TextContentBlock { Text = $"Opened context {result.ContextId} for {result.ProcessName ?? "target"}." }]);
 	}
 
 	[McpServerTool(Name = "deepflow_observe", UseStructuredContent = true, OutputSchemaType = typeof(McpObservationResult), ReadOnly = true, OpenWorld = false), Description("Return a compact semantic UI snapshot for an explicit context, with revision and stable target identifiers.")]
@@ -79,10 +80,11 @@ internal static class AgentTools
 		DeepFlowResourceStore resources,
 		IOptions<DeepFlowMcpOptions> options,
 		[Description("Context handle returned by deepflow_open_context.")] string contextId,
-		[Description("Condensed text for reasoning or JSON for explicit tree nodes.")] McpObservationFormat format = McpObservationFormat.Condensed,
-		[Description("Additional UI property names to capture.")] IReadOnlyList<string>? properties = null,
-		[Description("Maximum number of nodes in the compact observation.")] int? limit = null,
-		[Description("Include elements whose visible state is false.")] bool includeHidden = false,
+		[Description("Condensed is the token-efficient default. JSON returns explicit nodes and should use a small limit.")] McpObservationFormat format = McpObservationFormat.Condensed,
+		[Description("Only additional UI properties needed for this observation; each property is repeated per node.")] IReadOnlyList<string>? properties = null,
+		[Description("Maximum returned nodes. Keep this small for JSON observations.")] int? limit = null,
+		[Description("Include hidden elements. This can substantially enlarge the observation.")] bool includeHidden = false,
+		[Description("Also return structured element records. Off by default because compact text already describes the same UI.")] bool includeElements = false,
 		[Description("Bypass the snapshot cache and read the target now.")] bool refresh = false)
 	{
 		var response = runner.Run(() =>
@@ -98,12 +100,15 @@ internal static class AgentTools
 				Shape = TreeShape.Flat,
 				Limit = limit ?? options.Value.TreeLimit,
 				IncludeHidden = includeHidden,
-				IncludePath = true,
+				IncludePath = format == McpObservationFormat.Condensed && includeElements,
 				IncludeTypeNames = true,
 				Properties = propertyNames,
 				UseShortIds = true,
 			});
-			var elements = CreateObservationElements(contextId, snapshot, shaped.Nodes, handles);
+			SanitizeObservationNodes(shaped.Nodes);
+			var elements = includeElements
+				? CreateObservationElements(contextId, snapshot, shaped.Nodes, handles)
+				: [];
 			if (format == McpObservationFormat.Condensed)
 			{
 				var includedIds = shaped.Nodes.Select(static node => node.TargetId).ToHashSet(StringComparer.Ordinal);
@@ -136,7 +141,7 @@ internal static class AgentTools
 				Elements = elements,
 				ResourceUri = jsonResource.Uri,
 			};
-		}, new { contextId, format, properties, limit, includeHidden, refresh });
+		}, new { contextId, format, properties, limit, includeHidden, includeElements, refresh });
 
 		return McpCallToolResults.FromLegacy(response, static data => (McpObservationResult)data!, result =>
 		[
@@ -224,7 +229,8 @@ internal static class AgentTools
 			};
 		}, new { contextId, target, properties, limit, refresh });
 
-		return McpCallToolResults.FromLegacy(response, static data => (McpFindResult)data!, contextId: contextId, revision: LatestRevision(host, contextId));
+		return McpCallToolResults.FromLegacy(response, static data => (McpFindResult)data!, result =>
+			[new TextContentBlock { Text = $"Found {result.MatchCount} match(es) at revision {result.Revision}." }], contextId, LatestRevision(host, contextId));
 	}
 
 	[McpServerTool(Name = "deepflow_act", UseStructuredContent = true, OutputSchemaType = typeof(McpActionResult), ReadOnly = false, Destructive = true, OpenWorld = false), Description("Resolve, act, optionally verify, and observe in one call. Supports stable handles and automatic selector repair after UI revisions.")]
@@ -279,9 +285,7 @@ internal static class AgentTools
 			var structuredDelta = observe == McpObserveMode.Delta ? CreateActionDelta(contextId, before, after, handles) : null;
 			var observedElements = observe switch
 			{
-				McpObserveMode.Delta when structuredDelta is not null => structuredDelta.Added.Concat(structuredDelta.Changed).ToArray(),
 				McpObserveMode.Target => CreateActionElements(contextId, after, handles, node => node.TargetId == resolution.TargetId),
-				McpObserveMode.Tree => CreateActionElements(contextId, after, handles, static _ => true),
 				_ => [],
 			};
 			return new McpActionResult
@@ -442,7 +446,8 @@ internal static class AgentTools
 			throw new CliException(CliErrorCodes.CommandTimeout, $"Wait for {condition} timed out after {timeout} ms.");
 		}, new { contextId, target, condition, count, property, timeoutMs, intervalMs, stabilityMs, initialWindowTitle });
 
-		return McpCallToolResults.FromLegacy(response, static data => (McpWaitResult)data!, contextId: contextId, revision: LatestRevision(host, contextId));
+		return McpCallToolResults.FromLegacy(response, static data => (McpWaitResult)data!, result =>
+			[new TextContentBlock { Text = $"Wait {result.Condition}: satisfied after {result.ElapsedMs} ms." }], contextId, LatestRevision(host, contextId));
 	}
 
 	[McpServerTool(Name = "deepflow_capture", UseStructuredContent = true, OutputSchemaType = typeof(McpCaptureResult), ReadOnly = true, OpenWorld = false), Description("Capture a native screenshot for an explicit context and return image content plus compact metadata.")]
@@ -628,7 +633,8 @@ internal static class AgentTools
 			handles.RemoveContext(contextId);
 			return new McpCloseContextResult { ContextId = contextId, Closed = true };
 		}, new { contextId });
-		return McpCallToolResults.FromLegacy(response, static data => (McpCloseContextResult)data!);
+		return McpCallToolResults.FromLegacy(response, static data => (McpCloseContextResult)data!, result =>
+			[new TextContentBlock { Text = $"Closed context {result.ContextId}." }]);
 	}
 
 	private static McpContextResult ToContextResult(McpTargetStatus status) =>
@@ -688,9 +694,18 @@ internal static class AgentTools
 			Text = KnownProperties.TextualIdentityPropertyNames.Select(property => Value(node, property)).FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value)),
 			Path = node.Path,
 			Properties = node.Properties
+				.Where(static property => !IsRedundantMatchProperty(property.Key))
 				.Where(static property => !IsPropertyExtractionError(property.Value))
+				.Where(static property => property.Value is not string text || text.Length > 0)
 				.ToDictionary(static property => property.Key, static property => property.Value, StringComparer.Ordinal),
 		};
+
+	private static bool IsRedundantMatchProperty(string propertyName) =>
+		propertyName is KnownProperties.Name
+			or KnownProperties.AutomationName
+			or KnownProperties.AutomationNameAlias
+			or KnownProperties.AutomationId
+			or KnownProperties.AutomationIdAlias;
 
 	private static string? Value(TreeNodeData node, string property) =>
 		node.Properties.TryGetValue(property, out var value) && !IsPropertyExtractionError(value)
@@ -979,6 +994,17 @@ internal static class AgentTools
 	private static bool IsPropertyExtractionError(object? value) =>
 		value is PropertyExtractionError
 		|| string.Equals(Convert.ToString(value, CultureInfo.InvariantCulture), PropertyExtractionErrorMarker, StringComparison.Ordinal);
+
+	private static void SanitizeObservationNodes(IEnumerable<TreeNodeData> nodes)
+	{
+		foreach (var node in nodes)
+		{
+			node.Properties = node.Properties
+				.Where(static property => !IsPropertyExtractionError(property.Value))
+				.Where(static property => property.Value is not string text || text.Length > 0)
+				.ToDictionary(static property => property.Key, static property => property.Value, StringComparer.Ordinal);
+		}
+	}
 
 	private static FindResultData FindMatches(VisualTreeSnapshot snapshot, ElementSelector selector, int limit) =>
 		new FindSnapshotService().Find(snapshot, new FindSnapshotOptions

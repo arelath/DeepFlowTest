@@ -4,6 +4,8 @@ Use only the DeepFlow MCP tools configured for this run. Do not use shell comman
 If your environment requires you to read a UI-automation skill first, do not use its CLI workflow; continue this evaluation exclusively through the configured MCP tools.
 
 Target process ID: {{TARGET_PID}}
+
+Keep MCP results token-efficient: use the default condensed observation without structured elements, hidden elements, extra properties, or an enlarged limit. Use deepflow_find for exact controls and property values. Do not request a full JSON tree.
 Exact text to enter: MCP agent validation by GPT-5.6 Luna
 
 Complete this workflow:

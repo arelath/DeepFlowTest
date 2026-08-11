@@ -89,7 +89,7 @@ public sealed class McpServerProcessTests
 		var schema = observe.JsonSchema.ToString();
 		Assert.That(schema, Does.Contain("contextId"));
 		Assert.That(schema, Does.Contain("properties"));
-		Assert.That(schema, Does.Contain("Maximum number of nodes"));
+		Assert.That(schema, Does.Contain("Maximum returned nodes"));
 		Assert.That(observe.ProtocolTool.OutputSchema!.ToString(), Does.Contain("elements"));
 
 		var openSchema = tools.Single(tool => tool.Name == "deepflow_open_context").JsonSchema.ToString();

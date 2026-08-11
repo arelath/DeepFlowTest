@@ -4,6 +4,8 @@ Target process ID: {{TARGET_PID}}
 
 Open an attach context for that PID and observe the initial UI. For every mutation, first use deepflow_find and then act through the returned handle. Complete all of these checks:
 
+Keep MCP results token-efficient: use the default condensed observation without structured elements, hidden elements, extra properties, or an enlarged limit. Use deepflow_find for exact controls and property values. Do not request a full JSON tree.
+
 1. Replace TextBox1 with exactly `WPF E2E text by Luna`, using a type action with verification.
 2. Uncheck MainCheckbox with the `Uncheck` invoke operation and verify IsChecked is false.
 3. Select ListBoxItem3 with the `Select` invoke operation and verify IsSelected is true.

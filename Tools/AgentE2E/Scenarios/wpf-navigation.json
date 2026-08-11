@@ -2,6 +2,7 @@
   "id": "wpf-navigation",
   "targetExecutable": "artifacts\\bin\\BasicTestHarness\\{{CONFIGURATION}}\\net8.0-windows\\BasicTestHarness.exe",
   "promptFile": "wpf-navigation.prompt.txt",
+  "maximumNonImagePayloadBytes": 100000,
   "maximumToolFailures": 2,
   "allowedFailureCodes": ["no-match", "command-timeout"],
   "requiredToolSuccessCounts": {

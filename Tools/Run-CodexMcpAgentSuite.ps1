@@ -102,6 +102,8 @@ foreach ($scenarioId in $ScenarioIds) {
         elapsedMilliseconds = [long] $scenarioReport.elapsedMilliseconds
         toolCalls = [int] $scenarioReport.mcp.toolCalls
         toolFailures = [int] $scenarioReport.mcp.toolFailures
+		nonImagePayloadBytes = [long] $scenarioReport.mcp.payload.nonImageBytes
+		totalPayloadBytes = [long] $scenarioReport.mcp.payload.totalBytes
         reportPath = $latestReport.FullName
         failure = $failureMessage
     })
@@ -117,6 +119,8 @@ $suiteReport = [ordered]@{
     scenarioCount = $results.Count
     passedCount = @($results | Where-Object passed).Count
     failedCount = @($results | Where-Object { -not $_.passed }).Count
+	nonImagePayloadBytes = [long] ($results | Measure-Object nonImagePayloadBytes -Sum).Sum
+	totalPayloadBytes = [long] ($results | Measure-Object totalPayloadBytes -Sum).Sum
     finishedAtUtc = $finishedAt
     scenarios = @($results)
 }
