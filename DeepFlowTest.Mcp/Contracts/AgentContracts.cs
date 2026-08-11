@@ -251,7 +251,7 @@ internal sealed record class McpFocusAction : McpAgentAction;
 
 internal sealed record class McpInvokeAction : McpAgentAction
 {
-	[Description("Allow-listed semantic operation such as Focus, Select, Expand, or Check.")]
+	[Description("Allow-listed operation. Exact values: Focus, Select, Expand, Collapse, Check, Uncheck, BringIntoView, AcceptDialog, or CancelDialog.")]
 	public string Operation { get; init; } = string.Empty;
 }
 

@@ -9,9 +9,11 @@ param(
 
     [string] $Configuration = "Debug",
 
-    [string] $PromptFile = (Join-Path $PSScriptRoot "AgentE2E\hello-world.prompt.txt"),
+    [string] $ScenarioFile = (Join-Path $PSScriptRoot "AgentE2E\Scenarios\hello-world-smoke.json"),
 
-    [string] $ResultSchemaFile = (Join-Path $PSScriptRoot "AgentE2E\codex-agent-result.schema.json"),
+    [string] $PromptFile,
+
+    [string] $ResultSchemaFile,
 
     [string] $OutputDirectory = (Join-Path $PSScriptRoot "..\artifacts\agent-e2e"),
 
@@ -228,25 +230,44 @@ function Invoke-OracleRead {
     param(
         [Parameter(Mandatory = $true)] [string] $CliPath,
         [Parameter(Mandatory = $true)] [int] $ProcessId,
-        [Parameter(Mandatory = $true)] [string] $AutomationId,
+        [string] $AutomationId,
+        [string] $Name,
+        [Parameter(Mandatory = $true)] [string] $Properties,
         [Parameter(Mandatory = $true)] [string] $OutputBasePath,
         [Parameter(Mandatory = $true)] [string] $WorkingDirectory
     )
 
-    $captured = Start-CapturedProcess -FilePath $CliPath -Arguments @(
-        "find", "--pid", $ProcessId.ToString([Globalization.CultureInfo]::InvariantCulture),
-        "--automation-id", $AutomationId,
+    $selectorArguments = if (-not [string]::IsNullOrWhiteSpace($AutomationId)) {
+        @("--automation-id", $AutomationId)
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($Name)) {
+        @("--name", $Name)
+    }
+    else {
+        throw "An oracle read requires automationId or name."
+    }
+    $identityProperties = if (-not [string]::IsNullOrWhiteSpace($AutomationId)) {
+        "AutomationProperties.AutomationId,AutomationId"
+    }
+    else {
+        "Name,AutomationProperties.Name,AutomationName"
+    }
+    $effectiveProperties = "$Properties,$identityProperties"
+
+    $captured = Start-CapturedProcess -FilePath $CliPath -Arguments (@(
+        "find", "--pid", $ProcessId.ToString([Globalization.CultureInfo]::InvariantCulture)
+    ) + $selectorArguments + @(
         "--include", "properties,path",
-        "--props", "Text,Name,Content,AutomationProperties.AutomationId",
+        "--props", $effectiveProperties,
         "--limit", "500",
         "--format", "json",
         "--pretty"
-    ) -WorkingDirectory $WorkingDirectory -StandardOutputPath "$OutputBasePath.json" -StandardErrorPath "$OutputBasePath.stderr.log"
+    )) -WorkingDirectory $WorkingDirectory -StandardOutputPath "$OutputBasePath.json" -StandardErrorPath "$OutputBasePath.stderr.log"
 
     if (-not $captured.Process.WaitForExit(90000)) {
         Stop-CapturedProcess $captured
         Complete-CapturedProcess $captured
-        throw "Independent oracle read timed out for automation ID '$AutomationId'."
+        throw "Independent oracle read timed out for '$AutomationId$Name'."
     }
     Complete-CapturedProcess $captured
     [pscustomobject]@{
@@ -258,14 +279,33 @@ function Invoke-OracleRead {
 }
 
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$scenarioPath = [System.IO.Path]::GetFullPath($ScenarioFile)
+if (-not (Test-Path -LiteralPath $scenarioPath -PathType Leaf)) {
+    throw "Scenario file was not found: $scenarioPath"
+}
+$scenario = Get-Content -LiteralPath $scenarioPath -Raw | ConvertFrom-Json
+$scenarioDirectory = [System.IO.Path]::GetDirectoryName($scenarioPath)
+if ([string]::IsNullOrWhiteSpace($PromptFile)) {
+    $PromptFile = Join-Path $scenarioDirectory ([string] $scenario.promptFile)
+}
+if ([string]::IsNullOrWhiteSpace($ResultSchemaFile)) {
+    $ResultSchemaFile = Join-Path $PSScriptRoot "AgentE2E\codex-agent-result.schema.json"
+}
+$PromptFile = [System.IO.Path]::GetFullPath($PromptFile)
+$ResultSchemaFile = [System.IO.Path]::GetFullPath($ResultSchemaFile)
+$scenarioId = [string] $scenario.id
+if ([string]::IsNullOrWhiteSpace($scenarioId)) {
+    throw "Scenario id is required in $scenarioPath."
+}
 $outputRoot = [System.IO.Path]::GetFullPath($OutputDirectory)
 $runId = [DateTimeOffset]::UtcNow.ToString("yyyyMMdd-HHmmss-fff", [Globalization.CultureInfo]::InvariantCulture)
-$runDirectory = Join-Path $outputRoot $runId
+$runDirectory = Join-Path (Join-Path $outputRoot $scenarioId) $runId
 [System.IO.Directory]::CreateDirectory($runDirectory) | Out-Null
 
 $mcpPath = Join-Path $repositoryRoot "artifacts\bin\DeepFlowTest.Mcp\$Configuration\net8.0-windows\DeepFlowTest.Mcp.exe"
 $cliPath = Join-Path $repositoryRoot "artifacts\bin\DeepFlowTest.Cli\$Configuration\net8.0-windows\DeepFlowTest.Cli.exe"
-$targetPath = Join-Path $repositoryRoot "artifacts\bin\HelloWorld\$Configuration\net8.0-windows\HelloWorld.exe"
+$targetRelativePath = ([string] $scenario.targetExecutable).Replace("{{CONFIGURATION}}", $Configuration)
+$targetPath = [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot $targetRelativePath))
 $endpointFile = Join-Path $runDirectory "mcp-endpoint.json"
 $activityLog = Join-Path $runDirectory "mcp-activity.jsonl"
 $codexEvents = Join-Path $runDirectory "codex-events.jsonl"
@@ -282,16 +322,22 @@ $endpoint = $null
 $codexExitCode = $null
 $codexLauncherDescription = $null
 $codexTimedOut = $false
-$oracleTextBox = $null
-$oracleEventDisplay = $null
+$oracleResults = @()
 $runError = $null
 $startedAt = [DateTimeOffset]::UtcNow
 
 try {
     if (-not $SkipBuild) {
-        & dotnet build (Join-Path $repositoryRoot "DeepFlowTest.Mcp.Tests\DeepFlowTest.Mcp.Tests.csproj") --nologo
+        $payloadProject = Join-Path $repositoryRoot "DeepFlowTest.Payload\DeepFlowTest.Payload.csproj"
+        & dotnet msbuild $payloadProject /t:RepackPayloads /p:Configuration=$Configuration /p:RootBuild=true /nologo
         if ($LASTEXITCODE -ne 0) {
-            throw "Build failed with exit code $LASTEXITCODE."
+            throw "Payload repack failed with exit code $LASTEXITCODE."
+        }
+        foreach ($project in @("DeepFlowTest.Mcp.Tests\DeepFlowTest.Mcp.Tests.csproj")) {
+            & dotnet build (Join-Path $repositoryRoot $project) --nologo --configuration $Configuration
+            if ($LASTEXITCODE -ne 0) {
+                throw "Build failed for $project with exit code $LASTEXITCODE."
+            }
         }
     }
 
@@ -355,8 +401,23 @@ try {
     $codexExitCode = $codex.Process.ExitCode
 
     if (-not $target.Process.HasExited) {
-        $oracleTextBox = Invoke-OracleRead -CliPath $cliPath -ProcessId $target.Process.Id -AutomationId "TextBox1" -OutputBasePath (Join-Path $runDirectory "oracle-textbox") -WorkingDirectory $repositoryRoot
-        $oracleEventDisplay = Invoke-OracleRead -CliPath $cliPath -ProcessId $target.Process.Id -AutomationId "HelloWorldInput" -OutputBasePath (Join-Path $runDirectory "oracle-event-display") -WorkingDirectory $repositoryRoot
+        foreach ($oracle in @($scenario.oracles)) {
+            $oracleName = [string] $oracle.name
+            $oracleBasePath = Join-Path $runDirectory ("oracle-" + $oracleName)
+            $automationId = if ($null -ne $oracle.PSObject.Properties["automationId"]) { [string] $oracle.automationId } else { $null }
+            $name = if ($null -ne $oracle.PSObject.Properties["nameSelector"]) { [string] $oracle.nameSelector } else { $null }
+            $read = Invoke-OracleRead -CliPath $cliPath -ProcessId $target.Process.Id -AutomationId $automationId -Name $name -Properties ([string] $oracle.properties) -OutputBasePath $oracleBasePath -WorkingDirectory $repositoryRoot
+            $verified = $read.ExitCode -eq 0 -and $read.Text.Contains([string] $oracle.contains, [StringComparison]::Ordinal)
+            $oracleResults += [pscustomobject]@{
+                name = $oracleName
+                selector = if ($automationId) { "automationId=$automationId" } else { "name=$name" }
+                expectedContains = [string] $oracle.contains
+                verified = $verified
+                exitCode = $read.ExitCode
+                outputPath = $read.OutputPath
+                errorPath = $read.ErrorPath
+            }
+        }
     }
 }
 catch {
@@ -429,32 +490,50 @@ if ($unexpectedCommands.Count -gt 0) {
 if ($toolStarts.Count -eq 0) {
     $validationFailures.Add("The MCP activity log contains no tool calls.")
 }
-if ($toolFailures.Count -gt 0) {
-	$validationFailures.Add("The MCP activity log contains $($toolFailures.Count) failed tool call(s).")
+if ($toolFailures.Count -gt [int] $scenario.maximumToolFailures) {
+	$validationFailures.Add("The MCP activity log contains $($toolFailures.Count) failed tool call(s); at most $($scenario.maximumToolFailures) are allowed.")
 }
-foreach ($requiredTool in @("OpenContext", "Observe", "Find", "Act", "Capture", "Diagnose", "CloseContext")) {
-    if ($requiredTool -notin $successfulToolNames) {
-        $validationFailures.Add("The MCP activity log has no successful $requiredTool call.")
+$allowedFailureCodes = @($scenario.allowedFailureCodes)
+foreach ($toolFailure in $toolFailures) {
+    $failureCode = [string] $toolFailure.details.error.code
+    if ($failureCode -notin $allowedFailureCodes) {
+        $validationFailures.Add("MCP tool $($toolFailure.name) failed with non-allow-listed code '$failureCode': $($toolFailure.summary)")
     }
 }
-if (@($toolSuccesses | Where-Object Name -EQ "Act").Count -lt 2) {
-    $validationFailures.Add("Expected at least two successful Act calls (type and click).")
+foreach ($requiredTool in $scenario.requiredToolSuccessCounts.PSObject.Properties) {
+    $actualCount = @($toolSuccesses | Where-Object Name -EQ $requiredTool.Name).Count
+    $requiredCount = [int] $requiredTool.Value
+    if ($actualCount -lt $requiredCount) {
+        $validationFailures.Add("Expected at least $requiredCount successful $($requiredTool.Name) call(s), but found $actualCount.")
+    }
+}
+if ($null -ne $scenario.requiredCaptureFormats) {
+    $formatMap = @{ png = 0; jpeg = 1; bmp = 2 }
+    $capturedFormats = @($toolSuccesses | Where-Object Name -EQ "Capture" | ForEach-Object { [int] $_.details.parameters.format })
+    foreach ($requiredFormat in @($scenario.requiredCaptureFormats)) {
+        $normalizedFormat = ([string] $requiredFormat).ToLowerInvariant()
+        if (-not $formatMap.ContainsKey($normalizedFormat) -or $formatMap[$normalizedFormat] -notin $capturedFormats) {
+            $validationFailures.Add("No successful Capture call used required format '$requiredFormat'.")
+        }
+    }
 }
 if ($toolStarts.Count -ne $completedMcpCalls.Count) {
 	$validationFailures.Add("MCP activity counted $($toolStarts.Count) calls, but Codex recorded $($completedMcpCalls.Count) completed MCP calls.")
 }
 
-$expectedInput = "MCP agent validation by GPT-5.6 Luna"
-$expectedEvent = "HelloWorldButton_Click event triggered."
-if ($null -eq $oracleTextBox -or $oracleTextBox.ExitCode -ne 0 -or -not $oracleTextBox.Text.Contains($expectedInput, [StringComparison]::Ordinal)) {
-    $validationFailures.Add("Independent CLI verification did not find the expected TextBox1 value.")
+foreach ($oracleResult in $oracleResults) {
+    if (-not $oracleResult.verified) {
+        $validationFailures.Add("Independent CLI verification '$($oracleResult.name)' did not find '$($oracleResult.expectedContains)' using '$($oracleResult.selector)'.")
+    }
 }
-if ($null -eq $oracleEventDisplay -or $oracleEventDisplay.ExitCode -ne 0 -or -not $oracleEventDisplay.Text.Contains($expectedEvent, [StringComparison]::Ordinal)) {
-    $validationFailures.Add("Independent CLI verification did not find the expected event display value.")
+if ($oracleResults.Count -ne @($scenario.oracles).Count) {
+    $validationFailures.Add("Only $($oracleResults.Count) of $(@($scenario.oracles).Count) independent oracle reads completed.")
 }
 
 $finishedAt = [DateTimeOffset]::UtcNow
 $report = [ordered]@{
+    scenarioId = $scenarioId
+    scenarioFile = $scenarioPath
     runId = $runId
     passed = $validationFailures.Count -eq 0
     startedAtUtc = $startedAt
@@ -482,10 +561,7 @@ $report = [ordered]@{
 		unexpectedCommandExecutions = $unexpectedCommands.Count
 		commands = @($commandExecutions | ForEach-Object { $_.item.command })
 	}
-    oracle = [ordered]@{
-        textBoxVerified = $null -ne $oracleTextBox -and $oracleTextBox.ExitCode -eq 0 -and $oracleTextBox.Text.Contains($expectedInput, [StringComparison]::Ordinal)
-        eventDisplayVerified = $null -ne $oracleEventDisplay -and $oracleEventDisplay.ExitCode -eq 0 -and $oracleEventDisplay.Text.Contains($expectedEvent, [StringComparison]::Ordinal)
-    }
+    oracle = @($oracleResults)
     validationFailures = @($validationFailures)
     files = [ordered]@{
         prompt = $promptOutput
@@ -495,13 +571,12 @@ $report = [ordered]@{
         mcpActivity = $activityLog
         mcpStandardOutput = Join-Path $runDirectory "mcp.stdout.log"
         mcpStandardError = Join-Path $runDirectory "mcp.stderr.log"
-        oracleTextBox = Join-Path $runDirectory "oracle-textbox.json"
-        oracleEventDisplay = Join-Path $runDirectory "oracle-event-display.json"
+        oracleFiles = @($oracleResults | ForEach-Object { $_.outputPath })
     }
 }
 [System.IO.File]::WriteAllText($reportPath, ($report | ConvertTo-Json -Depth 12))
 
-Write-Host "Codex/MCP agent run: $runId"
+Write-Host "Codex/MCP agent run: $scenarioId/$runId"
 Write-Host "Passed: $($report.passed)"
 Write-Host "MCP tool calls: $($report.mcp.toolCalls) ($($report.mcp.toolFailures) failed)"
 Write-Host "Report: $reportPath"

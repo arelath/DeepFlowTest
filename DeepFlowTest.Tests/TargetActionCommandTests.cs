@@ -297,6 +297,29 @@ public sealed class TargetActionCommandTests
 	}
 
 	[Test]
+	public void ClickTogglesWpfToggleButton()
+	{
+		var toggle = new ToggleButton { Name = "syntheticClickToggle", IsChecked = false, Content = "Toggle" };
+		var window = CreateWindow("Synthetic toggle click", toggle);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("syntheticClickToggle");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId }));
+			Assert.That(toggle.IsChecked, Is.True);
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId }));
+			Assert.That(toggle.IsChecked, Is.False);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
 	public void ClickFocusesWpfTextBoxThroughInputManagerRouting()
 	{
 		var panel = new StackPanel();

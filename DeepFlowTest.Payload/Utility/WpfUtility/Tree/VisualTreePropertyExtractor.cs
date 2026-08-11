@@ -14,6 +14,7 @@ using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using DeepFlowTest.Contracts;
+using Forms = System.Windows.Forms;
 
 public sealed class VisualTreePropertyExtractor
 {
@@ -97,6 +98,8 @@ public sealed class VisualTreePropertyExtractor
 		value = null;
 		if (target is IntPtr hwnd && TryReadNativeWindowProperty(hwnd, propertyName, out value))
 			return true;
+		if (target is Forms.Control formsControl && TryReadWinFormsProperty(formsControl, propertyName, out value))
+			return true;
 
 		switch (propertyName)
 		{
@@ -164,6 +167,24 @@ public sealed class VisualTreePropertyExtractor
 			default:
 				return false;
 		}
+	}
+
+	private static bool TryReadWinFormsProperty(Forms.Control target, string propertyName, out object? value)
+	{
+		value = propertyName switch
+		{
+			KnownProperties.AutomationName or KnownProperties.AutomationNameAlias => target.AccessibleName ?? string.Empty,
+			KnownProperties.AutomationId or KnownProperties.AutomationIdAlias => target.Name ?? string.Empty,
+			KnownProperties.IsVisible => target.Visible,
+			KnownProperties.IsEnabled => target.Enabled,
+			_ => null,
+		};
+		return propertyName is KnownProperties.AutomationName
+			or KnownProperties.AutomationNameAlias
+			or KnownProperties.AutomationId
+			or KnownProperties.AutomationIdAlias
+			or KnownProperties.IsVisible
+			or KnownProperties.IsEnabled;
 	}
 
 	private static bool TryReadNativeWindowProperty(IntPtr hwnd, string propertyName, out object? value)

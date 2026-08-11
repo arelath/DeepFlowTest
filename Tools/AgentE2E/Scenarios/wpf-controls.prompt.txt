@@ -1,0 +1,18 @@
+Exercise the DeepFlow MCP agent API against the already-running HelloWorld WPF application. Use only the configured DeepFlow MCP tools; do not use shell commands, source inspection, or another automation system.
+
+Target process ID: {{TARGET_PID}}
+
+Open an attach context for that PID and observe the initial UI. For every mutation, first use deepflow_find and then act through the returned handle. Complete all of these checks:
+
+1. Replace TextBox1 with exactly `WPF E2E text by Luna`, using a type action with verification.
+2. Uncheck MainCheckbox with the `Uncheck` invoke operation and verify IsChecked is false.
+3. Select ListBoxItem3 with the `Select` invoke operation and verify IsSelected is true.
+4. Expand ExpanderControl with the `Expand` invoke operation and verify IsExpanded is true.
+5. Click TogglePopupButton and wait until myPopupText exists and is visible.
+6. Click DelayedRevealButton and wait until DelayedReadyText is visible.
+7. Drag DragDropSource to DragDropFinalTarget, then find DragDropEventLog and verify its Text contains `DragDropFinalTarget:Drop`.
+8. Find the hosted WinForms TextBox by name `HostedWinFormsTextBox`, replace its text with exactly `Hosted WinForms E2E`, and verify it.
+9. Find the hosted WinForms CheckBox by name `HostedWinFormsCheckBox`, invoke `Check`, and verify Checked is true.
+10. Find and click the hosted WinForms Button named `HostedWinFormsButton`; verify HelloWorldInput contains `HostedWinFormsButton_Click event triggered.`
+
+Observe again after the changes, wait for the UI to be stable, diagnose responsiveness, and close the context even if an earlier step fails. Return the required structured result with one assertion per numbered check plus responsiveness and context closure. Set success true only if every assertion passed.

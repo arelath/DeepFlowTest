@@ -1,0 +1,17 @@
+{
+  "id": "screenshots",
+  "targetExecutable": "artifacts\\bin\\HelloWorld\\{{CONFIGURATION}}\\net8.0-windows\\HelloWorld.exe",
+  "promptFile": "screenshots.prompt.txt",
+  "maximumToolFailures": 0,
+  "allowedFailureCodes": [],
+  "requiredToolSuccessCounts": {
+    "OpenContext": 1,
+    "Observe": 1,
+    "Find": 2,
+    "Capture": 4,
+    "Diagnose": 1,
+    "CloseContext": 1
+  },
+  "requiredCaptureFormats": ["png", "jpeg", "bmp"],
+  "oracles": []
+}

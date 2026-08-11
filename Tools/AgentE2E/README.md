@@ -1,18 +1,18 @@
-# Codex MCP Agent End-to-End Test
+# Codex MCP Agent End-to-End Tests
 
-Run from the repository root:
+Run the full scenario suite from the repository root:
 
 ```powershell
-pwsh .\Tools\Run-CodexMcpAgentE2E.ps1
+pwsh .\Tools\Run-CodexMcpAgentSuite.ps1
 ```
 
-The runner builds the required projects, starts the MCP server on a dynamic loopback port, launches a fresh HelloWorld desktop process, and invokes Codex non-interactively with `gpt-5.6-luna`. Codex receives only the run-scoped Streamable HTTP MCP configuration and a structured output schema.
+The suite builds the required projects and runs isolated WPF controls, WPF navigation, WinForms controls, and screenshot scenarios. Each scenario starts the MCP server on a dynamic loopback port, launches a fresh desktop process, and invokes Codex non-interactively with `gpt-5.6-luna`. Codex receives only the run-scoped Streamable HTTP MCP configuration and a structured output schema. See [COVERAGE.md](COVERAGE.md) for the inventory.
 
-The default scenario attaches to the known HelloWorld PID, observes the UI, replaces the `TextBox1` value, clicks `HelloWorldButton`, verifies both resulting values, captures a screenshot, diagnoses target responsiveness, and closes the context. After Codex finishes, the runner independently reads the target through the CLI before shutting down every process.
+For a quick smoke run, use `pwsh .\Tools\Run-CodexMcpAgentE2E.ps1`. After Codex finishes, each scenario independently reads expected target state through the CLI before shutting down every process.
 
 ## Results
 
-Each run writes to `artifacts\agent-e2e\<timestamp>`:
+Suite reports are written below `artifacts\agent-e2e-suites\<suite-id>`. Individual smoke runs default to `artifacts\agent-e2e\<scenario-id>\<run-id>`:
 
 - `run-report.json`: authoritative pass/fail summary and metrics.
 - `codex-events.jsonl`: complete non-interactive Codex event stream.
@@ -39,4 +39,4 @@ pwsh .\Tools\Run-CodexMcpAgentE2E.ps1 `
   -CodexPath C:\path\to\codex.ps1
 ```
 
-Use `-PromptFile` and `-ResultSchemaFile` together when adding another scenario. Update the independent oracle logic if the new scenario expects different application state.
+Add scenarios as a JSON manifest and prompt in `Tools\AgentE2E\Scenarios`. Use `-ScenarioIds` on the suite runner to select a subset, or `-ScenarioFile` on the single-scenario runner.

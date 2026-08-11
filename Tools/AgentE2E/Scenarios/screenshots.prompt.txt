@@ -1,0 +1,12 @@
+Validate native screenshot support using only the configured DeepFlow MCP tools. Do not use shell commands, source inspection, or another screenshot mechanism.
+
+Target process ID: {{TARGET_PID}}
+
+Attach and observe. Then:
+
+1. Capture the full target window as PNG.
+2. Capture the full target window as JPEG.
+3. Find TextBox1 and capture that element as BMP through its returned handle.
+4. Find the hosted WinForms Button named HostedWinFormsButton and capture that element as PNG through its returned handle.
+
+For each capture, assert that the call returned image content, positive width and height, the expected MIME type, and a non-empty resource URI. Diagnose responsiveness and close the context. Set success true only if all four screenshots, diagnosis, and closure succeeded.

@@ -14,6 +14,7 @@ using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Contracts;
 using DeepFlowTest.Mcp.Hosting;
 using DeepFlowTest.Mcp.Resources;
+using DeepFlowTest.Utility.WpfUtility.Tree;
 using DeepFlowTest.Interop;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
@@ -24,6 +25,7 @@ using DeepFlowMcpOptions = DeepFlowTest.Mcp.Configuration.McpServerOptions;
 [McpServerToolType]
 internal static class AgentTools
 {
+	private const string PropertyExtractionErrorMarker = "DeepFlowTest.Utility.WpfUtility.Tree.PropertyExtractionError";
 	private static readonly HashSet<string> KnownOperations = new(StringComparer.Ordinal)
 	{
 		"Focus",
@@ -168,7 +170,8 @@ internal static class AgentTools
 			if (!string.IsNullOrWhiteSpace(target.Handle))
 			{
 				var resolved = handles.Resolve(contextId, target.Handle!, snapshot);
-				var node = snapshot.Nodes.First(node => string.Equals(node.TargetId, resolved.TargetId, StringComparison.Ordinal));
+				var node = snapshot.Nodes.FirstOrDefault(node => string.Equals(node.TargetId, resolved.TargetId, StringComparison.Ordinal))
+					?? throw new CliException(CliErrorCodes.TargetNotFound, $"Resolved element handle '{target.Handle}' was not present in the current snapshot.");
 				var shaped = new TreeSnapshotService().ShapeOne(node, snapshot, new TreeSnapshotOptions
 				{
 					IncludePath = true,
@@ -684,11 +687,15 @@ internal static class AgentTools
 			Name = Value(node, KnownProperties.AutomationName) ?? Value(node, KnownProperties.Name),
 			Text = KnownProperties.TextualIdentityPropertyNames.Select(property => Value(node, property)).FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value)),
 			Path = node.Path,
-			Properties = node.Properties,
+			Properties = node.Properties
+				.Where(static property => !IsPropertyExtractionError(property.Value))
+				.ToDictionary(static property => property.Key, static property => property.Value, StringComparer.Ordinal),
 		};
 
 	private static string? Value(TreeNodeData node, string property) =>
-		node.Properties.TryGetValue(property, out var value) ? Convert.ToString(value, CultureInfo.InvariantCulture) : null;
+		node.Properties.TryGetValue(property, out var value) && !IsPropertyExtractionError(value)
+			? Convert.ToString(value, CultureInfo.InvariantCulture)
+			: null;
 
 	private static bool TryText(TreeNodeData node, string property, out string value)
 	{
@@ -959,14 +966,19 @@ internal static class AgentTools
 	}
 
 	private static bool IsAgentRelevant(VisualTreeNodeDto node) =>
-		node.CanReceiveActions
-		|| HasText(node, KnownProperties.AutomationId)
+		HasText(node, KnownProperties.AutomationId)
 		|| HasText(node, KnownProperties.AutomationName)
 		|| HasText(node, KnownProperties.Name)
 		|| KnownProperties.TextualIdentityPropertyNames.Any(property => HasText(node, property));
 
 	private static bool HasText(VisualTreeNodeDto node, string property) =>
-		node.Properties.TryGetValue(property, out var value) && !string.IsNullOrWhiteSpace(Convert.ToString(value, CultureInfo.InvariantCulture));
+		node.Properties.TryGetValue(property, out var value)
+		&& !IsPropertyExtractionError(value)
+		&& !string.IsNullOrWhiteSpace(Convert.ToString(value, CultureInfo.InvariantCulture));
+
+	private static bool IsPropertyExtractionError(object? value) =>
+		value is PropertyExtractionError
+		|| string.Equals(Convert.ToString(value, CultureInfo.InvariantCulture), PropertyExtractionErrorMarker, StringComparison.Ordinal);
 
 	private static FindResultData FindMatches(VisualTreeSnapshot snapshot, ElementSelector selector, int limit) =>
 		new FindSnapshotService().Find(snapshot, new FindSnapshotOptions
@@ -1001,7 +1013,9 @@ internal static class AgentTools
 			try
 			{
 				var resolved = handles.Resolve(contextId, target.Handle!, snapshot);
-				var node = snapshot.Nodes.First(node => string.Equals(node.TargetId, resolved.TargetId, StringComparison.Ordinal));
+				var node = snapshot.Nodes.FirstOrDefault(node => string.Equals(node.TargetId, resolved.TargetId, StringComparison.Ordinal));
+				if (node is null)
+					return new FindResultData { MatchCount = 0, MaxMatches = 1 };
 				var shaped = new TreeSnapshotService().ShapeOne(node, snapshot, new TreeSnapshotOptions
 				{
 					IncludePath = true,
@@ -1025,15 +1039,12 @@ internal static class AgentTools
 
 	private static string SnapshotFingerprint(VisualTreeSnapshot snapshot)
 	{
-		var builder = new StringBuilder();
-		foreach (var node in snapshot.Nodes.OrderBy(static node => node.TargetId, StringComparer.Ordinal))
-		{
-			builder.Append(node.TargetId).Append('|').Append(node.TypeName).Append('|').Append(node.ParentId).Append(';');
-			foreach (var property in node.Properties.OrderBy(static property => property.Key, StringComparer.Ordinal))
-				builder.Append(property.Key).Append('=').Append(Convert.ToString(property.Value, CultureInfo.InvariantCulture)).Append(';');
-		}
-
-		return builder.ToString();
+		var semantic = McpSemanticRecordingFormatter.FormatSnapshot(snapshot).Text;
+		return string.Join('\n', semantic
+			.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+			.Where(static line => !line.StartsWith("dft-condensed/", StringComparison.Ordinal)
+				&& !line.StartsWith("@1 snapshot ", StringComparison.Ordinal))
+			.Select(static line => System.Text.RegularExpressions.Regex.Replace(line, @" \[[0-9a-f]+\]", string.Empty)));
 	}
 
 	private static bool ConditionSatisfied(McpWaitCondition condition, FindResultData result, int count, McpPropertyMatch? property)
@@ -1066,7 +1077,9 @@ internal static class AgentTools
 		});
 
 	private static bool AnyBoolean(FindResultData result, string property, bool expected) =>
-		result.Matches.Any(match => match.Node.Properties.TryGetValue(property, out var value) && Convert.ToBoolean(value, CultureInfo.InvariantCulture) == expected);
+		result.Matches.Any(match => match.Node.Properties.TryGetValue(property, out var value)
+			&& bool.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), out var actual)
+			&& actual == expected);
 
 	private sealed record ActionResolution(string TargetId, string? Handle, string Strategy, double Confidence, long OriginalRevision, long CurrentRevision);
 }

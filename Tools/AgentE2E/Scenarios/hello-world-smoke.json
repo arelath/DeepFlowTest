@@ -1,0 +1,31 @@
+{
+  "id": "hello-world-smoke",
+  "targetExecutable": "artifacts\\bin\\HelloWorld\\{{CONFIGURATION}}\\net8.0-windows\\HelloWorld.exe",
+  "promptFile": "..\\hello-world.prompt.txt",
+  "maximumToolFailures": 0,
+  "allowedFailureCodes": [],
+  "requiredToolSuccessCounts": {
+    "OpenContext": 1,
+    "Observe": 1,
+    "Find": 2,
+    "Act": 2,
+    "Capture": 1,
+    "Diagnose": 1,
+    "CloseContext": 1
+  },
+  "requiredCaptureFormats": ["png"],
+  "oracles": [
+    {
+      "name": "textbox",
+      "automationId": "TextBox1",
+      "properties": "Text,Name,AutomationProperties.AutomationId",
+      "contains": "MCP agent validation by GPT-5.6 Luna"
+    },
+    {
+      "name": "event-display",
+      "automationId": "HelloWorldInput",
+      "properties": "Text,Name,AutomationProperties.AutomationId",
+      "contains": "HelloWorldButton_Click event triggered."
+    }
+  ]
+}

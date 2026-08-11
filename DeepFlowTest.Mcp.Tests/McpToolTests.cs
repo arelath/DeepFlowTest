@@ -15,6 +15,7 @@ using DeepFlowTest.Mcp.Resources;
 using DeepFlowTest.Mcp.Tools;
 using DeepFlowTest.Mcp.ViewModels;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Utility.WpfUtility.Tree;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
@@ -595,6 +596,42 @@ public sealed class McpToolTests
 		Assert.That(fixture.Resources.ReadText(uri), Does.Contain("button-0002"));
 		Assert.That(json.RootElement.GetProperty("elements").GetArrayLength(), Is.GreaterThan(0));
 		Assert.That(json.RootElement.GetProperty("elements")[0].GetProperty("handle").GetString(), Does.StartWith("e"));
+	}
+
+	[Test]
+	public void AgentObserveOmitsPropertyExtractionErrorsFromRelevantElements()
+	{
+		var extractionError = PropertyExtractionError.Missing(KnownProperties.Text);
+		var brokenRoot = new VisualTreeNodeDto
+		{
+			TargetId = "root-0001",
+			IsRoot = true,
+			TypeName = "SystemResources",
+			ChildIds = ["button-0002"],
+			Properties = new Dictionary<string, object?>
+			{
+				[KnownProperties.Name] = extractionError,
+				[KnownProperties.AutomationId] = extractionError,
+				[KnownProperties.AutomationName] = extractionError,
+				[KnownProperties.Text] = extractionError,
+			},
+		};
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.Snapshot = VisualTreeSnapshot.Create(1,
+		[
+			brokenRoot,
+			Node("button-0002", parentId: "root-0001", type: "Button", automationId: "SubmitButton", text: "Submit"),
+		]);
+		using var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+
+		var result = AgentTools.Observe(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Resources, fixture.Options, contextId);
+		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
+
+		Assert.That(result.IsError, Is.False);
+		Assert.That(json.RootElement.GetProperty("elements").GetArrayLength(), Is.EqualTo(1));
+		Assert.That(json.RootElement.GetRawText(), Does.Not.Contain(nameof(PropertyExtractionError)));
 	}
 
 	[Test]

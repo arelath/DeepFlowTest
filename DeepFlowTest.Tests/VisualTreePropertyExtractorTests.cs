@@ -9,11 +9,32 @@ using System.Windows.Controls;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
+using Forms = System.Windows.Forms;
 
 [TestFixture]
 [Apartment(ApartmentState.STA)]
 public sealed class VisualTreePropertyExtractorTests
 {
+	[Test]
+	public void WinFormsControlsExposeStableAutomationIdentityAndState()
+	{
+		using var button = new Forms.Button
+		{
+			Name = "submitButton",
+			AccessibleName = "Submit order",
+			Text = "Submit",
+			Enabled = false,
+		};
+
+		var properties = new VisualTreePropertyExtractor().Extract(button);
+
+		Assert.That(properties[KnownProperties.Name], Is.EqualTo("submitButton"));
+		Assert.That(properties[KnownProperties.AutomationName], Is.EqualTo("Submit order"));
+		Assert.That(properties[KnownProperties.AutomationId], Is.EqualTo("submitButton"));
+		Assert.That(properties[KnownProperties.IsVisible], Is.True);
+		Assert.That(properties[KnownProperties.IsEnabled], Is.False);
+	}
+
 	[Test]
 	public void DefaultPropertySetReadsCommonWpfProperties()
 	{

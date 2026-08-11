@@ -1,0 +1,25 @@
+{
+  "id": "wpf-navigation",
+  "targetExecutable": "artifacts\\bin\\BasicTestHarness\\{{CONFIGURATION}}\\net8.0-windows\\BasicTestHarness.exe",
+  "promptFile": "wpf-navigation.prompt.txt",
+  "maximumToolFailures": 2,
+  "allowedFailureCodes": ["no-match", "command-timeout"],
+  "requiredToolSuccessCounts": {
+    "OpenContext": 1,
+    "Observe": 1,
+    "Find": 8,
+    "Act": 8,
+    "Wait": 3,
+    "Capture": 1,
+    "Diagnose": 1,
+    "CloseContext": 1
+  },
+  "requiredCaptureFormats": ["png"],
+  "oracles": [
+    { "name": "search", "automationId": "SearchTextBox", "properties": "Text,Name", "contains": "Basic WPF E2E" },
+    { "name": "details", "automationId": "DetailsExpander", "properties": "IsExpanded,Header,Name", "contains": "true" },
+    { "name": "list-beta", "automationId": "ListItemBeta", "properties": "IsSelected,Content,Name", "contains": "true" },
+    { "name": "second-tab", "automationId": "SecondTab", "properties": "IsSelected,Header,Name", "contains": "true" },
+    { "name": "secondary-window", "automationId": "SecondaryWindowText", "properties": "Text,IsVisible,Name", "contains": "Secondary window content" }
+  ]
+}

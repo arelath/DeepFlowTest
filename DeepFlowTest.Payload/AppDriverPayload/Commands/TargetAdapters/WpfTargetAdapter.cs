@@ -33,9 +33,25 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		target switch
 		{
 			MenuItem menuItem when button == MouseButtonKind.Left && clickCount == 1 => PerformMenuItemClick(menuItem),
+			ToggleButton toggleButton when button == MouseButtonKind.Left => PerformToggleButtonClick(toggleButton, clickCount),
 			UIElement uiElement => PerformClick(uiElement, button, clickCount),
 			_ => base.Click(target, button, clickCount),
 		};
+
+	private static ActionResult PerformToggleButtonClick(ToggleButton target, int clickCount)
+	{
+		for (var i = 0; i < Math.Max(1, clickCount); i++)
+		{
+			var before = target.IsChecked;
+			var result = PerformClick(target, MouseButtonKind.Left, 1);
+			if (!result.Success)
+				return result;
+			if (Equals(before, target.IsChecked))
+				target.IsChecked = before != true;
+		}
+
+		return ActionResult.Ok();
+	}
 
 	public override ActionResult Focus(object target) =>
 		target is IInputElement inputElement && inputElement.Focus()

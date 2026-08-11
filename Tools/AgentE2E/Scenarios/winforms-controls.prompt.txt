@@ -1,0 +1,14 @@
+Exercise the standalone WinForms application through only the configured DeepFlow MCP tools. Do not use shell commands, source inspection, or another automation system.
+
+Target process ID: {{TARGET_PID}}
+
+Attach and observe. Use deepflow_find before each action and prefer returned handles. Complete these checks:
+
+1. Replace the TextBox named `Input Text Box` with exactly `WinForms E2E by Luna` and verify Text.
+2. Click the Button named `Primary Button`; verify the Label named `Status Label` contains `Clicked: WinForms E2E by Luna`.
+3. Uncheck the CheckBox named `Enabled Check Box` using the `Uncheck` invoke operation and verify Checked is false.
+4. Set the ComboBox named `Choice Combo Box` property SelectedIndex to the number 2 and verify SelectedIndex is 2.
+5. Click the Button named `Show Secondary Form Button`, wait for the Label named `Secondary Form Label` to exist and be visible, then focus that label.
+6. Capture a PNG screenshot of the whole WinForms target and a JPEG screenshot of the Secondary Form Label element.
+
+Observe the final UI, wait until stable, diagnose responsiveness, and close the context. Return one assertion per numbered check plus diagnosis and closure. Set success true only if all assertions pass.

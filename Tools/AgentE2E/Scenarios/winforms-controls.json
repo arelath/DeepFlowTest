@@ -1,0 +1,25 @@
+{
+  "id": "winforms-controls",
+  "targetExecutable": "artifacts\\bin\\WinFormsExampleApp\\{{CONFIGURATION}}\\net8.0-windows\\WinFormsExampleApp.exe",
+  "promptFile": "winforms-controls.prompt.txt",
+  "maximumToolFailures": 1,
+  "allowedFailureCodes": ["no-match", "command-timeout"],
+  "requiredToolSuccessCounts": {
+    "OpenContext": 1,
+    "Observe": 2,
+    "Find": 7,
+    "Act": 6,
+    "Wait": 2,
+    "Capture": 2,
+    "Diagnose": 1,
+    "CloseContext": 1
+  },
+  "requiredCaptureFormats": ["png", "jpeg"],
+  "oracles": [
+    { "name": "input", "nameSelector": "Input Text Box", "properties": "Text,Name,AutomationProperties.Name", "contains": "WinForms E2E by Luna" },
+    { "name": "status", "nameSelector": "Status Label", "properties": "Text,Name,AutomationProperties.Name", "contains": "Clicked: WinForms E2E by Luna" },
+    { "name": "checkbox", "nameSelector": "Enabled Check Box", "properties": "Checked,Text,Name", "contains": "false" },
+    { "name": "combo", "nameSelector": "Choice Combo Box", "properties": "SelectedIndex,SelectedItem,Text,Name", "contains": "2" },
+    { "name": "secondary", "nameSelector": "Secondary Form Label", "properties": "Text,Name,AutomationProperties.Name", "contains": "Secondary form content" }
+  ]
+}

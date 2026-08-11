@@ -7,7 +7,7 @@
     "summary",
     "contextId",
     "operations",
-    "verification",
+    "assertions",
     "errors"
   ],
   "properties": {
@@ -33,24 +33,17 @@
         }
       }
     },
-    "verification": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "textBoxValue",
-        "eventDisplayValue",
-        "screenshotCaptured",
-        "screenshotResourceUri",
-        "targetResponsive",
-        "contextClosed"
-      ],
-      "properties": {
-        "textBoxValue": { "type": ["string", "null"] },
-        "eventDisplayValue": { "type": ["string", "null"] },
-        "screenshotCaptured": { "type": "boolean" },
-        "screenshotResourceUri": { "type": ["string", "null"] },
-        "targetResponsive": { "type": "boolean" },
-        "contextClosed": { "type": "boolean" }
+    "assertions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "passed", "actual"],
+        "properties": {
+          "id": { "type": "string" },
+          "passed": { "type": "boolean" },
+          "actual": { "type": ["string", "null"] }
+        }
       }
     },
     "errors": {

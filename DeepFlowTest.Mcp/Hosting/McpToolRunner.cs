@@ -93,7 +93,11 @@ internal sealed class McpToolRunner
 		{
 			logger.LogError(ex, "MCP tool failed.");
 			resources.AddLog("error", CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", GetContextId(parameters));
-			PublishFailure(toolName, stopwatch.Elapsed, CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", parameters, null);
+			PublishFailure(toolName, stopwatch.Elapsed, CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", parameters, new
+			{
+				exceptionType = ex.GetType().FullName,
+				exceptionMessage = ex.Message,
+			});
 			return McpToolResponse.Fail(CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", recovery: "Check the MCP server stderr log for details.", target: sessionHost.Status);
 		}
 	}

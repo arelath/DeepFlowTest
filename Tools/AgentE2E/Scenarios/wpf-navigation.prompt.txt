@@ -1,0 +1,16 @@
+Exercise WPF navigation controls through only the configured DeepFlow MCP tools. Do not use shell commands, source inspection, or another automation system.
+
+Target process ID: {{TARGET_PID}}
+
+Attach, observe, and use deepflow_find before each action so handles are exercised. Complete these operations:
+
+1. Replace SearchTextBox with exactly `Basic WPF E2E` and verify Text.
+2. Click PrimaryButton once.
+3. Expand DetailsExpander with the `Expand` invoke operation and verify IsExpanded is true. Do not try a click first.
+4. Click PopupToggle, then wait for PopupText to exist and be visible.
+5. Select ListItemBeta and verify IsSelected is true.
+6. Select SecondTab and wait for SecondTabText to be visible.
+7. Open FileMenu, find OpenMenuItem after the popup appears, and click it.
+8. Click ShowSecondaryWindowButton, wait for SecondaryWindowText to exist and be visible, and capture a PNG screenshot of that element.
+
+Observe the final tree, wait for UI stability, diagnose responsiveness, and close the context. Return an assertion for every numbered operation plus diagnosis and closure. Set success true only if every assertion passed.

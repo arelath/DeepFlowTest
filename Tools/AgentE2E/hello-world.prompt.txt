@@ -18,4 +18,4 @@ Complete this workflow:
 8. Diagnose the target and note whether it is responsive.
 9. Close the explicit context even if an earlier operation failed.
 
-Return the required structured result. Set success to true only if both UI values were verified, the screenshot succeeded, diagnosis reported a responsive target, and the context was closed. Include every DeepFlow MCP operation you attempted and any errors or recovery steps.
+Return the required structured result with assertions for both UI values, screenshot success, target responsiveness, and context closure. Set success to true only if every assertion passed. Include every DeepFlow MCP operation you attempted and any errors or recovery steps.

@@ -1,0 +1,28 @@
+{
+  "id": "wpf-controls",
+  "targetExecutable": "artifacts\\bin\\HelloWorld\\{{CONFIGURATION}}\\net8.0-windows\\HelloWorld.exe",
+  "promptFile": "wpf-controls.prompt.txt",
+  "maximumToolFailures": 2,
+  "allowedFailureCodes": ["no-match", "command-timeout"],
+  "requiredToolSuccessCounts": {
+    "OpenContext": 1,
+    "Observe": 2,
+    "Find": 10,
+    "Act": 10,
+    "Wait": 3,
+    "Diagnose": 1,
+    "CloseContext": 1
+  },
+  "requiredCaptureFormats": [],
+  "oracles": [
+    { "name": "wpf-text", "automationId": "TextBox1", "properties": "Text,Name", "contains": "WPF E2E text by Luna" },
+    { "name": "wpf-checkbox", "automationId": "MainCheckbox", "properties": "IsChecked,Checked,Name", "contains": "false" },
+    { "name": "wpf-list", "automationId": "ListBoxItem3", "properties": "IsSelected,Content,Name", "contains": "true" },
+    { "name": "wpf-expander", "automationId": "ExpanderControl", "properties": "IsExpanded,Header,Name", "contains": "true" },
+    { "name": "delayed-text", "automationId": "DelayedReadyText", "properties": "Text,Visibility,IsVisible", "contains": "Delayed ready" },
+    { "name": "drag-log", "automationId": "DragDropEventLog", "properties": "Text,Name", "contains": "DragDropFinalTarget:Drop" },
+    { "name": "hosted-text", "nameSelector": "HostedWinFormsTextBox", "properties": "Text,Name", "contains": "Hosted WinForms E2E" },
+    { "name": "hosted-checkbox", "nameSelector": "HostedWinFormsCheckBox", "properties": "Checked,Text,Name", "contains": "true" },
+    { "name": "hosted-button-result", "automationId": "HelloWorldInput", "properties": "Text,Name", "contains": "HostedWinFormsButton_Click event triggered." }
+  ]
+}
