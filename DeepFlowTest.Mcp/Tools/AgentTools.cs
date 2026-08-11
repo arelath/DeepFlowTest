@@ -73,14 +73,15 @@ internal static class AgentTools
 		McpToolRunner runner,
 		McpSessionHost host,
 		McpSnapshotCache cache,
+		McpElementHandleRegistry handles,
 		DeepFlowResourceStore resources,
 		IOptions<DeepFlowMcpOptions> options,
-		string contextId,
-		McpObservationFormat format = McpObservationFormat.Condensed,
-		IReadOnlyList<string>? properties = null,
-		int? limit = null,
-		bool includeHidden = false,
-		bool refresh = false)
+		[Description("Context handle returned by deepflow_open_context.")] string contextId,
+		[Description("Condensed text for reasoning or JSON for explicit tree nodes.")] McpObservationFormat format = McpObservationFormat.Condensed,
+		[Description("Additional UI property names to capture.")] IReadOnlyList<string>? properties = null,
+		[Description("Maximum number of nodes in the compact observation.")] int? limit = null,
+		[Description("Include elements whose visible state is false.")] bool includeHidden = false,
+		[Description("Bypass the snapshot cache and read the target now.")] bool refresh = false)
 	{
 		var response = runner.Run(() =>
 		{
@@ -90,21 +91,6 @@ internal static class AgentTools
 				propertyNames = McpSemanticRecordingFormatter.MergeSemanticProperties(propertyNames);
 
 			var snapshot = cache.GetOrRefresh(session, propertyNames, Math.Max(options.Value.TreeLimit, limit ?? 0), includeHidden: true, refresh: refresh);
-			if (format == McpObservationFormat.Condensed)
-			{
-				var condensed = McpSemanticRecordingFormatter.FormatSnapshot(snapshot);
-				var resource = resources.StoreContextSnapshot(contextId, snapshot.SequenceNumber, snapshot);
-				return new McpObservationResult
-				{
-					ContextId = contextId,
-					Revision = snapshot.SequenceNumber,
-					NodeCount = snapshot.NodeCount,
-					Format = McpSemanticRecordingFormatter.FormatName,
-					Text = condensed.Text,
-					ResourceUri = resource.Uri,
-				};
-			}
-
 			var shaped = new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions
 			{
 				Shape = TreeShape.Flat,
@@ -115,6 +101,28 @@ internal static class AgentTools
 				Properties = propertyNames,
 				UseShortIds = true,
 			});
+			var elements = CreateObservationElements(contextId, snapshot, shaped.Nodes, handles);
+			if (format == McpObservationFormat.Condensed)
+			{
+				var includedIds = shaped.Nodes.Select(static node => node.TargetId).ToHashSet(StringComparer.Ordinal);
+				var filtered = VisualTreeSnapshot.Create(
+					snapshot.SequenceNumber,
+					snapshot.Nodes.Where(node => includedIds.Contains(node.TargetId)),
+					snapshot.RequestedPropertyNames);
+				var condensed = McpSemanticRecordingFormatter.FormatSnapshot(filtered);
+				var resource = resources.StoreContextSnapshot(contextId, snapshot.SequenceNumber, snapshot);
+				return new McpObservationResult
+				{
+					ContextId = contextId,
+					Revision = snapshot.SequenceNumber,
+					NodeCount = shaped.Nodes.Count,
+					Format = McpSemanticRecordingFormatter.FormatName,
+					Text = condensed.Text,
+					Elements = elements,
+					ResourceUri = resource.Uri,
+				};
+			}
+
 			var jsonResource = resources.StoreContextSnapshot(contextId, snapshot.SequenceNumber, shaped);
 			return new McpObservationResult
 			{
@@ -123,6 +131,7 @@ internal static class AgentTools
 				NodeCount = shaped.Nodes.Count,
 				Format = "json",
 				Nodes = shaped.Nodes,
+				Elements = elements,
 				ResourceUri = jsonResource.Uri,
 			};
 		}, new { contextId, format, properties, limit, includeHidden, refresh });
@@ -141,11 +150,11 @@ internal static class AgentTools
 		McpSnapshotCache cache,
 		McpElementHandleRegistry handles,
 		IOptions<DeepFlowMcpOptions> options,
-		string contextId,
-		McpAgentSelector target,
-		IReadOnlyList<string>? properties = null,
-		int limit = 50,
-		bool refresh = false)
+		[Description("Context handle returned by deepflow_open_context.")] string contextId,
+		[Description("Handle, current target ID, or semantic selector to find.")] McpAgentSelector target,
+		[Description("Additional UI properties to return with each match.")] IReadOnlyList<string>? properties = null,
+		[Description("Maximum number of returned matches.")] int limit = 50,
+		[Description("Bypass the snapshot cache and read the target now.")] bool refresh = false)
 	{
 		var response = runner.Run(() =>
 		{
@@ -222,11 +231,11 @@ internal static class AgentTools
 		McpSnapshotCache cache,
 		McpElementHandleRegistry handles,
 		IOptions<DeepFlowMcpOptions> options,
-		string contextId,
-		McpAgentSelector target,
-		McpAgentAction action,
-		McpActionExpectation? expect = null,
-		McpObserveMode observe = McpObserveMode.Delta)
+		[Description("Context handle returned by deepflow_open_context.")] string contextId,
+		[Description("Handle, current target ID, or semantic selector for the action target.")] McpAgentSelector target,
+		[Description("Discriminated click, type, key, set, focus, invoke, or drag action.")] McpAgentAction action,
+		[Description("Optional property expectation verified after the action.")] McpActionExpectation? expect = null,
+		[Description("Observation returned after the action; delta is the compact default.")] McpObserveMode observe = McpObserveMode.Delta)
 	{
 		var response = runner.Run(() =>
 		{
@@ -264,6 +273,14 @@ internal static class AgentTools
 					verifiedTarget.CurrentRevision);
 			}
 			var verification = expect is null ? null : Verify(session, cache, options.Value, resolution.TargetId, expect);
+			var structuredDelta = observe == McpObserveMode.Delta ? CreateActionDelta(contextId, before, after, handles) : null;
+			var observedElements = observe switch
+			{
+				McpObserveMode.Delta when structuredDelta is not null => structuredDelta.Added.Concat(structuredDelta.Changed).ToArray(),
+				McpObserveMode.Target => CreateActionElements(contextId, after, handles, node => node.TargetId == resolution.TargetId),
+				McpObserveMode.Tree => CreateActionElements(contextId, after, handles, static _ => true),
+				_ => [],
+			};
 			return new McpActionResult
 			{
 				ContextId = contextId,
@@ -281,6 +298,8 @@ internal static class AgentTools
 				},
 				Verification = verification,
 				Observation = CreateObservation(observe, before, after, resolution.TargetId),
+				Delta = structuredDelta,
+				Elements = observedElements,
 			};
 		}, new { contextId, target, action, expect, observe });
 
@@ -295,15 +314,15 @@ internal static class AgentTools
 		McpSnapshotCache cache,
 		McpElementHandleRegistry handles,
 		IOptions<DeepFlowMcpOptions> options,
-		string contextId,
-		McpAgentSelector? target = null,
-		McpWaitCondition condition = McpWaitCondition.Exists,
-		int count = 1,
-		McpPropertyMatch? property = null,
-		int? timeoutMs = null,
-		int intervalMs = TimeoutDefaults.CliWaitIntervalMs,
-		int stabilityMs = 500,
-		string? initialWindowTitle = null)
+		[Description("Context handle returned by deepflow_open_context.")] string contextId,
+		[Description("Element target; omit only for stable, responsive, or window-title-changed waits.")] McpAgentSelector? target = null,
+		[Description("State that must become true before the wait succeeds.")] McpWaitCondition condition = McpWaitCondition.Exists,
+		[Description("Expected count for exact-count or lower bound for minimum-count.")] int count = 1,
+		[Description("Typed property comparison for property-equals or property-differs.")] McpPropertyMatch? property = null,
+		[Description("Maximum wait duration in milliseconds.")] int? timeoutMs = null,
+		[Description("Polling interval in milliseconds.")] int intervalMs = TimeoutDefaults.CliWaitIntervalMs,
+		[Description("Required unchanged duration for a stable wait.")] int stabilityMs = 500,
+		[Description("Optional explicit baseline for a window-title-changed wait; defaults to the current title.")] string? initialWindowTitle = null)
 	{
 		var response = runner.Run(() =>
 		{
@@ -431,26 +450,19 @@ internal static class AgentTools
 		McpElementHandleRegistry handles,
 		DeepFlowResourceStore resources,
 		IOptions<DeepFlowMcpOptions> options,
-		string contextId,
-		McpAgentSelector? target = null,
-		McpImageFormat format = McpImageFormat.Png)
+		[Description("Context handle returned by deepflow_open_context.")] string contextId,
+		[Description("Optional element to capture; omit to capture the target window.")] McpAgentSelector? target = null,
+		[Description("Screenshot image encoding.")] McpImageFormat format = McpImageFormat.Png)
 	{
-		var validation = runner.Run(() =>
-		{
-			var session = host.RequireContext(contextId);
-			if (target is null || (string.IsNullOrWhiteSpace(target.Handle) && target.ToCliSelector().IsEmpty))
-				return null;
-
-			var snapshot = cache.GetOrRefresh(session, options.Value.DefaultProperties, options.Value.TreeLimit, refresh: false);
-			return ResolveTarget(contextId, target, snapshot, handles).TargetId;
-		}, new { contextId });
-		if (!validation.Success)
-			return McpCallToolResults.Error(validation, contextId, LatestRevision(host, contextId));
-
-		var resolvedTargetId = validation.Data as string;
 		var capture = runner.Run(() =>
 		{
 			var session = host.RequireContext(contextId);
+			string? resolvedTargetId = null;
+			if (target is not null && (!string.IsNullOrWhiteSpace(target.Handle) || !target.ToCliSelector().IsEmpty))
+			{
+				var snapshot = cache.GetOrRefresh(session, options.Value.DefaultProperties, options.Value.TreeLimit, refresh: false);
+				resolvedTargetId = ResolveTarget(contextId, target, snapshot, handles).TargetId;
+			}
 			var response = host.Send<ScreenshotCommandResponse>(contextId, new ScreenshotCommandRequest
 			{
 				Format = format switch
@@ -502,26 +514,91 @@ internal static class AgentTools
 		McpSessionHost host,
 		IOptions<DeepFlowMcpOptions> options,
 		DeepFlowResourceStore resources,
-		string contextId)
+		[Description("Context handle returned by deepflow_open_context.")] string contextId)
 	{
 		var response = runner.Run(() =>
 		{
-			host.RequireContext(contextId);
+			_ = host.RequireContext(contextId);
 			var status = host.GetContextStatus(contextId);
-			var failures = host.Send<BindingFailureBatchDto>(contextId,
-				new GetBindingFailuresCommandRequest(null, 100, options.Value.DefaultTimeoutMs),
-				options.Value.DefaultTimeoutMs);
+			BindingFailureBatchDto failures = new();
+			string? targetErrorCode = null;
+			string? targetErrorMessage = null;
+			string? diagnosticErrorCode = null;
+			string? diagnosticErrorMessage = null;
+			var responsive = false;
+			try
+			{
+				_ = host.Send<PingCommandResponse>(contextId, new PingCommandRequest(options.Value.DefaultTimeoutMs), options.Value.DefaultTimeoutMs);
+				responsive = true;
+			}
+			catch (CliException ex)
+			{
+				targetErrorCode = ex.ErrorCode;
+				targetErrorMessage = ex.Message;
+			}
+			catch (NamedPipeSessionException ex)
+			{
+				targetErrorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
+				targetErrorMessage = ex.Message;
+			}
+			catch (ProtocolException ex)
+			{
+				targetErrorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
+				targetErrorMessage = ex.Message;
+			}
+			if (responsive)
+			{
+				try
+				{
+					failures = host.Send<BindingFailureBatchDto>(contextId,
+						new GetBindingFailuresCommandRequest(null, 100, options.Value.DefaultTimeoutMs),
+						options.Value.DefaultTimeoutMs);
+				}
+				catch (CliException ex)
+				{
+					diagnosticErrorCode = ex.ErrorCode;
+					diagnosticErrorMessage = ex.Message;
+				}
+				catch (NamedPipeSessionException ex)
+				{
+					diagnosticErrorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
+					diagnosticErrorMessage = ex.Message;
+				}
+				catch (ProtocolException ex)
+				{
+					diagnosticErrorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
+					diagnosticErrorMessage = ex.Message;
+				}
+			}
 			var count = failures.Failures.Count;
-			var resource = resources.StoreContextDiagnostic(contextId, "bindings", new { status, failures });
+			var logs = resources.SnapshotLogs(contextId).Select(static entry => new McpDiagnosticLogEntry
+			{
+				ContextId = entry.ContextId,
+				Sequence = entry.Sequence,
+				TimestampUtc = entry.TimestampUtc,
+				Level = entry.Level,
+				Code = entry.Code,
+				Message = entry.Message,
+			}).ToArray();
+			var resource = resources.StoreContextDiagnostic(contextId, "bindings", new { status, responsive, targetErrorCode, targetErrorMessage, diagnosticErrorCode, diagnosticErrorMessage, failures, logs });
 			return new McpDiagnosisResult
 			{
 				ContextId = contextId,
 				IsAlive = status.IsAlive,
+				IsResponsive = responsive,
 				BindingFailureCount = count,
-				Summary = status.IsAlive
-					? count == 0 ? "Target is responsive; no binding failures were reported." : $"Target is responsive; {count} binding failure(s) were reported."
-					: "Target is no longer responsive.",
-				SuggestedRecovery = !status.IsAlive ? "Open a new context for a live target." : count > 0 ? "Inspect the binding failure resource for source and path details." : null,
+				RecentLogCount = logs.Length,
+				RecentLogs = logs,
+				TargetErrorCode = targetErrorCode,
+				DiagnosticErrorCode = diagnosticErrorCode,
+				Summary = !status.IsAlive
+					? "Target process has exited."
+					: !responsive
+						? $"Target process is alive but did not respond: {targetErrorMessage}"
+						: diagnosticErrorCode is not null
+							? $"Target is responsive, but binding diagnostics failed: {diagnosticErrorMessage}"
+							: count == 0 ? "Target is responsive; no binding failures were reported." : $"Target is responsive; {count} binding failure(s) were reported.",
+				SuggestedRecovery = !status.IsAlive ? "Open a new context for a live target." : !responsive ? "Retry once, then open a new context if the pipe remains unresponsive." : diagnosticErrorCode is not null ? "Retry diagnostics; reopen the context if the failure repeats." : count > 0 ? "Inspect the binding failure resource for source and path details." : null,
 				Revision = status.Revision ?? 0,
 				ResourceUri = resource.Uri,
 			};
@@ -539,7 +616,7 @@ internal static class AgentTools
 		McpToolRunner runner,
 		McpSessionHost host,
 		McpElementHandleRegistry handles,
-		string contextId)
+		[Description("Context handle returned by deepflow_open_context.")] string contextId)
 	{
 		var response = runner.Run(() =>
 		{
@@ -820,6 +897,76 @@ internal static class AgentTools
 			McpObserveMode.Target => McpSemanticRecordingFormatter.FormatSnapshot(VisualTreeSnapshot.Create(after.SequenceNumber, after.Nodes.Where(node => node.TargetId == targetId), after.RequestedPropertyNames)).Text,
 			_ => null,
 		};
+
+	private static IReadOnlyList<McpElementMatch> CreateObservationElements(
+		string contextId,
+		VisualTreeSnapshot snapshot,
+		IReadOnlyList<TreeNodeData> nodes,
+		McpElementHandleRegistry handles)
+	{
+		var sourceById = snapshot.Nodes.ToDictionary(static node => node.TargetId, StringComparer.Ordinal);
+		return nodes
+			.Where(node => sourceById.TryGetValue(node.TargetId, out var source) && IsAgentRelevant(source))
+			.Select(node =>
+			{
+				var selector = StableSelector(new ElementSelector(), node);
+				return ToElementMatch(handles.Register(contextId, node.TargetId, selector, node, snapshot.SequenceNumber), node);
+			})
+			.ToArray();
+	}
+
+	private static IReadOnlyList<McpElementMatch> CreateActionElements(
+		string contextId,
+		VisualTreeSnapshot snapshot,
+		McpElementHandleRegistry handles,
+		Func<VisualTreeNodeDto, bool> predicate)
+	{
+		var tree = new TreeSnapshotService();
+		return snapshot.Nodes.Where(predicate).Where(IsAgentRelevant).Select(node =>
+		{
+			var shaped = tree.ShapeOne(node, snapshot, new TreeSnapshotOptions
+			{
+				IncludePath = true,
+				IncludeTypeNames = true,
+				Properties = snapshot.RequestedPropertyNames,
+				UseShortIds = true,
+			});
+			var selector = StableSelector(new ElementSelector(), shaped);
+			return ToElementMatch(handles.Register(contextId, node.TargetId, selector, shaped, snapshot.SequenceNumber), shaped);
+		}).ToArray();
+	}
+
+	private static McpActionDelta CreateActionDelta(
+		string contextId,
+		VisualTreeSnapshot before,
+		VisualTreeSnapshot after,
+		McpElementHandleRegistry handles)
+	{
+		var delta = VisualTreeSnapshotDelta.Create(before, after);
+		var addedIds = delta.Added.Select(static node => node.TargetId).ToHashSet(StringComparer.Ordinal);
+		var changedIds = delta.Changed.Select(static node => node.TargetId).ToHashSet(StringComparer.Ordinal);
+		return new McpActionDelta
+		{
+			HasChanges = delta.HasChanges,
+			Added = CreateActionElements(contextId, after, handles, node => addedIds.Contains(node.TargetId)),
+			Changed = CreateActionElements(contextId, after, handles, node => changedIds.Contains(node.TargetId)),
+			Removed = delta.RemovedTargetIds.Select(targetId => new McpRemovedElement
+			{
+				Handle = handles.TryGetHandle(contextId, targetId),
+				TargetId = targetId,
+			}).ToArray(),
+		};
+	}
+
+	private static bool IsAgentRelevant(VisualTreeNodeDto node) =>
+		node.CanReceiveActions
+		|| HasText(node, KnownProperties.AutomationId)
+		|| HasText(node, KnownProperties.AutomationName)
+		|| HasText(node, KnownProperties.Name)
+		|| KnownProperties.TextualIdentityPropertyNames.Any(property => HasText(node, property));
+
+	private static bool HasText(VisualTreeNodeDto node, string property) =>
+		node.Properties.TryGetValue(property, out var value) && !string.IsNullOrWhiteSpace(Convert.ToString(value, CultureInfo.InvariantCulture));
 
 	private static FindResultData FindMatches(VisualTreeSnapshot snapshot, ElementSelector selector, int limit) =>
 		new FindSnapshotService().Find(snapshot, new FindSnapshotOptions

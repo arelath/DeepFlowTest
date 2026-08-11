@@ -15,6 +15,7 @@ using DeepFlowTest.Mcp.Resources;
 using DeepFlowTest.Mcp.Tools;
 using DeepFlowTest.Mcp.ViewModels;
 using DeepFlowTest.Interop;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
 
@@ -470,6 +471,33 @@ public sealed class McpToolTests
 	}
 
 	[Test]
+	public void MissingStaleRepairReturnsTypedSelectorRecovery()
+	{
+		var sessionService = new FakeAppSessionService();
+		using var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+		var found = AgentTools.Find(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Options,
+			contextId, new McpSemanticSelector { AutomationId = "SubmitButton" });
+		using var foundJson = JsonDocument.Parse(JsonSerializer.Serialize(found.StructuredContent));
+		var handle = foundJson.RootElement.GetProperty("matches")[0].GetProperty("handle").GetString();
+		sessionService.Session.Snapshot = VisualTreeSnapshot.Create(2, [Node("root-1001", isRoot: true)]);
+
+		var acted = AgentTools.Act(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Options,
+			contextId, new McpHandleSelector { Handle = handle }, new McpClickAction());
+		using var json = JsonDocument.Parse(JsonSerializer.Serialize(acted.StructuredContent));
+
+		Assert.That(acted.IsError, Is.True);
+		Assert.That(json.RootElement.GetProperty("code").GetString(), Is.EqualTo("stale_element"));
+		Assert.That(json.RootElement.GetProperty("details").GetProperty("originalRevision").GetInt64(), Is.EqualTo(1));
+		Assert.That(json.RootElement.GetProperty("details").GetProperty("currentRevision").GetInt64(), Is.EqualTo(2));
+		Assert.That(json.RootElement.GetProperty("recovery").GetProperty("kind").GetString(), Is.EqualTo("refresh_and_resolve"));
+		Assert.That(json.RootElement.GetProperty("recovery").GetProperty("selector").GetProperty("automationId").GetString(), Is.EqualTo("SubmitButton"));
+		Assert.That(sessionService.Session.Commands.OfType<ClickCommandRequest>(), Is.Empty);
+	}
+
+	[Test]
 	public void AgentContextsKeepIndependentTargetsAndSnapshotCaches()
 	{
 		var sessionService = new FakeAppSessionService();
@@ -557,7 +585,7 @@ public sealed class McpToolTests
 		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
 
 		var result = AgentTools.Observe(
-			fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options, contextId);
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Resources, fixture.Options, contextId);
 		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
 		var uri = json.RootElement.GetProperty("resourceUri").GetString()!;
 
@@ -565,6 +593,70 @@ public sealed class McpToolTests
 		Assert.That(uri, Does.StartWith($"deepflow://contexts/{contextId}/snapshots/"));
 		Assert.That(result.Content.OfType<ResourceLinkBlock>().Single().Uri, Is.EqualTo(uri));
 		Assert.That(fixture.Resources.ReadText(uri), Does.Contain("button-0002"));
+		Assert.That(json.RootElement.GetProperty("elements").GetArrayLength(), Is.GreaterThan(0));
+		Assert.That(json.RootElement.GetProperty("elements")[0].GetProperty("handle").GetString(), Does.StartWith("e"));
+	}
+
+	[Test]
+	public void AgentActReturnsTypedDeltaWithStableHandles()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.SendHandler = command =>
+		{
+			if (command is ClickCommandRequest)
+			{
+				sessionService.Session.Snapshot = VisualTreeSnapshot.Create(2,
+				[
+					Node("root-0001", isRoot: true, childIds: ["button-0002"]),
+					Node("button-0002", parentId: "root-0001", type: "Button", automationId: "SubmitButton", text: "Clicked"),
+				]);
+				return new StandardIpcResponse { Success = true };
+			}
+
+			return command is GetVisualTreeCommandRequest
+				? sessionService.Session.Snapshot
+				: new StandardIpcResponse { Success = true };
+		};
+		using var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+
+		var result = AgentTools.Act(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Options,
+			contextId, new McpSemanticSelector { AutomationId = "SubmitButton" }, new McpClickAction(),
+			new McpActionExpectation { PropertyEquals = new McpPropertyMatch { Name = KnownProperties.Text, Value = "Clicked" }, TimeoutMs = 500 });
+		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
+
+		Assert.That(result.IsError, Is.False);
+		Assert.That(json.RootElement.GetProperty("delta").GetProperty("hasChanges").GetBoolean(), Is.True);
+		Assert.That(json.RootElement.GetProperty("verification").GetProperty("passed").GetBoolean(), Is.True);
+		var changed = json.RootElement.GetProperty("delta").GetProperty("changed");
+		var changedButton = changed.EnumerateArray().Single(element => element.GetProperty("targetId").GetString() == "button-0002");
+		Assert.That(changedButton.GetProperty("handle").GetString(), Does.StartWith("e"));
+		Assert.That(changedButton.GetProperty("text").GetString(), Is.EqualTo("Clicked"));
+	}
+
+	[Test]
+	public void AgentDiagnoseReturnsLogsEvenWhenTargetPipeIsUnresponsive()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.SendHandler = command => command is PingCommandRequest
+			? throw new NamedPipeSessionException(ProtocolConstants.ErrorCodes.CommandTimeout, "No response")
+			: new StandardIpcResponse { Success = true };
+		using var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+		fixture.Resources.AddLog("warning", "previous_failure", "Previous operation failed.", contextId);
+		fixture.Resources.AddLog("warning", "other_context_failure", "Unrelated context failed.", "ctx_other");
+
+		var result = AgentTools.Diagnose(fixture.Runner, fixture.Host, fixture.Options, fixture.Resources, contextId);
+		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
+
+		Assert.That(result.IsError, Is.False);
+		Assert.That(json.RootElement.GetProperty("isAlive").GetBoolean(), Is.True);
+		Assert.That(json.RootElement.GetProperty("isResponsive").GetBoolean(), Is.False);
+		Assert.That(json.RootElement.GetProperty("targetErrorCode").GetString(), Is.EqualTo(CliErrorCodes.CommandTimeout));
+		Assert.That(json.RootElement.GetProperty("recentLogCount").GetInt32(), Is.EqualTo(1));
+		Assert.That(json.RootElement.GetProperty("recentLogs")[0].GetProperty("code").GetString(), Is.EqualTo("previous_failure"));
+		Assert.That(result.Content.OfType<ResourceLinkBlock>(), Has.Exactly(1).Items);
 	}
 
 	[Test]
@@ -582,6 +674,13 @@ public sealed class McpToolTests
 		Assert.That(result.Content.OfType<ImageContentBlock>().Single().MimeType, Is.EqualTo("image/png"));
 		Assert.That(result.Content.OfType<ResourceLinkBlock>().Single().Uri, Does.StartWith($"deepflow://contexts/{contextId}/screenshots/"));
 		Assert.That(sessionService.Session.Commands.OfType<ScreenshotCommandRequest>(), Has.Exactly(1).Items);
+		var activity = fixture.ServiceProvider.GetRequiredService<McpActivityStore>().Snapshot();
+		Assert.That(activity.Count(item => item.Kind == "tool.start" && item.Name == "Capture"), Is.EqualTo(1));
+		Assert.That(activity.Count(item => item.Kind == "tool.success" && item.Name == "Capture"), Is.EqualTo(1));
+		var captureActivity = activity.Single(item => item.Kind == "tool.success" && item.Name == "Capture");
+		var captureActivityJson = JsonSerializer.Serialize(captureActivity.Details);
+		Assert.That(captureActivityJson, Does.Contain("[omitted from activity log]"));
+		Assert.That(captureActivityJson, Does.Not.Contain("AQIDBA=="));
 	}
 
 	[TestCase("Responsive")]
@@ -638,7 +737,7 @@ public sealed class McpToolTests
 		Assert.That(response.Success, Is.True);
 		Assert.That(data.Screenshot.BytesBase64, Is.EqualTo("AQIDBA=="));
 		Assert.That(data.Resource.Uri, Is.EqualTo(DeepFlowResourceNames.LatestScreenshot));
-		Assert.That(DeepFlowResources.LatestScreenshot(fixture.ServiceProvider), Does.Contain("AQIDBA=="));
+		Assert.That(new DeepFlowResources().LatestScreenshot(fixture.ServiceProvider), Does.Contain("AQIDBA=="));
 	}
 
 	[Test]
@@ -978,10 +1077,11 @@ public sealed class McpToolTests
 		InspectTools.GetBindingFailures(fixture.Runner, fixture.Host, fixture.Resources, fixture.Options);
 		ScreenshotTools.CaptureScreenshot(fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options);
 
-		Assert.That(DeepFlowResources.LatestVisualTree(fixture.ServiceProvider), Does.Contain("SubmitButton"));
-		Assert.That(DeepFlowResources.LatestNode(fixture.ServiceProvider), Does.Contain("button-0002"));
-		Assert.That(DeepFlowResources.LatestBindingFailures(fixture.ServiceProvider), Does.Contain("failures"));
-		Assert.That(DeepFlowResources.LatestScreenshot(fixture.ServiceProvider), Does.Contain("AQIDBA=="));
+		var resources = new DeepFlowResources();
+		Assert.That(resources.LatestVisualTree(fixture.ServiceProvider), Does.Contain("SubmitButton"));
+		Assert.That(resources.LatestNode(fixture.ServiceProvider), Does.Contain("button-0002"));
+		Assert.That(resources.LatestBindingFailures(fixture.ServiceProvider), Does.Contain("failures"));
+		Assert.That(resources.LatestScreenshot(fixture.ServiceProvider), Does.Contain("AQIDBA=="));
 	}
 
 	[Test]
@@ -991,7 +1091,7 @@ public sealed class McpToolTests
 		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
 		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
 
-		var json = DeepFlowResources.LiveVisualTree(fixture.ServiceProvider);
+		var json = new DeepFlowResources().LiveVisualTree(fixture.ServiceProvider);
 
 		Assert.That(json, Does.Contain("SubmitButton"));
 		Assert.That(sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single().AsSnapshot, Is.True);
@@ -1027,7 +1127,7 @@ public sealed class McpToolTests
 		Assert.That(response.Success, Is.False);
 		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.UnexpectedError));
 		Assert.That(response.Error.Message, Does.Not.Contain("sensitive detail"));
-		Assert.That(DeepFlowResources.RecentLogs(fixture.ServiceProvider), Does.Contain("Unexpected MCP tool failure"));
+		Assert.That(new DeepFlowResources().RecentLogs(fixture.ServiceProvider), Does.Contain("Unexpected MCP tool failure"));
 	}
 
 	[Test]

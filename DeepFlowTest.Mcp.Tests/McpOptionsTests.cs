@@ -72,6 +72,8 @@ public sealed class McpOptionsTests
 				"3",
 				"--activity-retention-limit",
 				"7",
+				"--activity-log-file",
+				"C:\\temp\\mcp-activity.jsonl",
 				"--http-port",
 				"0",
 				"--http-path",
@@ -90,6 +92,7 @@ public sealed class McpOptionsTests
 		Assert.That(options.Startup.TerminateOnDetach, Is.True);
 		Assert.That(options.ResourceRetentionLimit, Is.EqualTo(3));
 		Assert.That(options.ActivityRetentionLimit, Is.EqualTo(7));
+		Assert.That(options.ActivityLogFile, Is.EqualTo("C:\\temp\\mcp-activity.jsonl"));
 		Assert.That(options.Http.Port, Is.EqualTo(0));
 		Assert.That(options.Http.Path, Is.EqualTo("/mcp-test"));
 		Assert.That(options.Http.EnableLegacySse, Is.True);

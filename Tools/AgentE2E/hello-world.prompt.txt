@@ -1,0 +1,21 @@
+Validate the DeepFlowTest MCP server against the already-running HelloWorld desktop application.
+
+Use only the DeepFlow MCP tools configured for this run. Do not use shell commands, process tools, source-code inspection, or any other UI automation mechanism.
+If your environment requires you to read a UI-automation skill first, do not use its CLI workflow; continue this evaluation exclusively through the configured MCP tools.
+
+Target process ID: {{TARGET_PID}}
+Exact text to enter: MCP agent validation by GPT-5.6 Luna
+
+Complete this workflow:
+
+1. Open an explicit context by attaching to the target process ID.
+2. Observe the UI before changing it.
+3. Find the element whose automation ID is TextBox1 and replace its current text with the exact text above.
+4. Find the button whose automation ID is HelloWorldButton and click it once.
+5. Verify that TextBox1 still contains the exact entered text.
+6. Verify that the element whose automation ID is HelloWorldInput contains: HelloWorldButton_Click event triggered.
+7. Capture a screenshot of the target window.
+8. Diagnose the target and note whether it is responsive.
+9. Close the explicit context even if an earlier operation failed.
+
+Return the required structured result. Set success to true only if both UI values were verified, the screenshot succeeded, diagnosis reported a responsive target, and the context was closed. Include every DeepFlow MCP operation you attempted and any errors or recovery steps.

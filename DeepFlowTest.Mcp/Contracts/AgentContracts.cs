@@ -110,6 +110,7 @@ internal sealed record class McpPropertyMatch
 	[Description("Expected property value as text.")]
 	public object? Value { get; init; }
 
+	[JsonIgnore]
 	public string TextValue => McpValueConversion.ToInvariantString(Value);
 }
 
@@ -142,26 +143,37 @@ internal sealed record class McpTargetIdSelector : McpAgentSelector
 
 internal sealed record class McpSemanticSelector : McpAgentSelector
 {
+	[Description("Exact framework control type, such as Button or TextBox.")]
 	public string? Type { get; init; }
 
+	[Description("Substring match against the framework control type.")]
 	public string? TypeContains { get; init; }
 
+	[Description("Automation name or framework Name value.")]
 	public string? Name { get; init; }
 
+	[Description("AutomationProperties.AutomationId; usually the most stable semantic selector.")]
 	public string? AutomationId { get; init; }
 
+	[Description("Readable text or content identity.")]
 	public string? Text { get; init; }
 
+	[Description("Require one typed UI property to equal a value.")]
 	public McpPropertyMatch? PropertyEquals { get; init; }
 
+	[Description("Require one UI property to contain text.")]
 	public McpPropertyMatch? PropertyContains { get; init; }
 
+	[Description("Require one UI property to match a regular expression.")]
 	public McpPropertyMatch? PropertyRegex { get; init; }
 
+	[Description("When supplied, require the matched element to have this visibility state.")]
 	public bool? Visible { get; init; }
 
+	[Description("When supplied, require the matched element to have this enabled state.")]
 	public bool? Enabled { get; init; }
 
+	[Description("Use ordinal case-sensitive text and property matching.")]
 	public bool CaseSensitive { get; init; }
 
 	[Description("Explicit zero-based match index. Omit to reject ambiguity.")]
@@ -207,25 +219,31 @@ internal abstract record class McpAgentAction;
 
 internal sealed record class McpClickAction : McpAgentAction
 {
+	[Description("Mouse button to click.")]
 	public McpMouseButton Button { get; init; } = McpMouseButton.Left;
 
+	[Description("Number of clicks; use 2 for a double-click.")]
 	public int Count { get; init; } = 1;
 }
 
 internal sealed record class McpTypeAction : McpAgentAction
 {
+	[Description("Text to type into the resolved element.")]
 	public string Text { get; init; } = string.Empty;
 
+	[Description("Select and remove existing text before typing.")]
 	public bool ClearFirst { get; init; }
 }
 
 internal sealed record class McpKeyAction : McpAgentAction
 {
+	[Description("Key or chord such as Enter, Tab, or Control+A.")]
 	public string Keys { get; init; } = string.Empty;
 }
 
 internal sealed record class McpSetAction : McpAgentAction
 {
+	[Description("Typed property name and value to set.")]
 	public McpPropertyMatch Property { get; init; } = new();
 }
 
@@ -233,13 +251,16 @@ internal sealed record class McpFocusAction : McpAgentAction;
 
 internal sealed record class McpInvokeAction : McpAgentAction
 {
+	[Description("Allow-listed semantic operation such as Focus, Select, Expand, or Check.")]
 	public string Operation { get; init; } = string.Empty;
 }
 
 internal sealed record class McpDragAction : McpAgentAction
 {
+	[Description("Element selector for the drop destination.")]
 	public McpAgentSelector Destination { get; init; } = new McpSemanticSelector();
 
+	[Description("Drag duration in milliseconds.")]
 	public int DurationMs { get; init; } = 500;
 }
 
@@ -248,6 +269,7 @@ internal sealed record class McpActionExpectation
 	[Description("Property and expected value to verify after the action.")]
 	public McpPropertyMatch PropertyEquals { get; init; } = new();
 
+	[Description("Maximum time to wait for the expected property value.")]
 	public int TimeoutMs { get; init; } = 3_000;
 }
 
@@ -284,6 +306,9 @@ internal sealed record class McpObservationResult
 	public string? Text { get; init; }
 
 	public IReadOnlyList<TreeNodeData> Nodes { get; init; } = [];
+
+	[Description("Compact actionable or identifiable elements with stable handles.")]
+	public IReadOnlyList<McpElementMatch> Elements { get; init; } = [];
 
 	public string ResourceUri { get; init; } = string.Empty;
 }
@@ -377,6 +402,28 @@ internal sealed record class McpActionResult
 	public McpVerificationResult? Verification { get; init; }
 
 	public string? Observation { get; init; }
+
+	public McpActionDelta? Delta { get; init; }
+
+	public IReadOnlyList<McpElementMatch> Elements { get; init; } = [];
+}
+
+internal sealed record class McpActionDelta
+{
+	public bool HasChanges { get; init; }
+
+	public IReadOnlyList<McpElementMatch> Added { get; init; } = [];
+
+	public IReadOnlyList<McpElementMatch> Changed { get; init; } = [];
+
+	public IReadOnlyList<McpRemovedElement> Removed { get; init; } = [];
+}
+
+internal sealed record class McpRemovedElement
+{
+	public string? Handle { get; init; }
+
+	public string TargetId { get; init; } = string.Empty;
 }
 
 internal sealed record class McpWaitResult
@@ -421,15 +468,40 @@ internal sealed record class McpDiagnosisResult
 
 	public bool IsAlive { get; init; }
 
+	public bool IsResponsive { get; init; }
+
 	public string Summary { get; init; } = string.Empty;
 
 	public int BindingFailureCount { get; init; }
+
+	public int RecentLogCount { get; init; }
+
+	public IReadOnlyList<McpDiagnosticLogEntry> RecentLogs { get; init; } = [];
+
+	public string? TargetErrorCode { get; init; }
+
+	public string? DiagnosticErrorCode { get; init; }
 
 	public string? SuggestedRecovery { get; init; }
 
 	public long Revision { get; init; }
 
 	public string ResourceUri { get; init; } = string.Empty;
+}
+
+internal sealed record class McpDiagnosticLogEntry
+{
+	public string? ContextId { get; init; }
+
+	public long Sequence { get; init; }
+
+	public DateTimeOffset TimestampUtc { get; init; }
+
+	public string Level { get; init; } = string.Empty;
+
+	public string Code { get; init; } = string.Empty;
+
+	public string Message { get; init; } = string.Empty;
 }
 
 internal sealed record class McpAgentToolError
@@ -458,6 +530,19 @@ internal sealed record class McpRecoveryDirective
 	public string? Message { get; init; }
 
 	public string? SuggestedNextOperation { get; init; }
+
+	public McpAgentSelector? Selector { get; init; }
+}
+
+internal sealed record class McpStaleElementDetails
+{
+	public string Handle { get; init; } = string.Empty;
+
+	public long OriginalRevision { get; init; }
+
+	public long CurrentRevision { get; init; }
+
+	public McpAgentSelector Selector { get; init; } = new McpSemanticSelector();
 }
 
 internal sealed record class McpAmbiguousElementDetails
@@ -513,12 +598,12 @@ internal static class McpCallToolResults
 		var source = response.Error ?? new McpToolError { Code = CliErrorCodes.UnexpectedError, Message = "Tool execution failed." };
 		var error = new McpAgentToolError
 		{
-			Code = NormalizeCode(source.Code),
+			Code = NormalizeCode(source.Code, source.Details),
 			Message = source.Message,
 			Retryable = IsRetryable(source.Code),
 			SafeToRepeat = IsSafeToRepeat(source.Code),
 			Details = source.Details,
-			Recovery = CreateRecovery(source.Code, response.Recovery),
+			Recovery = CreateRecovery(source.Code, source.Details, response.Recovery),
 			ContextId = contextId ?? response.Target?.ContextId,
 			Revision = revision ?? response.Target?.Revision,
 		};
@@ -530,8 +615,14 @@ internal static class McpCallToolResults
 		};
 	}
 
-	private static string NormalizeCode(string code) =>
-		code == CliErrorCodes.AmbiguousTarget ? "ambiguous_element" : code.Replace('-', '_');
+	private static string NormalizeCode(string code, object? details) =>
+		code switch
+		{
+			CliErrorCodes.AmbiguousTarget => "ambiguous_element",
+			CliErrorCodes.StaleTarget when details is McpStaleElementDetails => "stale_element",
+			CliErrorCodes.StaleTarget => "stale_context",
+			_ => code.Replace('-', '_'),
+		};
 
 	private static bool IsRetryable(string code) =>
 		code is CliErrorCodes.InvalidArguments
@@ -551,12 +642,13 @@ internal static class McpCallToolResults
 			or CliErrorCodes.AmbiguousTarget
 			or CliErrorCodes.StaleTarget;
 
-	private static McpRecoveryDirective? CreateRecovery(string code, string? message)
+	private static McpRecoveryDirective? CreateRecovery(string code, object? details, string? message)
 	{
 		var kind = code switch
 		{
 			CliErrorCodes.AmbiguousTarget => "refine_selector",
-			CliErrorCodes.StaleTarget => "refresh_and_resolve",
+			CliErrorCodes.StaleTarget when details is McpStaleElementDetails => "refresh_and_resolve",
+			CliErrorCodes.StaleTarget => "open_context",
 			CliErrorCodes.NoMatch or CliErrorCodes.TargetNotFound => "observe_and_find",
 			CliErrorCodes.CommandTimeout => "increase_timeout_or_diagnose",
 			CliErrorCodes.TargetExited => "open_context",
@@ -572,6 +664,7 @@ internal static class McpCallToolResults
 		{
 			Kind = kind,
 			Message = message,
+			Selector = (details as McpStaleElementDetails)?.Selector,
 			SuggestedNextOperation = kind switch
 			{
 				"refine_selector" or "observe_and_find" or "refresh_and_resolve" => "deepflow_find",

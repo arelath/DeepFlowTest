@@ -144,7 +144,7 @@ internal sealed class DeepFlowResourceStore
 		}
 	}
 
-	public void AddLog(string level, string code, string message)
+	public void AddLog(string level, string code, string message, string? contextId = null)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(level);
 		ArgumentException.ThrowIfNullOrWhiteSpace(code);
@@ -152,7 +152,7 @@ internal sealed class DeepFlowResourceStore
 
 		lock (gate)
 		{
-			logs.Enqueue(new ResourceLogEntry(System.Threading.Interlocked.Increment(ref sequence), DateTimeOffset.UtcNow, level, code, message));
+			logs.Enqueue(new ResourceLogEntry(System.Threading.Interlocked.Increment(ref sequence), DateTimeOffset.UtcNow, level, code, message, contextId));
 			while (logs.Count > Math.Max(1, options.Value.ResourceRetentionLimit))
 				logs.Dequeue();
 
@@ -160,6 +160,14 @@ internal sealed class DeepFlowResourceStore
 				new DeepFlowResourceReference(DeepFlowResourceNames.RecentLogs, "application/json", DateTimeOffset.UtcNow),
 				JsonSerializer.Serialize(logs.ToArray(), JsonOptions));
 		}
+	}
+
+	public IReadOnlyList<ResourceLogEntry> SnapshotLogs(string? contextId = null)
+	{
+		lock (gate)
+			return contextId is null
+				? logs.ToArray()
+				: logs.Where(entry => string.Equals(entry.ContextId, contextId, StringComparison.Ordinal)).ToArray();
 	}
 
 	public IReadOnlyList<string> ListKnownToolNames() =>
@@ -201,7 +209,8 @@ internal sealed class DeepFlowResourceStore
 
 	private sealed record ResourceEntry(DeepFlowResourceReference Reference, string Text);
 
-	private sealed record ResourceLogEntry(long Sequence, DateTimeOffset TimestampUtc, string Level, string Code, string Message);
 }
 
 internal sealed record class DeepFlowResourceReference(string Uri, string MimeType, DateTimeOffset CapturedAtUtc);
+
+internal sealed record class ResourceLogEntry(long Sequence, DateTimeOffset TimestampUtc, string Level, string Code, string Message, string? ContextId);

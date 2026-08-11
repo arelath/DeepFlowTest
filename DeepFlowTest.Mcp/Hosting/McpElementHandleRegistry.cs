@@ -46,7 +46,16 @@ internal sealed class McpElementHandleRegistry
 
 		var found = Find(snapshot, entry.Selector);
 		if (found.MatchCount == 0)
-			throw new CliException(CliErrorCodes.TargetNotFound, $"Element '{handle}' is stale and no replacement matched its selector.");
+			throw new CliException(
+				CliErrorCodes.StaleTarget,
+				$"Element '{handle}' is stale and no replacement matched its selector.",
+				new McpStaleElementDetails
+				{
+					Handle = handle,
+					OriginalRevision = entry.OriginalRevision,
+					CurrentRevision = snapshot.SequenceNumber,
+					Selector = ToAgentSelector(entry.Selector),
+				});
 
 		var ranked = found.Matches
 			.Select(match => new RankedMatch(match.Node, Score(entry.OriginalNode, match.Node)))
@@ -88,6 +97,12 @@ internal sealed class McpElementHandleRegistry
 		}
 	}
 
+	public string? TryGetHandle(string contextId, string targetId)
+	{
+		lock (gate)
+			return handlesByTarget.TryGetValue(contextId + "\0" + targetId, out var handle) ? handle : null;
+	}
+
 	private static ElementSelector Clone(ElementSelector selector) =>
 		new()
 		{
@@ -106,6 +121,25 @@ internal sealed class McpElementHandleRegistry
 			Index = selector.Index,
 			First = false,
 		};
+
+	private static McpSemanticSelector ToAgentSelector(ElementSelector selector) =>
+		new()
+		{
+			Type = selector.TypeName,
+			TypeContains = selector.TypeContains,
+			Name = selector.Name,
+			AutomationId = selector.AutomationId,
+			Text = selector.Text,
+			PropertyEquals = ToProperty(selector.PropertyEquals),
+			PropertyContains = ToProperty(selector.PropertyContains),
+			PropertyRegex = ToProperty(selector.PropertyRegex),
+			Visible = selector.Visible,
+			Enabled = selector.Enabled,
+			CaseSensitive = selector.CaseSensitive,
+		};
+
+	private static McpPropertyMatch? ToProperty(KeyValuePair<string, string>? property) =>
+		property is { } value ? new McpPropertyMatch { Name = value.Key, Value = value.Value } : null;
 
 	private FindResultData Find(VisualTreeSnapshot snapshot, ElementSelector selector) =>
 		new FindSnapshotService().Find(snapshot, new FindSnapshotOptions

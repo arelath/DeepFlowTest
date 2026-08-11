@@ -8,6 +8,7 @@ using DeepFlowTest;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
+using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Hosting;
 using DeepFlowTest.Mcp.Resources;
@@ -48,16 +49,18 @@ internal static class McpTestHost
 		var cache = new McpSnapshotCache(optionSource);
 		var streams = new McpStreamRegistry(optionSource);
 		var handles = new McpElementHandleRegistry();
-		var resources = new DeepFlowResourceStore(optionSource);
+		var activity = new McpActivityStore(optionSource);
+		var resources = new DeepFlowResourceStore(optionSource, activity);
 		var factory = new McpTargetSessionFactory(services, launcher ?? new FakeProcessLauncher(), optionSource);
-		var host = new McpSessionHost(factory, cache, streams, activity: null, optionSource, handles);
-		var runner = new McpToolRunner(host, resources, NullLogger<McpToolRunner>.Instance);
+		var host = new McpSessionHost(factory, cache, streams, activity, optionSource, handles);
+		var runner = new McpToolRunner(host, resources, NullLogger<McpToolRunner>.Instance, activity);
 		var provider = new ServiceCollection()
 			.AddSingleton(host)
 			.AddSingleton(cache)
 			.AddSingleton(streams)
 			.AddSingleton(handles)
 			.AddSingleton(resources)
+			.AddSingleton(activity)
 			.AddSingleton(services)
 			.AddSingleton<IOptions<McpServerOptions>>(optionSource)
 			.BuildServiceProvider();

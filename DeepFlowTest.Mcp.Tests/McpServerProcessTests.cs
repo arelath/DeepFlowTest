@@ -89,6 +89,8 @@ public sealed class McpServerProcessTests
 		var schema = observe.JsonSchema.ToString();
 		Assert.That(schema, Does.Contain("contextId"));
 		Assert.That(schema, Does.Contain("properties"));
+		Assert.That(schema, Does.Contain("Maximum number of nodes"));
+		Assert.That(observe.ProtocolTool.OutputSchema!.ToString(), Does.Contain("elements"));
 
 		var openSchema = tools.Single(tool => tool.Name == "deepflow_open_context").JsonSchema.ToString();
 		Assert.That(openSchema, Does.Contain("anyOf"));
@@ -101,6 +103,20 @@ public sealed class McpServerProcessTests
 		Assert.That(actSchema, Does.Contain("drag"));
 		Assert.That(actSchema, Does.Contain("semantic"));
 		Assert.That(actSchema, Does.Contain("handle"));
+		Assert.That(actSchema, Does.Contain("Ambiguous selectors fail by default"));
+		Assert.That(actSchema, Does.Not.Contain("textValue"), "Computed helpers must not leak into the agent input schema.");
+		Assert.That(tools.Single(tool => tool.Name == "deepflow_act").ProtocolTool.OutputSchema!.ToString(), Does.Contain("delta"));
+
+		var resources = await mcp.ListResourcesAsync();
+		Assert.That(resources.Select(static resource => resource.Uri?.ToString()), Does.Not.Contain(DeepFlowResourceNames.LatestVisualTree));
+		Assert.That(resources.Select(static resource => resource.Uri?.ToString()), Does.Not.Contain(DeepFlowResourceNames.LatestScreenshot));
+		var templates = await mcp.ListResourceTemplatesAsync();
+		Assert.That(templates.Select(static template => template.UriTemplate), Is.EquivalentTo(new[]
+		{
+			"deepflow://contexts/{contextId}/snapshots/{artifactId}",
+			"deepflow://contexts/{contextId}/screenshots/{artifactId}",
+			"deepflow://contexts/{contextId}/diagnostics/{diagnosticKind}/{artifactId}",
+		}));
 	}
 
 	[Test]
@@ -115,7 +131,9 @@ public sealed class McpServerProcessTests
 
 		Assert.That(result.IsError, Is.True);
 		Assert.That(result.StructuredContent, Is.Not.Null);
-		Assert.That(result.Content.OfType<TextContentBlock>().Single().Text, Does.Contain("stale_target"));
+		Assert.That(result.Content.OfType<TextContentBlock>().Single().Text, Does.Contain("stale_context"));
+		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
+		Assert.That(json.RootElement.GetProperty("recovery").GetProperty("kind").GetString(), Is.EqualTo("open_context"));
 	}
 
 	[Test]

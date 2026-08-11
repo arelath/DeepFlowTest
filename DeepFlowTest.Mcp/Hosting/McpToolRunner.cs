@@ -1,7 +1,9 @@
 namespace DeepFlowTest.Mcp.Hosting;
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
@@ -64,14 +66,14 @@ internal sealed class McpToolRunner
 		}
 		catch (CliException ex)
 		{
-			resources.AddLog("warning", ex.ErrorCode, ex.Message);
+			resources.AddLog("warning", ex.ErrorCode, ex.Message, GetContextId(parameters));
 			PublishFailure(toolName, stopwatch.Elapsed, ex.ErrorCode, ex.Message, parameters, ex.Details);
 			return McpToolResponse.Fail(ex.ErrorCode, ex.Message, ex.Details, RecoveryFor(ex.ErrorCode), sessionHost.Status);
 		}
 		catch (NamedPipeSessionException ex)
 		{
 			var errorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
-			resources.AddLog("warning", errorCode, ex.Message);
+			resources.AddLog("warning", errorCode, ex.Message, GetContextId(parameters));
 			PublishFailure(toolName, stopwatch.Elapsed, errorCode, ex.Message, parameters, new { protocolErrorCode = ex.ErrorCode, ex.TargetExitCode, ex.CrashLog });
 			return McpToolResponse.Fail(
 				errorCode,
@@ -83,17 +85,28 @@ internal sealed class McpToolRunner
 		catch (ProtocolException ex)
 		{
 			var errorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
-			resources.AddLog("warning", errorCode, ex.Message);
+			resources.AddLog("warning", errorCode, ex.Message, GetContextId(parameters));
 			PublishFailure(toolName, stopwatch.Elapsed, errorCode, ex.Message, parameters, new { protocolErrorCode = ex.ErrorCode });
 			return McpToolResponse.Fail(errorCode, ex.Message, new { protocolErrorCode = ex.ErrorCode }, RecoveryFor(errorCode), sessionHost.Status);
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
 			logger.LogError(ex, "MCP tool failed.");
-			resources.AddLog("error", CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.");
+			resources.AddLog("error", CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", GetContextId(parameters));
 			PublishFailure(toolName, stopwatch.Elapsed, CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", parameters, null);
 			return McpToolResponse.Fail(CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", recovery: "Check the MCP server stderr log for details.", target: sessionHost.Status);
 		}
+	}
+
+	private static string? GetContextId(object? parameters)
+	{
+		if (parameters is IReadOnlyDictionary<string, object?> readOnly
+			&& readOnly.TryGetValue("contextId", out var dictionaryValue))
+			return dictionaryValue as string;
+
+		return parameters?.GetType()
+			.GetProperty("contextId", BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase)
+			?.GetValue(parameters) as string;
 	}
 
 	private void PublishFailure(string toolName, TimeSpan duration, string errorCode, string message, object? parameters, object? errorDetails) =>

@@ -62,6 +62,9 @@ internal static class McpCommandLineOptions
 				case "--activity-retention-limit":
 					options.ActivityRetentionLimit = ParseInt(ReadValue(args, ref i, optionName, inlineValue), optionName);
 					break;
+				case "--activity-log-file":
+					options.ActivityLogFile = ReadValue(args, ref i, optionName, inlineValue);
+					break;
 				case "--context-idle-timeout-ms":
 					options.ContextIdleTimeoutMs = ParseInt(ReadValue(args, ref i, optionName, inlineValue), optionName);
 					break;

@@ -49,6 +49,12 @@ public sealed class McpEndToEndTests
 			});
 			Assert.That(observed.IsError, Is.False);
 			Assert.That(observed.Content.OfType<TextContentBlock>(), Is.Not.Empty);
+			using var observeJson = JsonDocument.Parse(JsonSerializer.Serialize(observed.StructuredContent));
+			var observedElements = observeJson.RootElement.GetProperty("elements");
+			Assert.That(observedElements.GetArrayLength(), Is.GreaterThan(0));
+			var observedHandles = observedElements.EnumerateArray().Select(static element => element.GetProperty("handle").GetString()).ToArray();
+			Assert.That(observedHandles, Has.All.Not.Null.And.Not.Empty);
+			Assert.That(observedHandles.Distinct(StringComparer.Ordinal).Count(), Is.EqualTo(observedHandles.Length));
 			var snapshotUri = observed.Content.OfType<ResourceLinkBlock>().Single().Uri;
 			Assert.That(snapshotUri, Does.Contain($"contexts/{contextId}/snapshots/"));
 			Assert.That((await mcp.ReadResourceAsync(snapshotUri)).Contents, Is.Not.Empty);
@@ -70,6 +76,9 @@ public sealed class McpEndToEndTests
 				["observe"] = "delta",
 			});
 			Assert.That(acted.IsError, Is.False);
+			using var actJson = JsonDocument.Parse(JsonSerializer.Serialize(acted.StructuredContent));
+			Assert.That(actJson.RootElement.GetProperty("delta").GetProperty("hasChanges").ValueKind, Is.EqualTo(JsonValueKind.True).Or.EqualTo(JsonValueKind.False));
+			Assert.That(actJson.RootElement.GetProperty("elements").ValueKind, Is.EqualTo(JsonValueKind.Array));
 
 			var captured = await mcp.CallRawAsync("deepflow_capture", new Dictionary<string, object?> { ["contextId"] = contextId });
 			Assert.That(captured.IsError, Is.False);

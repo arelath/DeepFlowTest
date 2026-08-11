@@ -21,6 +21,8 @@ internal sealed class McpServerOptions
 
 	public int ActivityRetentionLimit { get; set; } = 256;
 
+	public string? ActivityLogFile { get; set; }
+
 	public int ContextIdleTimeoutMs { get; set; } = 30 * 60 * 1_000;
 
 	public IReadOnlyList<string> DefaultProperties { get; set; } = KnownProperties.DefaultVisualTreePropertyNames;

@@ -126,6 +126,9 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 	public async Task<IList<McpClientResource>> ListResourcesAsync() =>
 		await client.ListResourcesAsync(cancellationToken: timeout.Token);
 
+	public async Task<IList<McpClientResourceTemplate>> ListResourceTemplatesAsync() =>
+		await client.ListResourceTemplatesAsync(cancellationToken: timeout.Token);
+
 	public async Task<ReadResourceResult> ReadResourceAsync(string uri) =>
 		await client.ReadResourceAsync(uri, cancellationToken: timeout.Token);
 

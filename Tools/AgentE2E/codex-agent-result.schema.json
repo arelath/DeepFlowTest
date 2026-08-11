@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "success",
+    "summary",
+    "contextId",
+    "operations",
+    "verification",
+    "errors"
+  ],
+  "properties": {
+    "success": {
+      "type": "boolean"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "contextId": {
+      "type": ["string", "null"]
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tool", "succeeded", "note"],
+        "properties": {
+          "tool": { "type": "string" },
+          "succeeded": { "type": "boolean" },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "textBoxValue",
+        "eventDisplayValue",
+        "screenshotCaptured",
+        "screenshotResourceUri",
+        "targetResponsive",
+        "contextClosed"
+      ],
+      "properties": {
+        "textBoxValue": { "type": ["string", "null"] },
+        "eventDisplayValue": { "type": ["string", "null"] },
+        "screenshotCaptured": { "type": "boolean" },
+        "screenshotResourceUri": { "type": ["string", "null"] },
+        "targetResponsive": { "type": "boolean" },
+        "contextClosed": { "type": "boolean" }
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

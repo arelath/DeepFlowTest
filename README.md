@@ -196,6 +196,12 @@ start a process, `--allow-actions` to permit mutating UI tools, and
 `--allow-file-writes` when screenshot tools should write to disk. See
 `Docs/McpUsage.md` for HTTP client configuration and sample workflows.
 
+For a real-agent smoke test, run `Tools/Run-CodexMcpAgentE2E.ps1`. It launches
+the MCP server and HelloWorld harness, drives them with Codex using
+`gpt-5.6-luna`, independently verifies the resulting UI state, shuts down all
+processes, and writes a timestamped report plus Codex and MCP JSONL logs under
+`artifacts/agent-e2e`.
+
 For model-level CLI/MCP comparison, run
 `Tools/Run-AgentParityBenchmark.ps1` with the same model-backed agent runner and
 model name. The harness runs the shared task catalog over both transports and
