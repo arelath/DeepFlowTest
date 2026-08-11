@@ -120,6 +120,7 @@ public sealed class RepositoryConfigurationTests
 			Assert.That(buildScript, Does.Contain($"\"{target}\""));
 
 		Assert.That(buildScript, Does.Contain("new BuildTarget(\"Compile\", Compile, \"Restore\", \"CompileNativeInjector\")"));
+		Assert.That(buildScript, Does.Contain("new BuildTarget(\"TestFast\", TestFast, \"RepackPayloads\")"));
 		Assert.That(buildScript, Does.Contain("RepackPayloads();"));
 		Assert.That(buildScript, Does.Contain("RunDotNet(\"build\", CliProject"));
 	}
