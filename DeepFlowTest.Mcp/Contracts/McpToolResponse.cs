@@ -1,5 +1,7 @@
 namespace DeepFlowTest.Mcp.Contracts;
 
+using System;
+
 internal sealed record class McpToolResponse
 {
 	public bool Success { get; init; }
@@ -46,6 +48,14 @@ internal sealed record class McpToolError
 
 internal sealed record class McpTargetStatus
 {
+	public string? ContextId { get; init; }
+
+	public long? Revision { get; init; }
+
+	public DateTimeOffset? LastActivityUtc { get; init; }
+
+	public DateTimeOffset? ExpiresAtUtc { get; init; }
+
 	public bool Attached { get; init; }
 
 	public string? SessionId { get; init; }

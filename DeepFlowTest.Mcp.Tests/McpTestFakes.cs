@@ -47,19 +47,21 @@ internal static class McpTestHost
 			sessionService ?? new FakeAppSessionService());
 		var cache = new McpSnapshotCache(optionSource);
 		var streams = new McpStreamRegistry(optionSource);
+		var handles = new McpElementHandleRegistry();
 		var resources = new DeepFlowResourceStore(optionSource);
 		var factory = new McpTargetSessionFactory(services, launcher ?? new FakeProcessLauncher(), optionSource);
-		var host = new McpSessionHost(factory, cache, streams);
+		var host = new McpSessionHost(factory, cache, streams, activity: null, optionSource, handles);
 		var runner = new McpToolRunner(host, resources, NullLogger<McpToolRunner>.Instance);
 		var provider = new ServiceCollection()
 			.AddSingleton(host)
 			.AddSingleton(cache)
 			.AddSingleton(streams)
+			.AddSingleton(handles)
 			.AddSingleton(resources)
 			.AddSingleton(services)
 			.AddSingleton<IOptions<McpServerOptions>>(optionSource)
 			.BuildServiceProvider();
-		return new HostFixture(host, runner, cache, streams, resources, services, optionSource, provider);
+		return new HostFixture(host, runner, cache, streams, handles, resources, services, optionSource, provider);
 	}
 
 	public static VisualTreeSnapshot Snapshot() =>
@@ -104,6 +106,7 @@ internal sealed record class HostFixture(
 	McpToolRunner Runner,
 	McpSnapshotCache Cache,
 	McpStreamRegistry Streams,
+	McpElementHandleRegistry Handles,
 	DeepFlowResourceStore Resources,
 	CliServices Services,
 	IOptions<McpServerOptions> Options,
@@ -141,6 +144,8 @@ internal sealed class FakeAppSessionService : ICliAppSessionService
 {
 	public FakeAppSession Session { get; } = new();
 
+	public Queue<FakeAppSession> PendingSessions { get; } = new();
+
 	public int OpenCount { get; private set; }
 
 	public TargetInfo? LastTarget { get; private set; }
@@ -154,7 +159,7 @@ internal sealed class FakeAppSessionService : ICliAppSessionService
 		if (OpenException is not null)
 			throw OpenException;
 
-		return Session;
+		return PendingSessions.Count > 0 ? PendingSessions.Dequeue() : Session;
 	}
 }
 

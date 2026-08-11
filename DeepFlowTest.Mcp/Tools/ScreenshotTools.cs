@@ -95,7 +95,7 @@ internal static class ScreenshotTools
 			Text = text,
 			PropertyEquals = McpArgumentParsing.ParsePair(property, nameof(property)),
 			Visible = true,
-			First = true,
+			First = false,
 		});
 		return resolution.TargetId;
 	}

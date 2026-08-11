@@ -1,5 +1,6 @@
 namespace DeepFlowTest.Mcp.Tests;
 
+using System.Threading;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Mcp.Contracts;
 using NUnit.Framework;
@@ -7,6 +8,31 @@ using NUnit.Framework;
 [TestFixture]
 public sealed class McpSessionHostTests
 {
+	[Test]
+	public void ExplicitContextsExpireAfterTheirIdleTimeout()
+	{
+		var options = McpTestHost.Options();
+		options.ContextIdleTimeoutMs = 1;
+		using var fixture = McpTestHost.CreateHost(options: options);
+		var status = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 });
+
+		Thread.Sleep(20);
+		var error = Assert.Throws<CliException>(() => fixture.Host.RequireContext(status.ContextId!));
+
+		Assert.That(error!.ErrorCode, Is.EqualTo(CliErrorCodes.StaleTarget));
+	}
+
+	[Test]
+	public void ExplicitContextCapturesPolicyAtCreation()
+	{
+		var options = McpTestHost.Options(allowActions: true);
+		using var fixture = McpTestHost.CreateHost(options: options);
+		var status = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 });
+		options.Policy.AllowActions = false;
+
+		Assert.That(fixture.Host.GetContextPolicy(status.ContextId!).AllowActions, Is.True);
+	}
+
 	[Test]
 	public void AttachReplacesCurrentSessionAndDetachDisposesIt()
 	{

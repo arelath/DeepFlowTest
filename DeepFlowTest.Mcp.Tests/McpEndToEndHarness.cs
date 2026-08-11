@@ -50,6 +50,12 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 				endpointFile,
 				"--start-minimized",
 			};
+			if (!serverArguments.Any(argument => string.Equals(argument, "--tool-profile", StringComparison.Ordinal)
+				|| argument.StartsWith("--tool-profile=", StringComparison.Ordinal)))
+			{
+				arguments.Add("--tool-profile");
+				arguments.Add("full");
+			}
 			arguments.AddRange(serverArguments);
 			process = StartServerProcess(arguments, stderr, stderrGate);
 			var endpoint = await WaitForEndpointAsync(endpointFile, process, timeout.Token);
@@ -105,6 +111,9 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 		return McpToolJsonResult.From(toolName, result, ReadStderrTail());
 	}
 
+	public async Task<CallToolResult> CallRawAsync(string toolName, IReadOnlyDictionary<string, object?>? arguments = null) =>
+		await client.CallToolAsync(toolName, arguments ?? EmptyArguments, cancellationToken: timeout.Token);
+
 	public async Task<IList<McpClientTool>> ListToolsAsync() =>
 		await client.ListToolsAsync(cancellationToken: timeout.Token);
 
@@ -121,7 +130,7 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 		await client.ReadResourceAsync(uri, cancellationToken: timeout.Token);
 
 	public async Task PingAsync() =>
-		await client.PingAsync(cancellationToken: timeout.Token);
+		_ = await client.ListToolsAsync(cancellationToken: timeout.Token);
 
 	public async Task<McpToolJsonResult> WaitForElementTextAsync(string automationId, string expectedText, int timeoutMs = 30_000) =>
 		await CallOkAsync("deepflow_wait_for_element", new Dictionary<string, object?>
@@ -209,7 +218,12 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 
 	private static string ResolveMcpExecutablePath()
 	{
-		var path = Path.Combine(TestContext.CurrentContext.TestDirectory, "DeepFlowTest.Mcp.exe");
+		var testDirectory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+		var configuration = testDirectory.Parent?.Name ?? "Debug";
+		var binRoot = testDirectory.Parent?.Parent?.Parent?.FullName;
+		var path = binRoot is null
+			? Path.Combine(TestContext.CurrentContext.TestDirectory, "DeepFlowTest.Mcp.exe")
+			: Path.Combine(binRoot, "DeepFlowTest.Mcp", configuration, "net8.0-windows", "DeepFlowTest.Mcp.exe");
 		Assert.That(File.Exists(path), Is.True, "The MCP apphost must be present in the test output directory.");
 		return path;
 	}
@@ -219,10 +233,11 @@ internal sealed class McpEndToEndHarness : IAsyncDisposable
 		List<string> stderr,
 		object stderrGate)
 	{
+		var executablePath = ResolveMcpExecutablePath();
 		var startInfo = new ProcessStartInfo
 		{
-			FileName = ResolveMcpExecutablePath(),
-			WorkingDirectory = TestContext.CurrentContext.TestDirectory,
+			FileName = executablePath,
+			WorkingDirectory = Path.GetDirectoryName(executablePath)!,
 			UseShellExecute = false,
 			RedirectStandardError = true,
 			CreateNoWindow = true,

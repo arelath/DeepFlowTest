@@ -1,6 +1,7 @@
 namespace DeepFlowTest.Mcp.Hosting;
 
 using System;
+using System.Diagnostics;
 using DeepFlowTest.Cli;
 
 internal sealed class McpSession : IDisposable
@@ -94,6 +95,32 @@ internal sealed class McpSession : IDisposable
 			{
 				return null;
 			}
+		}
+	}
+
+	public string? GetMainWindowTitle()
+	{
+		try
+		{
+			if (LaunchedProcess is not null)
+			{
+				LaunchedProcess.Refresh();
+				return LaunchedProcess.MainWindowTitle;
+			}
+
+			if (Target.TargetProcess is IMcpLaunchedProcess launched)
+			{
+				launched.Refresh();
+				return launched.MainWindowTitle;
+			}
+
+			using var process = Process.GetProcessById(Target.ProcessId);
+			process.Refresh();
+			return process.MainWindowTitle;
+		}
+		catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+		{
+			return Target.MainWindowTitle;
 		}
 	}
 

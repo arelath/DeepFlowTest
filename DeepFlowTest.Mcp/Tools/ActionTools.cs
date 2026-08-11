@@ -469,7 +469,7 @@ internal static class ActionTools
 			Text = text,
 			PropertyEquals = McpArgumentParsing.ParsePair(property, nameof(property)),
 			Visible = true,
-			First = true,
+			First = false,
 		};
 
 	private static VisualTreeSnapshot? CaptureDeltaBaseline(

@@ -1,7 +1,9 @@
 namespace DeepFlowTest.Mcp.Tests;
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using DeepFlowTest.Cli;
 using DeepFlowTest.Contracts;
@@ -13,6 +15,7 @@ using DeepFlowTest.Mcp.Resources;
 using DeepFlowTest.Mcp.Tools;
 using DeepFlowTest.Mcp.ViewModels;
 using DeepFlowTest.Interop;
+using ModelContextProtocol.Protocol;
 using NUnit.Framework;
 
 [TestFixture]
@@ -342,6 +345,261 @@ public sealed class McpToolTests
 		var command = sessionService.Session.Commands.OfType<ClickCommandRequest>().Single();
 		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
 		Assert.That(command.MouseButton, Is.EqualTo(MouseButtonKind.Right));
+	}
+
+	[Test]
+	public void ClickRejectsAmbiguousSelectorsInsteadOfChoosingFirstMatch()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.Snapshot = VisualTreeSnapshot.Create(7,
+		[
+			Node("window-0001", isRoot: true, childIds: ["button-0002", "button-0003", "button-0004"]),
+			Node("button-0002", parentId: "window-0001", type: "Button", automationId: "SaveButton", text: "Save"),
+			Node("button-0003", parentId: "window-0001", type: "Button", automationId: "SaveButton", text: "Save"),
+			Node("button-0004", parentId: "window-0001", type: "Button", automationId: "CancelButton", text: "Cancel"),
+		]);
+		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = ActionTools.ClickElement(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Options,
+			automationId: "SaveButton");
+
+		Assert.That(response.Success, Is.False);
+		Assert.That(response.Error!.Code, Is.EqualTo(CliErrorCodes.AmbiguousTarget));
+		Assert.That(response.Error.Details, Is.Not.Null);
+		Assert.That(sessionService.Session.Commands.OfType<ClickCommandRequest>(), Is.Empty);
+	}
+
+	[Test]
+	public void AgentFindReturnsHandleThatAgentActCanUse()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		fixture.Host.Attach(new McpTargetSelector { ProcessId = 1234 });
+		var contextId = fixture.Host.Status.ContextId!;
+		var handles = new McpElementHandleRegistry();
+
+		var found = AgentTools.Find(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			handles,
+			fixture.Options,
+			contextId,
+			new McpSemanticSelector { AutomationId = "SubmitButton" });
+		using var foundJson = JsonDocument.Parse(JsonSerializer.Serialize(found.StructuredContent));
+		var handle = foundJson.RootElement.GetProperty("matches")[0].GetProperty("handle").GetString();
+
+		var acted = AgentTools.Act(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			handles,
+			fixture.Options,
+			contextId,
+			new McpHandleSelector { Handle = handle },
+			new McpClickAction(),
+			observe: McpObserveMode.None);
+
+		Assert.That(found.IsError, Is.False);
+		Assert.That(handle, Does.StartWith("e"));
+		Assert.That(acted.IsError, Is.False);
+		Assert.That(sessionService.Session.Commands.OfType<ClickCommandRequest>().Single().TargetId, Is.EqualTo("button-0002"));
+	}
+
+	[Test]
+	public void AgentActAutomaticallyRepairsAStaleHandle()
+	{
+		var sessionService = new FakeAppSessionService();
+		using var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+		var found = AgentTools.Find(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Options,
+			contextId, new McpSemanticSelector { AutomationId = "SubmitButton" });
+		using var foundJson = JsonDocument.Parse(JsonSerializer.Serialize(found.StructuredContent));
+		var handle = foundJson.RootElement.GetProperty("matches")[0].GetProperty("handle").GetString();
+		sessionService.Session.Snapshot = VisualTreeSnapshot.Create(2,
+		[
+			Node("root-1001", isRoot: true, childIds: ["button-1002"]),
+			Node("button-1002", parentId: "root-1001", type: "Button", automationId: "SubmitButton", text: "Submit"),
+		]);
+
+		var acted = AgentTools.Act(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Options,
+			contextId, new McpHandleSelector { Handle = handle }, new McpClickAction(), observe: McpObserveMode.None);
+		var json = JsonSerializer.Serialize(acted.StructuredContent);
+
+		Assert.That(acted.IsError, Is.False);
+		Assert.That(json, Does.Contain("repaired_by_automation_id"));
+		Assert.That(json, Does.Contain("button-1002"));
+		Assert.That(sessionService.Session.Commands.OfType<ClickCommandRequest>().Single().TargetId, Is.EqualTo("button-1002"));
+	}
+
+	[Test]
+	public void AmbiguousStaleRepairReturnsFreshCandidateHandlesWithoutActing()
+	{
+		var sessionService = new FakeAppSessionService();
+		using var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+		var found = AgentTools.Find(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Options,
+			contextId, new McpSemanticSelector { AutomationId = "SubmitButton" });
+		using var foundJson = JsonDocument.Parse(JsonSerializer.Serialize(found.StructuredContent));
+		var handle = foundJson.RootElement.GetProperty("matches")[0].GetProperty("handle").GetString();
+		sessionService.Session.Snapshot = VisualTreeSnapshot.Create(2,
+		[
+			Node("root-1001", isRoot: true, childIds: ["button-1002", "button-1003"]),
+			Node("button-1002", parentId: "root-1001", type: "Button", automationId: "SubmitButton", text: "Submit"),
+			Node("button-1003", parentId: "root-1001", type: "Button", automationId: "SubmitButton", text: "Submit"),
+		]);
+
+		var acted = AgentTools.Act(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Options,
+			contextId, new McpHandleSelector { Handle = handle }, new McpClickAction(), observe: McpObserveMode.None);
+		var json = JsonSerializer.Serialize(acted.StructuredContent);
+
+		Assert.That(acted.IsError, Is.True);
+		Assert.That(json, Does.Contain("ambiguous_element"));
+		Assert.That(json, Does.Contain("button-1002"));
+		Assert.That(json, Does.Contain("button-1003"));
+		Assert.That(sessionService.Session.Commands.OfType<ClickCommandRequest>(), Is.Empty);
+	}
+
+	[Test]
+	public void AgentContextsKeepIndependentTargetsAndSnapshotCaches()
+	{
+		var sessionService = new FakeAppSessionService();
+		var first = new FakeAppSession
+		{
+			Snapshot = VisualTreeSnapshot.Create(11,
+			[
+				Node("first-root", isRoot: true, childIds: ["first-button"]),
+				Node("first-button", parentId: "first-root", type: "Button", automationId: "FirstButton", text: "First"),
+			]),
+		};
+		var second = new FakeAppSession
+		{
+			Snapshot = VisualTreeSnapshot.Create(22,
+			[
+				Node("second-root", isRoot: true, childIds: ["second-button"]),
+				Node("second-button", parentId: "second-root", type: "Button", automationId: "SecondButton", text: "Second"),
+			]),
+		};
+		sessionService.PendingSessions.Enqueue(first);
+		sessionService.PendingSessions.Enqueue(second);
+		using var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		var firstContext = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+		var secondContext = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+		var handles = new McpElementHandleRegistry();
+
+		var firstResult = AgentTools.Find(fixture.Runner, fixture.Host, fixture.Cache, handles, fixture.Options, firstContext, new McpSemanticSelector { AutomationId = "FirstButton" });
+		var secondResult = AgentTools.Find(fixture.Runner, fixture.Host, fixture.Cache, handles, fixture.Options, secondContext, new McpSemanticSelector { AutomationId = "SecondButton" });
+
+		Assert.That(firstContext, Is.Not.EqualTo(secondContext));
+		Assert.That(firstResult.IsError, Is.False);
+		Assert.That(secondResult.IsError, Is.False);
+		Assert.That(JsonSerializer.Serialize(firstResult.StructuredContent), Does.Contain("first-button"));
+		Assert.That(JsonSerializer.Serialize(secondResult.StructuredContent), Does.Contain("second-button"));
+		Assert.That(first.Commands.OfType<GetVisualTreeCommandRequest>(), Has.Exactly(1).Items);
+		Assert.That(second.Commands.OfType<GetVisualTreeCommandRequest>(), Has.Exactly(1).Items);
+	}
+
+	[Test]
+	public void AgentAmbiguityReturnsMcpErrorWithCandidateHandlesAndContext()
+	{
+		var sessionService = new FakeAppSessionService();
+		sessionService.Session.Snapshot = VisualTreeSnapshot.Create(7,
+		[
+			Node("window-0001", isRoot: true, childIds: ["button-0002", "button-0003"]),
+			Node("button-0002", parentId: "window-0001", type: "Button", automationId: "SaveButton", text: "Save"),
+			Node("button-0003", parentId: "window-0001", type: "Button", automationId: "SaveButton", text: "Save"),
+		]);
+		using var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+
+		var result = AgentTools.Act(
+			fixture.Runner, fixture.Host, fixture.Cache, new McpElementHandleRegistry(), fixture.Options,
+			contextId, new McpSemanticSelector
+			{
+				AutomationId = "SaveButton",
+				Fallback = new McpSemanticSelector { AutomationId = "CancelButton" },
+			}, new McpClickAction());
+		var json = JsonSerializer.Serialize(result.StructuredContent);
+
+		Assert.That(result.IsError, Is.True);
+		Assert.That(json, Does.Contain("ambiguous_element"));
+		Assert.That(json, Does.Contain(contextId));
+		Assert.That(json, Does.Contain("\"handle\":\"e"));
+		Assert.That(sessionService.Session.Commands.OfType<ClickCommandRequest>(), Is.Empty);
+	}
+
+	[Test]
+	public void AgentTimeoutErrorsAreRetryableButNotDeclaredSafeToRepeat()
+	{
+		var result = McpCallToolResults.Error(McpToolResponse.Fail(CliErrorCodes.CommandTimeout, "Timed out."), "ctx_test", 17);
+		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
+
+		Assert.That(result.IsError, Is.True);
+		Assert.That(json.RootElement.GetProperty("retryable").GetBoolean(), Is.True);
+		Assert.That(json.RootElement.GetProperty("safeToRepeat").GetBoolean(), Is.False);
+		Assert.That(json.RootElement.GetProperty("contextId").GetString(), Is.EqualTo("ctx_test"));
+		Assert.That(json.RootElement.GetProperty("revision").GetInt64(), Is.EqualTo(17));
+	}
+
+	[Test]
+	public void AgentObserveReturnsImmutableContextResourceAndNativeLink()
+	{
+		using var fixture = McpTestHost.CreateHost();
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+
+		var result = AgentTools.Observe(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Resources, fixture.Options, contextId);
+		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
+		var uri = json.RootElement.GetProperty("resourceUri").GetString()!;
+
+		Assert.That(result.IsError, Is.False);
+		Assert.That(uri, Does.StartWith($"deepflow://contexts/{contextId}/snapshots/"));
+		Assert.That(result.Content.OfType<ResourceLinkBlock>().Single().Uri, Is.EqualTo(uri));
+		Assert.That(fixture.Resources.ReadText(uri), Does.Contain("button-0002"));
+	}
+
+	[Test]
+	public void AgentCaptureUsesExplicitContextAndReturnsNativeImage()
+	{
+		var sessionService = new FakeAppSessionService();
+		using var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+
+		var result = AgentTools.Capture(
+			fixture.Runner, fixture.Host, fixture.Cache, new McpElementHandleRegistry(), fixture.Resources, fixture.Options, contextId);
+
+		Assert.That(fixture.Host.Current, Is.Null, "Explicit agent contexts must not depend on the legacy current target.");
+		Assert.That(result.IsError, Is.False);
+		Assert.That(result.Content.OfType<ImageContentBlock>().Single().MimeType, Is.EqualTo("image/png"));
+		Assert.That(result.Content.OfType<ResourceLinkBlock>().Single().Uri, Does.StartWith($"deepflow://contexts/{contextId}/screenshots/"));
+		Assert.That(sessionService.Session.Commands.OfType<ScreenshotCommandRequest>(), Has.Exactly(1).Items);
+	}
+
+	[TestCase("Responsive")]
+	[TestCase("Stable")]
+	[TestCase("WindowTitleChanged")]
+	public void AgentWaitSupportsNonElementConditions(string conditionName)
+	{
+		var condition = Enum.Parse<McpWaitCondition>(conditionName);
+		using var fixture = McpTestHost.CreateHost();
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+
+		var result = AgentTools.Wait(
+			fixture.Runner, fixture.Host, fixture.Cache, new McpElementHandleRegistry(), fixture.Options,
+			contextId, condition: condition, timeoutMs: 200, intervalMs: 1, stabilityMs: 1,
+			initialWindowTitle: condition == McpWaitCondition.WindowTitleChanged ? "Old title" : null);
+
+		Assert.That(result.IsError, Is.False);
+		Assert.That(JsonSerializer.Serialize(result.StructuredContent), Does.Contain("\"satisfied\":true"));
 	}
 
 	[Test]
@@ -749,11 +1007,13 @@ public sealed class McpToolTests
 
 		Assert.That(referencedTools, Is.SupersetOf(new[]
 		{
-			"deepflow_target_status",
-			"deepflow_get_visual_tree",
-			"deepflow_find_elements",
-			"deepflow_click_element",
-			"deepflow_get_binding_failures",
+			"deepflow_open_context",
+			"deepflow_observe",
+			"deepflow_find",
+			"deepflow_act",
+			"deepflow_wait",
+			"deepflow_capture",
+			"deepflow_diagnose",
 		}));
 	}
 

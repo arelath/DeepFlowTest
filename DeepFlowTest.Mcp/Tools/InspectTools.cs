@@ -11,6 +11,7 @@ using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Contracts;
 using DeepFlowTest.Mcp.Hosting;
 using DeepFlowTest.Mcp.Resources;
+using DeepFlowTest.Interop;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 
@@ -214,7 +215,37 @@ internal static class InspectTools
 			var snapshot = cache.GetOrRefresh(host, options.Value.DefaultProperties, options.Value.TreeLimit, refresh: refresh);
 			var fullId = new CliTargetIdService().Resolve(targetId, snapshot);
 			var node = snapshot.Nodes.First(node => node.TargetId == fullId);
-			return new SelectorSuggestionService(new CliTargetIdService(), snapshot).Suggest(node, useShortIds: true);
+			List<McpSelectorSuggestion> suggestions = [];
+			AddSuggestion(suggestions, snapshot, node, KnownProperties.AutomationId, 0.98, "high", static value => new McpSemanticSelector { AutomationId = value }, "Automation ID is usually the most stable selector.");
+			AddSuggestion(suggestions, snapshot, node, KnownProperties.AutomationName, 0.90, "high", static value => new McpSemanticSelector { Name = value }, "Automation name is intended for UI automation.");
+			AddSuggestion(suggestions, snapshot, node, KnownProperties.Name, 0.85, "medium", static value => new McpSemanticSelector { Name = value }, "Framework name is useful when automation ID is absent.");
+			AddSuggestion(suggestions, snapshot, node, KnownProperties.Uid, 0.80, "medium", static value => new McpSemanticSelector { PropertyEquals = new McpPropertyMatch { Name = KnownProperties.Uid, Value = value } }, "Framework Uid can be stable in localized apps.");
+			foreach (var propertyName in KnownProperties.TextualIdentityPropertyNames)
+			{
+				if (!TryPropertyText(node, propertyName, out var value))
+					continue;
+
+				var selector = new McpSemanticSelector { Text = value };
+				suggestions.Add(new McpSelectorSuggestion
+				{
+					Selector = selector,
+					Confidence = 0.75,
+					Stability = "low",
+					Unique = CountMatches(snapshot, selector.ToCliSelector()) == 1,
+					Explanation = $"{propertyName} is a readable fallback when automation properties are absent.",
+				});
+				break;
+			}
+
+			suggestions.Add(new McpSelectorSuggestion
+			{
+				Selector = new McpTargetIdSelector { TargetId = node.TargetId },
+				Confidence = 0.40,
+				Stability = "revision",
+				Unique = true,
+				Explanation = "Runtime target IDs are exact but may become stale after UI changes.",
+			});
+			return new McpSelectorSuggestionsResult { TargetId = node.TargetId, Suggestions = suggestions };
 		}, new { targetId, refresh });
 	}
 
@@ -330,5 +361,50 @@ internal static class InspectTools
 			"json" or "tree-json" => false,
 			_ => throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported outputFormat '{outputFormat}'."),
 		};
+	}
+
+	private static void AddSuggestion(
+		List<McpSelectorSuggestion> suggestions,
+		VisualTreeSnapshot snapshot,
+		VisualTreeNodeDto node,
+		string propertyName,
+		double confidence,
+		string stability,
+		Func<string, McpAgentSelector> createSelector,
+		string explanation)
+	{
+		if (!TryPropertyText(node, propertyName, out var value))
+			return;
+
+		var selector = createSelector(value);
+		suggestions.Add(new McpSelectorSuggestion
+		{
+			Selector = selector,
+			Confidence = confidence,
+			Stability = stability,
+			Unique = CountMatches(snapshot, selector.ToCliSelector()) == 1,
+			Explanation = explanation,
+		});
+	}
+
+	private static int CountMatches(VisualTreeSnapshot snapshot, ElementSelector selector) =>
+		new FindSnapshotService().Find(snapshot, new FindSnapshotOptions
+		{
+			TypeName = selector.TypeName,
+			Name = selector.Name,
+			AutomationId = selector.AutomationId,
+			Text = selector.Text,
+			PropertyEquals = selector.PropertyEquals,
+			Limit = 2,
+			IncludeProperties = false,
+			UseShortIds = true,
+		}).MatchCount;
+
+	private static bool TryPropertyText(VisualTreeNodeDto node, string propertyName, out string value)
+	{
+		value = node.Properties.TryGetValue(propertyName, out var raw)
+			? Convert.ToString(raw, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty
+			: string.Empty;
+		return value.Length > 0;
 	}
 }

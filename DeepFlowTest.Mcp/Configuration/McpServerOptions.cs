@@ -5,6 +5,8 @@ using DeepFlowTest.Contracts;
 
 internal sealed class McpServerOptions
 {
+	public McpToolProfile ToolProfile { get; set; } = McpToolProfile.Agent;
+
 	public int DefaultTimeoutMs { get; set; } = TimeoutDefaults.CliCommandTimeoutMs;
 
 	public int AttachTimeoutMs { get; set; } = TimeoutDefaults.CliAttachTimeoutMs;
@@ -19,6 +21,8 @@ internal sealed class McpServerOptions
 
 	public int ActivityRetentionLimit { get; set; } = 256;
 
+	public int ContextIdleTimeoutMs { get; set; } = 30 * 60 * 1_000;
+
 	public IReadOnlyList<string> DefaultProperties { get; set; } = KnownProperties.DefaultVisualTreePropertyNames;
 
 	public McpHttpOptions Http { get; set; } = new();
@@ -26,6 +30,12 @@ internal sealed class McpServerOptions
 	public McpPolicyOptions Policy { get; set; } = new();
 
 	public McpStartupOptions Startup { get; set; } = new();
+}
+
+internal enum McpToolProfile
+{
+	Agent,
+	Full,
 }
 
 internal sealed class McpHttpOptions

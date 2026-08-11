@@ -72,6 +72,7 @@ public sealed class ElementResolver
 				match.Node.ShortId,
 				match.Node.TypeName,
 				Name = match.Node.Properties.TryGetValue(KnownProperties.Name, out var name) ? name : null,
+				AutomationId = match.Node.Properties.TryGetValue(KnownProperties.AutomationId, out var automationId) ? automationId : null,
 				AutomationName = match.Node.Properties.TryGetValue(KnownProperties.AutomationName, out var automationName) ? automationName : null,
 				Text = match.Node.Properties.TryGetValue(KnownProperties.Text, out var text) ? text : null,
 				Content = match.Node.Properties.TryGetValue(KnownProperties.Content, out var content) ? content : null,

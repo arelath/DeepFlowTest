@@ -168,15 +168,36 @@ condensed text format details.
 
 ## MCP Agent Output
 
-`DeepFlowTest.Mcp` uses the same condensed agent format by default for LLM-facing
-UI context. `deepflow_get_visual_tree` returns a condensed snapshot, mutating
-actions return a condensed delta in `after`, and semantic recording stream reads
-return condensed text. MCP also applies semantic pruning: layout-only nodes such
-as `Border`, `Grid`, `ContentPresenter`, `Rectangle`, and `Canvas` are omitted
-unless they have an automation ID. Pass `outputFormat: "json"` to
-`deepflow_get_visual_tree` when a client needs the structured JSON tree.
+`DeepFlowTest.Mcp` exposes the compact agent profile by default:
+`deepflow_open_context`, `deepflow_observe`, `deepflow_find`, `deepflow_act`,
+`deepflow_wait`, `deepflow_capture`, `deepflow_diagnose`, and
+`deepflow_close_context`. Stateful calls require the `contextId` returned by
+`deepflow_open_context`. Selectors and actions are nested typed objects,
+ambiguous selectors fail unless first-match behavior is explicitly requested,
+and `deepflow_find` returns stable handles that `deepflow_act` can repair after
+controls are recreated. Successful calls provide typed structured content;
+recoverable execution failures set MCP `isError: true`. Screenshots are returned
+as native MCP image content and linked to immutable context-qualified resources.
+
+`deepflow_observe` uses the condensed semantic format by default and applies
+semantic pruning. Pass `format: "json"` when a client needs structured tree
+nodes. Start the server with `--tool-profile full` to additionally expose the
+granular legacy tools and streams.
+
+Inputs use discriminated objects. For example, open with
+`target: { "mode": "attach", "processId": 1234 }`, find with
+`target: { "kind": "semantic", "automationId": "SaveButton" }`, and act with
+`action: { "kind": "click", "button": "left", "count": 1 }`. Observation,
+screenshot, and diagnostic results link to immutable resources under
+`deepflow://contexts/{contextId}/...`.
 
 The server is read-only by default. Start it with `--allow-launch` to let tools
 start a process, `--allow-actions` to permit mutating UI tools, and
 `--allow-file-writes` when screenshot tools should write to disk. See
 `Docs/McpUsage.md` for HTTP client configuration and sample workflows.
+
+For model-level CLI/MCP comparison, run
+`Tools/Run-AgentParityBenchmark.ps1` with the same model-backed agent runner and
+model name. The harness runs the shared task catalog over both transports and
+aggregates success, incorrect mutations, turns, tool calls, invalid arguments,
+ambiguities, stale repairs, returned tokens, full-tree reads, and elapsed time.

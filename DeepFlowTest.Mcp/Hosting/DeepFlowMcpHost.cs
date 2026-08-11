@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Configuration;
+using DeepFlowTest.Mcp.Tools;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -145,6 +146,9 @@ internal sealed class DeepFlowMcpHost : IAsyncDisposable
 		builder.Logging.ClearProviders();
 		builder.Logging.AddDebug();
 		builder.Services.AddDeepFlowMcpCoreInstances(services);
+		var toolTypes = options.Value.ToolProfile == McpToolProfile.Full
+			? new[] { typeof(AgentTools), typeof(TargetTools), typeof(InspectTools), typeof(ActionTools), typeof(ScreenshotTools), typeof(DiagnosticsTools), typeof(StreamTools) }
+			: new[] { typeof(AgentTools) };
 		builder.Services.AddMcpServer()
 			.WithHttpTransport(transport =>
 			{
@@ -156,7 +160,7 @@ internal sealed class DeepFlowMcpHost : IAsyncDisposable
 #pragma warning restore MCP9004
 				}
 			})
-			.WithToolsFromAssembly(Assembly.GetExecutingAssembly())
+			.WithTools(toolTypes: toolTypes)
 			.WithPromptsFromAssembly(Assembly.GetExecutingAssembly())
 			.WithResourcesFromAssembly(Assembly.GetExecutingAssembly());
 

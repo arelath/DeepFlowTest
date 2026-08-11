@@ -32,6 +32,20 @@ internal sealed class McpSnapshotCache
 		ArgumentNullException.ThrowIfNull(properties);
 
 		var session = host.RequireSession();
+		return GetOrRefresh(session, properties, maxNodeCount, includeHidden, refresh, rootTargetId);
+	}
+
+	public VisualTreeSnapshot GetOrRefresh(
+		McpSession session,
+		IReadOnlyList<string> properties,
+		int maxNodeCount,
+		bool includeHidden = true,
+		bool refresh = false,
+		string? rootTargetId = null)
+	{
+		ArgumentNullException.ThrowIfNull(session);
+		ArgumentNullException.ThrowIfNull(properties);
+
 		var key = new CacheKey(
 			session.SessionId,
 			string.Join("|", properties.Order(StringComparer.Ordinal)),
@@ -69,6 +83,21 @@ internal sealed class McpSnapshotCache
 	{
 		lock (gate)
 			cached.Clear();
+	}
+
+	public void Invalidate(Guid sessionId)
+	{
+		lock (gate)
+		{
+			foreach (var key in cached.Keys.Where(key => key.SessionId == sessionId).ToArray())
+				cached.Remove(key);
+		}
+	}
+
+	public long? GetLatestRevision(Guid sessionId)
+	{
+		lock (gate)
+			return cached.Where(pair => pair.Key.SessionId == sessionId).Select(pair => (long?)pair.Value.Snapshot.SequenceNumber).Max();
 	}
 
 	private bool IsExpired(CacheEntry entry) =>

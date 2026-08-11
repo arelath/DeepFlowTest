@@ -62,6 +62,12 @@ internal static class McpCommandLineOptions
 				case "--activity-retention-limit":
 					options.ActivityRetentionLimit = ParseInt(ReadValue(args, ref i, optionName, inlineValue), optionName);
 					break;
+				case "--context-idle-timeout-ms":
+					options.ContextIdleTimeoutMs = ParseInt(ReadValue(args, ref i, optionName, inlineValue), optionName);
+					break;
+				case "--tool-profile":
+					options.ToolProfile = ParseToolProfile(ReadValue(args, ref i, optionName, inlineValue));
+					break;
 				case "--http-host":
 					options.Http.Host = ReadValue(args, ref i, optionName, inlineValue);
 					break;
@@ -151,4 +157,12 @@ internal static class McpCommandLineOptions
 
 		return result;
 	}
+
+	private static McpToolProfile ParseToolProfile(string value) =>
+		value.Trim().ToLowerInvariant() switch
+		{
+			"agent" => McpToolProfile.Agent,
+			"full" or "legacy" => McpToolProfile.Full,
+			_ => throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid tool profile '{value}'. Expected 'agent' or 'full'."),
+		};
 }

@@ -61,6 +61,64 @@ public sealed class McpServerProcessTests
 	}
 
 	[Test]
+	public async Task AgentProfileExposesOnlyStructuredAgentTools()
+	{
+		await using var mcp = await McpEndToEndHarness.StartAsync("--tool-profile", "agent");
+
+		var tools = await mcp.ListToolsAsync();
+		var expected = new[]
+		{
+			"deepflow_open_context",
+			"deepflow_observe",
+			"deepflow_find",
+			"deepflow_act",
+			"deepflow_wait",
+			"deepflow_capture",
+			"deepflow_diagnose",
+			"deepflow_close_context",
+		};
+
+		Assert.That(tools.Select(static tool => tool.Name), Is.EquivalentTo(expected));
+		foreach (var tool in tools)
+		{
+			Assert.That(tool.ProtocolTool.OutputSchema, Is.Not.Null, $"{tool.Name} should advertise an output schema.");
+			Assert.That(tool.Description, Is.Not.Null.And.Not.Empty);
+		}
+
+		var observe = tools.Single(tool => tool.Name == "deepflow_observe");
+		var schema = observe.JsonSchema.ToString();
+		Assert.That(schema, Does.Contain("contextId"));
+		Assert.That(schema, Does.Contain("properties"));
+
+		var openSchema = tools.Single(tool => tool.Name == "deepflow_open_context").JsonSchema.ToString();
+		Assert.That(openSchema, Does.Contain("anyOf"));
+		Assert.That(openSchema, Does.Contain("attach"));
+		Assert.That(openSchema, Does.Contain("launch"));
+
+		var actSchema = tools.Single(tool => tool.Name == "deepflow_act").JsonSchema.ToString();
+		Assert.That(actSchema, Does.Contain("anyOf"));
+		Assert.That(actSchema, Does.Contain("click"));
+		Assert.That(actSchema, Does.Contain("drag"));
+		Assert.That(actSchema, Does.Contain("semantic"));
+		Assert.That(actSchema, Does.Contain("handle"));
+	}
+
+	[Test]
+	public async Task AgentToolExecutionFailuresUseMcpIsError()
+	{
+		await using var mcp = await McpEndToEndHarness.StartAsync("--tool-profile", "agent");
+
+		var result = await mcp.CallRawAsync("deepflow_observe", new Dictionary<string, object?>
+		{
+			["contextId"] = "ctx_missing",
+		});
+
+		Assert.That(result.IsError, Is.True);
+		Assert.That(result.StructuredContent, Is.Not.Null);
+		Assert.That(result.Content.OfType<TextContentBlock>().Single().Text, Does.Contain("stale_target"));
+	}
+
+	[Test]
 	public async Task RecentActivityResourceCapturesHttpToolCalls()
 	{
 		await using var mcp = await McpEndToEndHarness.StartAsync();

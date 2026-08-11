@@ -114,6 +114,20 @@ internal sealed class McpStreamRegistry : IDisposable
 			stream.Dispose();
 	}
 
+	public void StopForSession(Guid sessionId)
+	{
+		StreamState[] matches;
+		lock (gate)
+		{
+			matches = streams.Values.Where(stream => stream.SessionId == sessionId).ToArray();
+			foreach (var stream in matches)
+				streams.Remove(stream.StreamId);
+		}
+
+		foreach (var stream in matches)
+			stream.Dispose();
+	}
+
 	public IReadOnlyList<string> ListActiveStreams()
 	{
 		lock (gate)

@@ -3,8 +3,10 @@ namespace DeepFlowTest.Mcp.Tests;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using ModelContextProtocol.Protocol;
 using NUnit.Framework;
 
 [TestFixture]
@@ -15,6 +17,71 @@ public sealed class McpEndToEndTests
 {
 	private const string DefaultProperties =
 		"AutomationProperties.AutomationId,Name,Text,Content,Header,IsVisible,IsEnabled,IsFocused,IsKeyboardFocused,IsKeyboardFocusWithin,IsChecked,IsExpanded,IsSubmenuOpen";
+
+	[Test]
+	public async Task AgentProfileUsesExplicitContextStructuredContractsAndNativeContent()
+	{
+		await using var mcp = await McpEndToEndHarness.StartAsync(
+			"--tool-profile", "agent", "--allow-launch", "--allow-actions",
+			"--timeout-ms", "60000", "--attach-timeout-ms", "60000");
+		string? contextId = null;
+		try
+		{
+			var opened = await mcp.CallRawAsync("deepflow_open_context", new Dictionary<string, object?>
+			{
+				["target"] = new Dictionary<string, object?>
+				{
+					["mode"] = "launch",
+					["fileName"] = McpEndToEndHarness.ResolveHelloWorldExecutablePath(),
+					["terminateOnClose"] = true,
+				},
+				["timeoutMs"] = 60_000,
+			});
+			Assert.That(opened.IsError, Is.False, JsonSerializer.Serialize(opened));
+			using var openJson = JsonDocument.Parse(JsonSerializer.Serialize(opened.StructuredContent));
+			contextId = openJson.RootElement.GetProperty("contextId").GetString();
+			Assert.That(contextId, Does.StartWith("ctx_"));
+
+			var observed = await mcp.CallRawAsync("deepflow_observe", new Dictionary<string, object?>
+			{
+				["contextId"] = contextId,
+				["refresh"] = true,
+			});
+			Assert.That(observed.IsError, Is.False);
+			Assert.That(observed.Content.OfType<TextContentBlock>(), Is.Not.Empty);
+			var snapshotUri = observed.Content.OfType<ResourceLinkBlock>().Single().Uri;
+			Assert.That(snapshotUri, Does.Contain($"contexts/{contextId}/snapshots/"));
+			Assert.That((await mcp.ReadResourceAsync(snapshotUri)).Contents, Is.Not.Empty);
+
+			var found = await mcp.CallRawAsync("deepflow_find", new Dictionary<string, object?>
+			{
+				["contextId"] = contextId,
+				["target"] = new Dictionary<string, object?> { ["kind"] = "semantic", ["automationId"] = "HelloWorldButton" },
+			});
+			Assert.That(found.IsError, Is.False);
+			using var findJson = JsonDocument.Parse(JsonSerializer.Serialize(found.StructuredContent));
+			var handle = findJson.RootElement.GetProperty("matches")[0].GetProperty("handle").GetString();
+
+			var acted = await mcp.CallRawAsync("deepflow_act", new Dictionary<string, object?>
+			{
+				["contextId"] = contextId,
+				["target"] = new Dictionary<string, object?> { ["kind"] = "handle", ["handle"] = handle },
+				["action"] = new Dictionary<string, object?> { ["kind"] = "click" },
+				["observe"] = "delta",
+			});
+			Assert.That(acted.IsError, Is.False);
+
+			var captured = await mcp.CallRawAsync("deepflow_capture", new Dictionary<string, object?> { ["contextId"] = contextId });
+			Assert.That(captured.IsError, Is.False);
+			Assert.That(captured.Content.OfType<ImageContentBlock>().Single().MimeType, Is.EqualTo("image/png"));
+			Assert.That(captured.Content.OfType<ResourceLinkBlock>(), Is.Not.Empty);
+		}
+		finally
+		{
+			if (contextId is not null)
+				_ = await mcp.CallRawAsync("deepflow_close_context", new Dictionary<string, object?> { ["contextId"] = contextId });
+		}
+	}
 
 	[Test]
 	public async Task McpLaunchWorkflowDrivesHelloWorldThroughMcpTools()

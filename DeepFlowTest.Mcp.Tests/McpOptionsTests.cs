@@ -24,6 +24,30 @@ public sealed class McpOptionsTests
 		Assert.That(options.Http.Host, Is.EqualTo("127.0.0.1"));
 		Assert.That(options.Http.Port, Is.EqualTo(4153));
 		Assert.That(options.Http.Path, Is.EqualTo("/mcp"));
+		Assert.That(options.ToolProfile, Is.EqualTo(McpToolProfile.Agent));
+	}
+
+	[Test]
+	public void CommandLineCanSelectFullToolProfile()
+	{
+		var options = new McpServerOptions();
+
+		McpCommandLineOptions.Apply(options, ["--tool-profile", "full"]);
+
+		Assert.That(options.ToolProfile, Is.EqualTo(McpToolProfile.Full));
+	}
+
+	[Test]
+	public void CommandLineCanConfigureContextExpiryAndRejectsUnknownProfile()
+	{
+		var options = new McpServerOptions();
+
+		McpCommandLineOptions.Apply(options, ["--context-idle-timeout-ms", "2500"]);
+
+		Assert.That(options.ContextIdleTimeoutMs, Is.EqualTo(2500));
+		Assert.That(
+			() => McpCommandLineOptions.Apply(options, ["--tool-profile", "wide"]),
+			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
 	}
 
 	[Test]

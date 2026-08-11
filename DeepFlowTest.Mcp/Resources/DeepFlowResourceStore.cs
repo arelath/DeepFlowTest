@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Cli;
 using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Configuration;
 using Microsoft.Extensions.Options;
@@ -21,6 +22,7 @@ internal sealed class DeepFlowResourceStore
 	private readonly IMcpActivitySink? activity;
 	private readonly Dictionary<string, ResourceEntry> entries = [];
 	private readonly Queue<ResourceLogEntry> logs = [];
+	private readonly Queue<string> contextArtifacts = [];
 	private long sequence;
 
 	public DeepFlowResourceStore(IOptions<McpServerOptions> options)
@@ -51,6 +53,55 @@ internal sealed class DeepFlowResourceStore
 		});
 	}
 
+	public DeepFlowResourceReference StoreContextScreenshot(string contextId, ScreenshotResultData screenshot)
+		=> StoreContextScreenshot(contextId, revision: null, screenshot);
+
+	public DeepFlowResourceReference StoreContextScreenshot(string contextId, long? revision, ScreenshotResultData screenshot)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(contextId);
+		ArgumentNullException.ThrowIfNull(screenshot);
+		var id = System.Threading.Interlocked.Increment(ref sequence).ToString(System.Globalization.CultureInfo.InvariantCulture);
+		var uri = $"deepflow://contexts/{contextId}/screenshots/{id}";
+		return StoreJson(uri, new
+		{
+			revision,
+			screenshot.TargetId,
+			screenshot.Format,
+			screenshot.Width,
+			screenshot.Height,
+			screenshot.ByteCount,
+			screenshot.BytesBase64,
+		});
+	}
+
+	public DeepFlowResourceReference StoreContextSnapshot(string contextId, long revision, object snapshot)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(contextId);
+		ArgumentNullException.ThrowIfNull(snapshot);
+		return StoreJsonImmutable($"deepflow://contexts/{contextId}/snapshots/{revision}", snapshot);
+	}
+
+	public DeepFlowResourceReference StoreContextDiagnostic(string contextId, string diagnosticKind, object diagnostic)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(contextId);
+		ArgumentException.ThrowIfNullOrWhiteSpace(diagnosticKind);
+		ArgumentNullException.ThrowIfNull(diagnostic);
+		var id = System.Threading.Interlocked.Increment(ref sequence).ToString(System.Globalization.CultureInfo.InvariantCulture);
+		return StoreJsonImmutable($"deepflow://contexts/{contextId}/diagnostics/{diagnosticKind}/{id}", diagnostic);
+	}
+
+	private DeepFlowResourceReference StoreJsonImmutable(string uri, object data, string mimeType = "application/json")
+	{
+		var text = JsonSerializer.Serialize(data, JsonOptions);
+		lock (gate)
+		{
+			if (entries.TryGetValue(uri, out var existing))
+				return existing.Reference;
+
+			return StoreText(uri, text, mimeType);
+		}
+	}
+
 	public DeepFlowResourceReference StoreText(string uri, string text, string mimeType)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(uri);
@@ -59,8 +110,15 @@ internal sealed class DeepFlowResourceStore
 
 		lock (gate)
 		{
+			var isNewContextArtifact = uri.StartsWith("deepflow://contexts/", StringComparison.Ordinal) && !entries.ContainsKey(uri);
 			var reference = new DeepFlowResourceReference(uri, mimeType, DateTimeOffset.UtcNow);
 			entries[uri] = new ResourceEntry(reference, text);
+			if (isNewContextArtifact)
+			{
+				contextArtifacts.Enqueue(uri);
+				while (contextArtifacts.Count > Math.Max(1, options.Value.ResourceRetentionLimit))
+					entries.Remove(contextArtifacts.Dequeue());
+			}
 			activity?.Publish(new McpActivityEvent
 			{
 				Source = "server",
@@ -94,7 +152,7 @@ internal sealed class DeepFlowResourceStore
 
 		lock (gate)
 		{
-			logs.Enqueue(new ResourceLogEntry(++sequence, DateTimeOffset.UtcNow, level, code, message));
+			logs.Enqueue(new ResourceLogEntry(System.Threading.Interlocked.Increment(ref sequence), DateTimeOffset.UtcNow, level, code, message));
 			while (logs.Count > Math.Max(1, options.Value.ResourceRetentionLimit))
 				logs.Dequeue();
 
@@ -106,6 +164,14 @@ internal sealed class DeepFlowResourceStore
 
 	public IReadOnlyList<string> ListKnownToolNames() =>
 	[
+		"deepflow_open_context",
+		"deepflow_observe",
+		"deepflow_find",
+		"deepflow_act",
+		"deepflow_wait",
+		"deepflow_capture",
+		"deepflow_diagnose",
+		"deepflow_close_context",
 		"deepflow_list_processes",
 		"deepflow_attach_target",
 		"deepflow_launch_target",
