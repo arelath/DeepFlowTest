@@ -1,0 +1,98 @@
+{
+  "id": "wpf-inspection",
+  "targetExecutable": "artifacts\\bin\\HelloWorld\\{{CONFIGURATION}}\\net8.0-windows\\HelloWorld.exe",
+  "steps": [
+    {
+      "name": "ping",
+      "arguments": ["ping", "--timeout-ms", "15000"],
+      "targetBound": true,
+      "assertions": [
+        { "path": "data.response.isWpfAvailable", "equals": "True" },
+        { "path": "data.response.nodeCount", "minimum": 1 }
+      ]
+    },
+    {
+      "name": "pipe-status",
+      "arguments": ["pipe", "status"],
+      "targetBound": true,
+      "contains": ["deepflowtest-cli-v1-pid", "\"isReusable\":true"]
+    },
+    {
+      "name": "reuse-listener-without-injection",
+      "arguments": ["ping", "--no-inject"],
+      "targetBound": true,
+      "assertions": [{ "path": "data.response.isWpfAvailable", "equals": "True" }]
+    },
+    {
+      "name": "resolve-by-window-title",
+      "arguments": ["ping", "--window-title", "DeepFlowTest HelloWorld"],
+      "assertions": [{ "path": "data.target.processId", "equals": "{{PID}}" }]
+    },
+    {
+      "name": "tree-nested",
+      "arguments": ["tree", "--shape", "nested", "--max-depth", "4", "--limit", "100", "--props", "none", "--include-path"],
+      "targetBound": true,
+      "assertions": [{ "path": "data.nodeCount", "minimum": 1 }],
+      "contains": ["\"shape\":\"nested\""]
+    },
+    {
+      "name": "tree-text-output",
+      "arguments": ["tree", "--max-depth", "2", "--limit", "20", "--props", "none", "--format", "text"],
+      "targetBound": true,
+      "parseJson": false,
+      "contains": ["shape:", "nodes:", "dft-target-"]
+    },
+    {
+      "name": "find-deep-control-with-narrow-output",
+      "arguments": ["find", "--automation-id", "TextBox1", "--props", "Text", "--include", "path,properties,children,ancestors", "--require-match"],
+      "targetBound": true,
+      "assertions": [{ "path": "data.matchCount", "equals": "1" }],
+      "captures": [{ "name": "TEXT_BOX_ID", "path": "data.matches.0.node.targetId" }]
+    },
+    {
+      "name": "node-context",
+      "arguments": ["node", "--target", "{{TEXT_BOX_ID}}", "--props", "Name,Text,AutomationProperties.AutomationId", "--ancestors", "--children", "--subtree", "--subtree-depth", "2"],
+      "targetBound": true,
+      "contains": ["TextBox1"]
+    },
+    {
+      "name": "props",
+      "arguments": ["props", "--target", "{{TEXT_BOX_ID}}", "--props", "Name,Text,AutomationProperties.AutomationId,IsVisible,IsEnabled"],
+      "targetBound": true,
+      "contains": ["TextBox1"]
+    },
+    {
+      "name": "selector-suggestions",
+      "arguments": ["selectors", "--target", "{{TEXT_BOX_ID}}"],
+      "targetBound": true,
+      "contains": ["--automation-id", "TextBox1"]
+    },
+    {
+      "name": "wait-visible-enabled",
+      "arguments": ["wait", "--automation-id", "TextBox1", "--require-visible", "--require-enabled", "--match-count", "1", "--interval-ms", "100", "--timeout-ms", "5000"],
+      "targetBound": true,
+      "assertions": [{ "path": "data.matchCount", "minimum": 1 }]
+    },
+    {
+      "name": "no-match-error",
+      "arguments": ["find", "--automation-id", "DefinitelyMissingControl", "--require-match"],
+      "targetBound": true,
+      "expectedExitCode": 8,
+      "expectedErrorCode": "no-match"
+    },
+    {
+      "name": "strict-action-denied",
+      "arguments": ["click", "--automation-id", "HelloWorldButton"],
+      "targetBound": true,
+      "expectedExitCode": 1,
+      "expectedErrorCode": "action-denied"
+    },
+    {
+      "name": "arbitrary-invoke-denied",
+      "arguments": ["invoke", "--automation-id", "TextBox1", "--code", "null"],
+      "targetBound": true,
+      "expectedExitCode": 1,
+      "expectedErrorCode": "arbitrary-invoke-denied"
+    }
+  ]
+}

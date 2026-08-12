@@ -1,0 +1,68 @@
+{
+  "id": "streams-and-recording",
+  "targetExecutable": "artifacts\\bin\\HelloWorld\\{{CONFIGURATION}}\\net8.0-windows\\HelloWorld.exe",
+  "steps": [
+    {
+      "name": "resolve-stream-target",
+      "arguments": ["find", "--automation-id", "DelayedReadyText", "--require-match"],
+      "targetBound": true,
+      "captures": [{ "name": "STREAM_TARGET_ID", "path": "data.matches.0.node.targetId" }]
+    },
+    {
+      "name": "visual-tree-stream",
+      "arguments": ["stream", "visual-tree", "--target", "{{STREAM_TARGET_ID}}", "--duration-ms", "350", "--interval-ms", "100", "--props", "Text,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "minimumEnvelopeCount": 2,
+      "contains": ["stream visual-tree start", "stream visual-tree stop"]
+    },
+    {
+      "name": "visual-tree-delta-stream",
+      "arguments": ["stream", "visual-tree-delta", "--target", "{{STREAM_TARGET_ID}}", "--duration-ms", "350", "--interval-ms", "100", "--props", "Text,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "minimumEnvelopeCount": 2,
+      "contains": ["stream visual-tree-delta start", "stream visual-tree-delta stop"]
+    },
+    {
+      "name": "screenshot-stream",
+      "arguments": ["stream", "screenshot", "--target", "{{STREAM_TARGET_ID}}", "--image-format", "png", "--duration-ms", "250", "--interval-ms", "100"],
+      "targetBound": true,
+      "minimumEnvelopeCount": 2,
+      "contains": ["stream screenshot start", "stream screenshot stop"]
+    },
+    {
+      "name": "event-log-stream",
+      "arguments": ["stream", "event-log", "--duration-ms", "250", "--interval-ms", "100"],
+      "targetBound": true,
+      "minimumEnvelopeCount": 2,
+      "contains": ["stream event-log start", "stream event-log stop"]
+    },
+    {
+      "name": "binding-failures-stream",
+      "arguments": ["stream", "binding-failures", "--duration-ms", "250", "--interval-ms", "100"],
+      "targetBound": true,
+      "minimumEnvelopeCount": 2,
+      "contains": ["stream binding-failures start", "stream binding-failures stop"]
+    },
+    {
+      "name": "semantic-recording-stream",
+      "arguments": ["stream", "semantic-recording", "--target", "{{STREAM_TARGET_ID}}", "--duration-ms", "350", "--interval-ms", "100", "--text-idle-ms", "100", "--max-queued-actions", "50", "--max-batch-frames", "10", "--limit", "500"],
+      "targetBound": true,
+      "minimumEnvelopeCount": 2,
+      "contains": ["stream semantic-recording start", "stream semantic-recording stop"]
+    },
+    {
+      "name": "record-semantic-condensed",
+      "arguments": ["record", "semantic", "--target", "{{STREAM_TARGET_ID}}", "--out", "{{RUN_DIRECTORY}}\\semantic-recording.txt", "--recording-format", "condensed-agent", "--duration-ms", "350", "--interval-ms", "100", "--limit", "500"],
+      "targetBound": true,
+      "contains": ["condensed-agent"],
+      "files": [{ "path": "{{RUN_DIRECTORY}}\\semantic-recording.txt", "minimumBytes": 0 }]
+    },
+    {
+      "name": "record-semantic-json",
+      "arguments": ["record", "semantic", "--target", "{{STREAM_TARGET_ID}}", "--out", "{{RUN_DIRECTORY}}\\semantic-recording.jsonl", "--recording-format", "compact-json", "--duration-ms", "350", "--interval-ms", "100", "--limit", "500"],
+      "targetBound": true,
+      "contains": ["compact-json"],
+      "files": [{ "path": "{{RUN_DIRECTORY}}\\semantic-recording.jsonl", "minimumBytes": 0 }]
+    }
+  ]
+}

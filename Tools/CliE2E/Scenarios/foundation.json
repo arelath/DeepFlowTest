@@ -1,0 +1,62 @@
+{
+  "id": "foundation",
+  "steps": [
+    {
+      "name": "help-text",
+      "arguments": ["--help"],
+      "parseJson": false,
+      "contains": ["DeepFlowTest CLI", "Commands:", "screenshot", "record"]
+    },
+    {
+      "name": "version",
+      "arguments": ["version"],
+      "contains": ["DeepFlowTest"]
+    },
+    {
+      "name": "process-discovery",
+      "arguments": ["processes", "--candidates-only"],
+      "assertions": [{ "path": "data.processes", "exists": true }]
+    },
+    {
+      "name": "config-reset",
+      "arguments": ["config", "reset", "--yes"],
+      "contains": ["\"reset\":true"]
+    },
+    {
+      "name": "config-set",
+      "arguments": ["config", "set", "common.timeoutMs", "3210"],
+      "contains": ["common.timeoutMs", "3210"]
+    },
+    {
+      "name": "config-get-leaf",
+      "arguments": ["config", "get", "common.timeoutMs"],
+      "contains": ["3210"]
+    },
+    {
+      "name": "config-set-json-list",
+      "arguments": ["config", "set", "commands.tree.props", "[\"Name\",\"Text\"]", "--json"],
+      "contains": ["Name", "Text"]
+    },
+    {
+      "name": "config-get-document",
+      "arguments": ["config", "get"],
+      "contains": ["\"schemaVersion\":1", "\"timeoutMs\":3210"]
+    },
+    {
+      "name": "config-clear",
+      "arguments": ["config", "clear", "common.timeoutMs"],
+      "notContains": ["3210"]
+    },
+    {
+      "name": "invalid-arguments-envelope",
+      "arguments": ["ping"],
+      "expectedExitCode": 1,
+      "expectedErrorCode": "invalid-arguments"
+    },
+    {
+      "name": "config-final-reset",
+      "arguments": ["config", "reset", "--yes"],
+      "contains": ["\"reset\":true"]
+    }
+  ]
+}

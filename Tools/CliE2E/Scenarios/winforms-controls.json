@@ -1,0 +1,76 @@
+{
+  "id": "winforms-controls",
+  "targetExecutable": "artifacts\\bin\\WinFormsExampleApp\\{{CONFIGURATION}}\\net8.0-windows\\WinFormsExampleApp.exe",
+  "steps": [
+    {
+      "name": "ping-winforms",
+      "arguments": ["ping", "--timeout-ms", "15000"],
+      "targetBound": true,
+      "assertions": [{ "path": "data.response.isWinFormsAvailable", "equals": "True" }]
+    },
+    {
+      "name": "tree-controls",
+      "arguments": ["tree", "--shape", "flat", "--max-depth", "8", "--limit", "200", "--props", "Name,Text,Checked,SelectedIndex,SelectedItem,IsVisible,IsEnabled"],
+      "targetBound": true,
+      "contains": ["InputTextBox", "StatusLabel", "PrimaryButton", "EnabledCheckBox", "ChoiceComboBox"]
+    },
+    {
+      "name": "type-input",
+      "arguments": ["type", "--name", "InputTextBox", "--value", "CLI WinForms text", "--clear-first", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["CLI WinForms text"]
+    },
+    {
+      "name": "uncheck-checkbox",
+      "arguments": ["invoke", "--name", "EnabledCheckBox", "--operation", "Uncheck", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"invoke\""]
+    },
+    {
+      "name": "verify-checkbox-unchecked",
+      "arguments": ["find", "--name", "EnabledCheckBox", "--property", "Checked=false", "--require-match", "--props", "Name,Checked"],
+      "targetBound": true,
+      "contains": ["\"Checked\":false"]
+    },
+    {
+      "name": "set-combo-selection",
+      "arguments": ["set", "--name", "ChoiceComboBox", "--property", "SelectedIndex", "--value", "2", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"SelectedIndex\":2"]
+    },
+    {
+      "name": "verify-combo-selection",
+      "arguments": ["find", "--name", "ChoiceComboBox", "--property", "SelectedIndex=2", "--require-match", "--props", "Name,Text,SelectedIndex,SelectedItem"],
+      "targetBound": true,
+      "contains": ["Gamma"]
+    },
+    {
+      "name": "click-primary-button",
+      "arguments": ["click", "--name", "PrimaryButton", "--allow-actions"],
+      "targetBound": true
+    },
+    {
+      "name": "verify-status-label",
+      "arguments": ["find", "--name", "StatusLabel", "--property-contains", "Text=Clicked: CLI WinForms text", "--require-match", "--props", "Name,Text"],
+      "targetBound": true,
+      "contains": ["Clicked: CLI WinForms text"]
+    },
+    {
+      "name": "open-secondary-form",
+      "arguments": ["click", "--name", "ShowSecondaryFormButton", "--allow-actions"],
+      "targetBound": true
+    },
+    {
+      "name": "find-secondary-form",
+      "arguments": ["wait", "--name", "SecondaryForm", "--require-visible", "--timeout-ms", "3000", "--props", "Name,Text,IsVisible"],
+      "targetBound": true,
+      "contains": ["DeepFlowTest Secondary WinForms Form"]
+    },
+    {
+      "name": "find-secondary-label",
+      "arguments": ["find", "--name", "SecondaryFormLabel", "--require-match", "--props", "Name,Text"],
+      "targetBound": true,
+      "contains": ["Secondary form content"]
+    }
+  ]
+}

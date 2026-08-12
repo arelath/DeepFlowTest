@@ -1,0 +1,42 @@
+{
+  "id": "screenshots",
+  "targetExecutable": "artifacts\\bin\\HelloWorld\\{{CONFIGURATION}}\\net8.0-windows\\HelloWorld.exe",
+  "steps": [
+    {
+      "name": "window-png",
+      "arguments": ["screenshot", "--image-format", "png", "--out", "{{RUN_DIRECTORY}}\\window.png"],
+      "targetBound": true,
+      "files": [{ "path": "{{RUN_DIRECTORY}}\\window.png", "minimumBytes": 500, "signature": "png" }]
+    },
+    {
+      "name": "window-jpeg",
+      "arguments": ["screenshot", "--image-format", "jpg", "--out", "{{RUN_DIRECTORY}}\\window.jpg"],
+      "targetBound": true,
+      "files": [{ "path": "{{RUN_DIRECTORY}}\\window.jpg", "minimumBytes": 500, "signature": "jpg" }]
+    },
+    {
+      "name": "window-bmp",
+      "arguments": ["screenshot", "--image-format", "bmp", "--out", "{{RUN_DIRECTORY}}\\window.bmp"],
+      "targetBound": true,
+      "files": [{ "path": "{{RUN_DIRECTORY}}\\window.bmp", "minimumBytes": 500, "signature": "bmp" }]
+    },
+    {
+      "name": "window-gif",
+      "arguments": ["screenshot", "--image-format", "gif", "--out", "{{RUN_DIRECTORY}}\\window.gif"],
+      "targetBound": true,
+      "files": [{ "path": "{{RUN_DIRECTORY}}\\window.gif", "minimumBytes": 500, "signature": "gif" }]
+    },
+    {
+      "name": "wpf-control-png",
+      "arguments": ["screenshot", "--automation-id", "TextBox1", "--image-format", "png", "--out", "{{RUN_DIRECTORY}}\\wpf-control.png"],
+      "targetBound": true,
+      "files": [{ "path": "{{RUN_DIRECTORY}}\\wpf-control.png", "minimumBytes": 100, "signature": "png" }]
+    },
+    {
+      "name": "hosted-winforms-control-png",
+      "arguments": ["screenshot", "--name", "HostedWinFormsButton", "--image-format", "png", "--out", "{{RUN_DIRECTORY}}\\hosted-winforms-control.png"],
+      "targetBound": true,
+      "files": [{ "path": "{{RUN_DIRECTORY}}\\hosted-winforms-control.png", "minimumBytes": 100, "signature": "png" }]
+    }
+  ]
+}

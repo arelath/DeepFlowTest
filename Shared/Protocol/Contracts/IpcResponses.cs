@@ -449,6 +449,19 @@ public sealed record class StreamMessage
 	public CliStreamError? Error { get; set; }
 }
 
+public sealed record class EventLogHeartbeatFrame
+{
+	public string Status { get; set; } = "heartbeat";
+
+	public int ProcessId { get; set; }
+
+	public int RootCount { get; set; }
+
+	public IReadOnlyList<string> Roots { get; set; } = [];
+
+	public DateTimeOffset GeneratedUtc { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed record class VisualTreeDeltaSnapshotFrame
 {
 	public VisualTreeDeltaSnapshotFrame()

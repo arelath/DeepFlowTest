@@ -1,0 +1,148 @@
+{
+  "id": "wpf-actions",
+  "targetExecutable": "artifacts\\bin\\HelloWorld\\{{CONFIGURATION}}\\net8.0-windows\\HelloWorld.exe",
+  "steps": [
+    {
+      "name": "focus-text-box",
+      "arguments": ["focus", "--automation-id", "TextBox1", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"focus\""]
+    },
+    {
+      "name": "type-text-box",
+      "arguments": ["type", "--automation-id", "TextBox1", "--value", "CLI E2E typed text", "--clear-first", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["CLI E2E typed text"]
+    },
+    {
+      "name": "set-text-property",
+      "arguments": ["set", "--automation-id", "TextBox1", "--property", "Text", "--value", "CLI E2E set text", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["CLI E2E set text"]
+    },
+    {
+      "name": "key-shortcut",
+      "arguments": ["key", "--automation-id", "TextBox1", "--keys", "Ctrl+A", "--foreground", "true", "--delay-ms", "10", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"key\""]
+    },
+    {
+      "name": "raise-button-click",
+      "arguments": ["raise", "--automation-id", "HelloWorldButton", "--event", "Click", "--allow-actions"],
+      "targetBound": true,
+      "contains": ["\"action\":\"raise\""]
+    },
+    {
+      "name": "verify-raised-click",
+      "arguments": ["find", "--automation-id", "HelloWorldInput", "--property-contains", "Text=HelloWorldButton_Click", "--require-match", "--props", "Text,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "assertions": [{ "path": "data.matchCount", "equals": "1" }]
+    },
+    {
+      "name": "invoke-uncheck",
+      "arguments": ["invoke", "--automation-id", "MainCheckbox", "--operation", "Uncheck", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"invoke\""]
+    },
+    {
+      "name": "verify-unchecked",
+      "arguments": ["find", "--automation-id", "MainCheckbox", "--property", "IsChecked=false", "--require-match", "--props", "IsChecked,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["\"IsChecked\":false"]
+    },
+    {
+      "name": "invoke-check",
+      "arguments": ["invoke", "--automation-id", "MainCheckbox", "--operation", "Check", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"invoke\""]
+    },
+    {
+      "name": "verify-checked",
+      "arguments": ["find", "--automation-id", "MainCheckbox", "--property", "IsChecked=true", "--require-match", "--props", "IsChecked,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["\"IsChecked\":true"]
+    },
+    {
+      "name": "invoke-list-selection",
+      "arguments": ["invoke", "--automation-id", "ListBoxItem3", "--operation", "Select", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"invoke\""]
+    },
+    {
+      "name": "verify-list-selection",
+      "arguments": ["find", "--automation-id", "ListBoxItem3", "--property", "IsSelected=true", "--require-match", "--props", "IsSelected,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["\"IsSelected\":true"]
+    },
+    {
+      "name": "invoke-expander",
+      "arguments": ["invoke", "--automation-id", "ExpanderControl", "--operation", "Expand", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"invoke\""]
+    },
+    {
+      "name": "verify-expander",
+      "arguments": ["find", "--automation-id", "ExpanderControl", "--property", "IsExpanded=true", "--require-match", "--props", "IsExpanded,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["\"IsExpanded\":true"]
+    },
+    {
+      "name": "bring-scroll-content-into-view",
+      "arguments": ["invoke", "--automation-id", "SecondTextBlock", "--operation", "BringIntoView", "--allow-actions"],
+      "targetBound": true,
+      "contains": ["\"action\":\"invoke\""]
+    },
+    {
+      "name": "toggle-popup",
+      "arguments": ["click", "--automation-id", "TogglePopupButton", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"click\""]
+    },
+    {
+      "name": "click-delayed-reveal",
+      "arguments": ["click", "--automation-id", "DelayedRevealButton", "--allow-actions"],
+      "targetBound": true
+    },
+    {
+      "name": "wait-delayed-reveal",
+      "arguments": ["wait", "--automation-id", "DelayedReadyText", "--require-visible", "--timeout-ms", "6000", "--interval-ms", "100", "--props", "Visibility,Text,AutomationProperties.AutomationId,IsVisible"],
+      "targetBound": true,
+      "contains": ["Delayed ready"]
+    },
+    {
+      "name": "drag-injected",
+      "arguments": ["drag", "--automation-id", "DragDropSource", "--to-automation-id", "DragDropFinalTarget", "--duration-ms", "250", "--hold-ms", "50", "--step-interval-ms", "10", "--post-drop-wait-ms", "100", "--injected-events", "true", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"drag\""]
+    },
+    {
+      "name": "verify-drag",
+      "arguments": ["find", "--automation-id", "DragDropEventLog", "--property-contains", "Text=DragDropFinalTarget:Drop", "--require-match", "--props", "Text,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["DragDropFinalTarget:Drop"]
+    },
+    {
+      "name": "type-hosted-winforms",
+      "arguments": ["type", "--name", "HostedWinFormsTextBox", "--value", "CLI hosted WinForms", "--clear-first", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["CLI hosted WinForms"]
+    },
+    {
+      "name": "check-hosted-winforms",
+      "arguments": ["invoke", "--name", "HostedWinFormsCheckBox", "--operation", "Check", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["true"]
+    },
+    {
+      "name": "click-hosted-winforms",
+      "arguments": ["click", "--name", "HostedWinFormsButton", "--allow-actions"],
+      "targetBound": true
+    },
+    {
+      "name": "verify-hosted-winforms-click",
+      "arguments": ["find", "--automation-id", "HelloWorldInput", "--property-contains", "Text=HostedWinFormsButton_Click", "--require-match", "--props", "Text,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["HostedWinFormsButton_Click"]
+    }
+  ]
+}

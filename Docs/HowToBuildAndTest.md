@@ -12,12 +12,13 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1 Compile
 powershell -ExecutionPolicy Bypass -File .\build.ps1 TestFast
 powershell -ExecutionPolicy Bypass -File .\build.ps1 CompileTestHarnesses
 powershell -ExecutionPolicy Bypass -File .\build.ps1 TestIntegration
+powershell -ExecutionPolicy Bypass -File .\build.ps1 TestCliE2E
 powershell -ExecutionPolicy Bypass -File .\build.ps1 TestFull
 powershell -ExecutionPolicy Bypass -File .\build.ps1 PublishCli --configuration Release
 powershell -ExecutionPolicy Bypass -File .\build.ps1 Pack --configuration Release
 ```
 
-`Compile` builds both native injector architectures, managed projects, and repacked payloads. `TestFast` runs the client, payload, and CLI unit tests. `TestIntegration` launches the desktop harness and exercises real-process attachment. `TestFull` combines the declared test lanes.
+`Compile` builds both native injector architectures, managed projects, and repacked payloads. `TestFast` runs the client, payload, and CLI unit tests. `TestIntegration` launches the desktop harness and exercises real-process attachment. `TestCliE2E` runs the packaged CLI against the real WPF and WinForms harnesses and writes command logs under `artifacts/cli-e2e-suites`. `TestFull` combines the declared fast and integration lanes; run the longer CLI E2E lane explicitly on an interactive Windows worker.
 
 ## Fast iteration
 

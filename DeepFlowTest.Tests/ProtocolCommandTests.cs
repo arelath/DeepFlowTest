@@ -18,6 +18,23 @@ using static DeepFlowTest.Tests.TestIpcHost;
 public sealed class ProtocolCommandTests
 {
 	[Test]
+	public void EventLogHeartbeatFrameRoundTripsThroughMessagePacker()
+	{
+		var expected = new EventLogHeartbeatFrame
+		{
+			ProcessId = 42,
+			RootCount = 2,
+			Roots = new[] { "root-1", "root-2" },
+		};
+
+		var actual = MessagePacker.ConvertTo<EventLogHeartbeatFrame>(MessagePacker.Unpack(MessagePacker.Pack(expected)));
+
+		Assert.That(actual.Status, Is.EqualTo("heartbeat"));
+		Assert.That(actual.ProcessId, Is.EqualTo(42));
+		Assert.That(actual.Roots, Is.EqualTo(new[] { "root-1", "root-2" }));
+	}
+
+	[Test]
 	public void ProtocolDtosRoundTripThroughMessagePacker()
 	{
 		foreach (var command in CreateAllProtocolCommandDtos())

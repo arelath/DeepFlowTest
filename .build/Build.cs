@@ -65,6 +65,7 @@ internal sealed class Build
 			new BuildTarget("TestCli", TestCli, "Restore"),
 			new BuildTarget("CompileTestHarnesses", CompileTestHarnesses, "Restore"),
 			new BuildTarget("TestIntegration", TestIntegration, "Compile", "CompileTestHarnesses"),
+			new BuildTarget("TestCliE2E", TestCliE2E, "Compile", "CompileTestHarnesses"),
 			new BuildTarget("TestCompat", TestCompat, "Compile"),
 			new BuildTarget("TestFull", TestFull, "TestFast", "TestIntegration", "TestCompat"),
 			new BuildTarget("PublishCli", PublishCli, "Compile"),
@@ -169,6 +170,20 @@ internal sealed class Build
 			"--no-build",
 			"--filter",
 			"FullyQualifiedName~RunningProcessAttachIntegrationTests");
+	}
+
+	private void TestCliE2E()
+	{
+		RunProcess(
+			"pwsh",
+			"-NoLogo",
+			"-NoProfile",
+			"-NonInteractive",
+			"-File",
+			Path.Combine(rootDirectory, "Tools", "Run-CliE2ESuite.ps1"),
+			"-Configuration",
+			configuration,
+			"-SkipBuild");
 	}
 
 	private static void TestCompat()

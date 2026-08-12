@@ -13,6 +13,8 @@ using DeepFlowTest.Contracts;
 
 public sealed class CliDefaultsStore
 {
+	public const string ConfigPathEnvironmentVariable = "DEEPFLOWTEST_CLI_CONFIG_PATH";
+
 	private static readonly IReadOnlyDictionary<string, string> PathAliases =
 		new Dictionary<string, string>(StringComparer.Ordinal)
 		{
@@ -55,11 +57,16 @@ public sealed class CliDefaultsStore
 
 	public string ConfigPath { get; }
 
-	public static string GetDefaultConfigPath() =>
-		Path.Combine(
-			Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-			DeepFlowTest.ProductInfo.Name,
-			"cli-defaults.json");
+	public static string GetDefaultConfigPath()
+	{
+		var overridePath = Environment.GetEnvironmentVariable(ConfigPathEnvironmentVariable);
+		return string.IsNullOrWhiteSpace(overridePath)
+			? Path.Combine(
+				Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+				DeepFlowTest.ProductInfo.Name,
+				"cli-defaults.json")
+			: Path.GetFullPath(overridePath);
+	}
 
 	public CliDefaults Load()
 	{

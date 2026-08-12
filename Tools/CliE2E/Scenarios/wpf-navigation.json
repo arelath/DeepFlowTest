@@ -1,0 +1,93 @@
+{
+  "id": "wpf-navigation",
+  "targetExecutable": "artifacts\\bin\\BasicTestHarness\\{{CONFIGURATION}}\\net8.0-windows\\BasicTestHarness.exe",
+  "steps": [
+    {
+      "name": "type-search",
+      "arguments": ["type", "--automation-id", "SearchTextBox", "--value", "CLI navigation text", "--clear-first", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["CLI navigation text"]
+    },
+    {
+      "name": "expand-details",
+      "arguments": ["invoke", "--automation-id", "DetailsExpander", "--operation", "Expand", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"invoke\""]
+    },
+    {
+      "name": "verify-details-expanded",
+      "arguments": ["find", "--automation-id", "DetailsExpander", "--property", "IsExpanded=true", "--require-match", "--props", "IsExpanded,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["\"IsExpanded\":true"]
+    },
+    {
+      "name": "open-popup",
+      "arguments": ["click", "--automation-id", "PopupToggle", "--allow-actions"],
+      "targetBound": true
+    },
+    {
+      "name": "find-popup-content",
+      "arguments": ["wait", "--automation-id", "PopupText", "--require-visible", "--timeout-ms", "3000", "--interval-ms", "100", "--props", "Text,AutomationProperties.AutomationId,IsVisible"],
+      "targetBound": true,
+      "contains": ["Popup content"]
+    },
+    {
+      "name": "select-list-item",
+      "arguments": ["invoke", "--automation-id", "ListItemGamma", "--operation", "Select", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"invoke\""]
+    },
+    {
+      "name": "verify-list-item",
+      "arguments": ["find", "--automation-id", "ListItemGamma", "--property", "IsSelected=true", "--require-match", "--props", "IsSelected,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["\"IsSelected\":true"]
+    },
+    {
+      "name": "select-second-tab",
+      "arguments": ["invoke", "--automation-id", "SecondTab", "--operation", "Select", "--allow-actions", "--after", "target"],
+      "targetBound": true,
+      "contains": ["\"action\":\"invoke\""]
+    },
+    {
+      "name": "verify-second-tab-selected",
+      "arguments": ["find", "--automation-id", "SecondTab", "--property", "IsSelected=true", "--require-match", "--props", "IsSelected,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["\"IsSelected\":true"]
+    },
+    {
+      "name": "verify-second-tab-content",
+      "arguments": ["wait", "--automation-id", "SecondTabText", "--require-visible", "--timeout-ms", "3000", "--props", "Text,IsVisible,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["Second tab content"]
+    },
+    {
+      "name": "open-file-menu",
+      "arguments": ["click", "--automation-id", "FileMenu", "--allow-actions"],
+      "targetBound": true
+    },
+    {
+      "name": "find-menu-item",
+      "arguments": ["wait", "--automation-id", "OpenMenuItem", "--require-visible", "--timeout-ms", "3000", "--props", "Header,IsVisible,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["Open"]
+    },
+    {
+      "name": "open-secondary-window",
+      "arguments": ["click", "--automation-id", "ShowSecondaryWindowButton", "--allow-actions"],
+      "targetBound": true
+    },
+    {
+      "name": "find-secondary-window",
+      "arguments": ["wait", "--automation-id", "SecondaryHarnessWindow", "--require-visible", "--timeout-ms", "3000", "--props", "Title,AutomationProperties.AutomationId,IsVisible"],
+      "targetBound": true,
+      "contains": ["DeepFlowTest Secondary Window"]
+    },
+    {
+      "name": "find-secondary-content",
+      "arguments": ["find", "--automation-id", "SecondaryWindowText", "--require-match", "--props", "Text,AutomationProperties.AutomationId"],
+      "targetBound": true,
+      "contains": ["Secondary window content"]
+    }
+  ]
+}

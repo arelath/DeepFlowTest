@@ -248,10 +248,11 @@ public static class Program
 
 	private static FindResultData ExecuteFind(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		var properties = GetRequestedProperties(args, defaults);
+		var outputProperties = GetRequestedProperties(args, defaults);
 		using var session = OpenSession(services, commonOptions);
-		var options = CreateFindOptions(args, defaults, commonOptions, properties);
-		var snapshot = ReadSnapshot(session, commonOptions, properties, options.Limit);
+		var options = CreateFindOptions(args, defaults, commonOptions, outputProperties);
+		var requestProperties = GetFindRequestProperties(options, outputProperties);
+		var snapshot = ReadSnapshot(session, commonOptions, requestProperties, Math.Max(defaults.TreeLimit, options.Limit));
 		var result = new FindSnapshotService().Find(snapshot, options);
 		if (result.MatchCount == 0 && CliArgumentReader.HasOption(args, "--require-match"))
 			throw new CliException(CliErrorCodes.NoMatch, "No matching nodes were found.");
@@ -586,6 +587,43 @@ public static class Program
 
 	private static IReadOnlyList<string> GetRequestedProperties(string[] args, CliDefaults defaults) =>
 		CliArgumentReader.GetStringList(args, "--props", defaults.PropertyNames);
+
+	private static IReadOnlyList<string> GetFindRequestProperties(
+		FindSnapshotOptions options,
+		IEnumerable<string> outputProperties)
+	{
+		var properties = outputProperties.ToList();
+		void Add(string? property)
+		{
+			if (!string.IsNullOrWhiteSpace(property) && !properties.Contains(property, StringComparer.Ordinal))
+				properties.Add(property);
+		}
+
+		if (!string.IsNullOrWhiteSpace(options.Name))
+		{
+			Add(KnownProperties.Name);
+			Add(KnownProperties.AutomationName);
+		}
+		if (!string.IsNullOrWhiteSpace(options.AutomationId))
+		{
+			Add(KnownProperties.AutomationId);
+			Add(KnownProperties.Id);
+		}
+		if (!string.IsNullOrWhiteSpace(options.Text))
+		{
+			foreach (var property in KnownProperties.TextualIdentityPropertyNames)
+				Add(property);
+		}
+		Add(options.PropertyEquals?.Key);
+		Add(options.PropertyContains?.Key);
+		Add(options.PropertyRegex?.Key);
+		if (options.Visible.HasValue)
+			Add(KnownProperties.IsVisible);
+		if (options.Enabled.HasValue)
+			Add(KnownProperties.IsEnabled);
+
+		return properties;
+	}
 
 	private static TreePropertySelection GetTreePropertySelection(string[] args, CliDefaults defaults, bool includeHidden)
 	{

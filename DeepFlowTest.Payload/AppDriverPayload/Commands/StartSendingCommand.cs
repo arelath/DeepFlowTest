@@ -202,13 +202,13 @@ internal static class StartSendingCommand
 			IncludeHidden = true,
 			MaxNodeCount = 50,
 		});
-		return new
+		return new EventLogHeartbeatFrame
 		{
-			status = "heartbeat",
-			processId = System.Diagnostics.Process.GetCurrentProcess().Id,
-			rootCount = snapshot.RootIds.Count,
-			roots = snapshot.RootIds,
-			generatedUtc = DateTimeOffset.UtcNow,
+			Status = "heartbeat",
+			ProcessId = System.Diagnostics.Process.GetCurrentProcess().Id,
+			RootCount = snapshot.RootIds.Count,
+			Roots = snapshot.RootIds,
+			GeneratedUtc = DateTimeOffset.UtcNow,
 		};
 	}
 

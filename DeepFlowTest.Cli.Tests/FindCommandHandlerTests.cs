@@ -62,14 +62,28 @@ public sealed class FindCommandHandlerTests
 	}
 
 	[Test]
-	public void FindLimitCanIncreaseSnapshotRequestLimit()
+	public void FindLimitDoesNotReduceSnapshotTraversalLimit()
 	{
 		var session = new FakeAppSessionService();
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
 
-		var result = CliTestHost.Run(new[] { "find", "--pid", "1234", "--automation-id", "SubmitButton", "--limit", "1500" }, services);
+		var result = CliTestHost.Run(new[] { "find", "--pid", "1234", "--automation-id", "SubmitButton", "--limit", "1" }, services);
 
 		Assert.That(result.ExitCode, Is.EqualTo(0));
-		Assert.That(session.Session.Commands.OfType<DeepFlowTest.Contracts.GetVisualTreeCommandRequest>().Single().MaxNodeCount, Is.EqualTo(1500));
+		Assert.That(session.Session.Commands.OfType<DeepFlowTest.Contracts.GetVisualTreeCommandRequest>().Single().MaxNodeCount, Is.EqualTo(5000));
+	}
+
+	[Test]
+	public void FindRequestsSelectorPropertiesEvenWhenOutputPropsExcludeThem()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "find", "--pid", "1234", "--automation-id", "SubmitButton", "--props", "Text" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0));
+		Assert.That(result.Stdout, Does.Contain("\"matchCount\":1"));
+		Assert.That(session.Session.Commands.OfType<DeepFlowTest.Contracts.GetVisualTreeCommandRequest>().Single().PropNames,
+			Does.Contain(DeepFlowTest.Contracts.KnownProperties.AutomationId));
 	}
 }
