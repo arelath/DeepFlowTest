@@ -61,6 +61,8 @@ public sealed class AppDriver : IDisposable
 		TestFrameworkProvider.AssertionFailure += OnAssertionFailure;
 		try
 		{
+			if (Session is NamedPipeAppDriverCommandSession namedPipeSession)
+				namedPipeSession.NegotiateControlConnection();
 			ConfigurePayloadDiagnostics();
 			if (Options.FailOnBindingFailures)
 				automaticBindingFailureCapture = StartBindingFailureCapture();
@@ -73,6 +75,7 @@ public sealed class AppDriver : IDisposable
 			automaticDiagnostics?.Complete();
 			DisposeQuietly(automaticBindingFailureCapture);
 			TestFrameworkProvider.AssertionFailure -= OnAssertionFailure;
+			DisposeQuietly(Session as IDisposable);
 			DisposeQuietly(Connection);
 			throw;
 		}
@@ -430,6 +433,7 @@ public sealed class AppDriver : IDisposable
 			automaticBindingFailureCapture = null;
 			TestFrameworkProvider.AssertionFailure -= OnAssertionFailure;
 			bindingFailureMonitor.Dispose();
+			DisposeQuietly(Session as IDisposable);
 			Connection.Dispose();
 		}
 

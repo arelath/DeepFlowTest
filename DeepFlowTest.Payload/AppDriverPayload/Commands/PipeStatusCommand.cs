@@ -16,6 +16,7 @@ internal static class PipeStatusCommand
 			ActiveSubscriptionCount = 0,
 			TotalCommandsHandled = 1,
 			DisconnectedClientCount = 0,
+			ActiveConnectionCount = 1,
 			IdleMode = "one-shot-command",
 		};
 	}

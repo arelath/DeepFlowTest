@@ -6,6 +6,12 @@ public static class ProtocolConstants
 	public const string PipePrefix = "deepflowtest";
 	public const string ProtocolVersion = "1";
 
+	public static class ControlConnectionModes
+	{
+		public const string OneShot = "one-shot";
+		public const string PersistentSerialized = "persistent-serialized";
+	}
+
 	public static class Commands
 	{
 		public const string Click = "ClickCommand";

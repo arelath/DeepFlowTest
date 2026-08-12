@@ -114,7 +114,7 @@ public sealed class NamedPipeSessionTests
 	{
 		var process = new FakeTargetProcess { HasExited = true, ExitCode = 137 };
 		using var connection = AppConnection.ForAttach(process, UniquePipeName(), "dotnet");
-		var session = new NamedPipeAppDriverCommandSession(connection, new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(25) });
+		using var session = new NamedPipeAppDriverCommandSession(connection, new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(25) });
 
 		var exception = Assert.Throws<NamedPipeSessionException>(() => session.Send<HelloCommandResponse>(new HelloCommandRequest()));
 
@@ -271,7 +271,7 @@ public sealed class NamedPipeSessionTests
 		});
 		var command = new HelloCommandRequest();
 		using var connection = AppConnection.ForAttach(new FakeTargetProcess(), pipeName, "dotnet");
-		var session = new NamedPipeAppDriverCommandSession(
+		using var session = new NamedPipeAppDriverCommandSession(
 			connection,
 			new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(250) });
 
@@ -289,24 +289,70 @@ public sealed class NamedPipeSessionTests
 		var receivedTimeouts = new List<int?>();
 		var serverTask = Task.Run(() =>
 		{
+			using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte);
+			pipe.WaitForConnection();
+			var hello = MessagePacker.ConvertTo<IpcCommand>(MessagePacker.ReadFrame(pipe).Message!);
+			MessagePacker.WriteFrame(pipe, new HelloCommandResponse
+			{
+				ProtocolVersion = ProtocolConstants.ProtocolVersion,
+				IsReusable = true,
+				ControlConnectionMode = ProtocolConstants.ControlConnectionModes.PersistentSerialized,
+			});
 			for (var index = 0; index < 2; index++)
 			{
-				using var server = new NamedPipeServer(pipeName);
-				var receivedCommand = server.WaitForNextCommand();
-				receivedTimeouts.Add(MessagePacker.ConvertTo<IpcCommand>(receivedCommand.Value).TimeoutMs);
-				receivedCommand.Respond(new HelloCommandResponse());
+				var receivedCommand = MessagePacker.ReadFrame(pipe);
+				receivedTimeouts.Add(MessagePacker.ConvertTo<IpcCommand>(receivedCommand.Message!).TimeoutMs);
+				MessagePacker.WriteFrame(pipe, new HelloCommandResponse());
 			}
+			return hello.Kind;
 		});
 		var options = new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(250) };
 		using var connection = AppConnection.ForAttach(new FakeTargetProcess(), pipeName, "dotnet");
-		var session = new NamedPipeAppDriverCommandSession(connection, options);
+		using var session = new NamedPipeAppDriverCommandSession(connection, options);
 
+		_ = session.NegotiateControlConnection();
 		_ = session.Send<HelloCommandResponse>(new HelloCommandRequest());
 		options.Timeout = TimeSpan.FromMilliseconds(875);
 		_ = session.Send<HelloCommandResponse>(new HelloCommandRequest());
 
-		await serverTask;
+		Assert.That(await serverTask, Is.EqualTo(ProtocolConstants.Commands.Hello));
 		Assert.That(receivedTimeouts, Is.EqualTo(new int?[] { 250, 875 }));
+	}
+
+	[Test]
+	public async Task NegotiatedOneShotSessionUsesANewConnectionForTheNextCommand()
+	{
+		var pipeName = UniquePipeName();
+		var serverTask = Task.Run(() =>
+		{
+			var kinds = new List<string>();
+			using (var helloPipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte))
+			{
+				helloPipe.WaitForConnection();
+				kinds.Add(MessagePacker.ConvertTo<IpcCommand>(MessagePacker.ReadFrame(helloPipe).Message!).Kind);
+				MessagePacker.WriteFrame(helloPipe, new HelloCommandResponse
+				{
+					ProtocolVersion = ProtocolConstants.ProtocolVersion,
+					ControlConnectionMode = ProtocolConstants.ControlConnectionModes.OneShot,
+				});
+			}
+
+			using var commandPipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte);
+			commandPipe.WaitForConnection();
+			kinds.Add(MessagePacker.ConvertTo<IpcCommand>(MessagePacker.ReadFrame(commandPipe).Message!).Kind);
+			MessagePacker.WriteFrame(commandPipe, new PingCommandResponse { ProcessId = 42 });
+			return kinds;
+		});
+		using var connection = AppConnection.ForAttach(new FakeTargetProcess(), pipeName, "dotnet");
+		using var session = new NamedPipeAppDriverCommandSession(
+			connection,
+			new AppDriverOptions { Timeout = TimeSpan.FromMilliseconds(2000) });
+
+		_ = session.NegotiateControlConnection();
+		var ping = session.Send<PingCommandResponse>(new PingCommandRequest());
+
+		Assert.That(ping.ProcessId, Is.EqualTo(42));
+		Assert.That(await serverTask, Is.EqualTo(new[] { ProtocolConstants.Commands.Hello, ProtocolConstants.Commands.Ping }));
 	}
 
 	private static string UniquePipeName()

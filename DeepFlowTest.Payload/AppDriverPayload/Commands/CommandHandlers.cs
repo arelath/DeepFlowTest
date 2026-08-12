@@ -5,7 +5,7 @@ using DeepFlowTest.Contracts;
 internal sealed class HelloCommandHandler : ICommandHandler<HelloCommandRequest, object>, IImmediateCommandHandler
 {
 	public object Handle(HelloCommandRequest request, CommandContext context) =>
-		HelloCommand.Process(request, context.Options, context.ReusableSession);
+		HelloCommand.Process(request, context.Options, context.ReusableSession, context.Command.ConnectionId);
 }
 
 internal sealed class PipeStatusCommandHandler : ICommandHandler<PipeStatusCommandRequest, object>, IImmediateCommandHandler

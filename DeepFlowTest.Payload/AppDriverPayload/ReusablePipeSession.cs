@@ -190,12 +190,14 @@ public sealed class ReusablePipeSession
 			ActiveSubscriptions = activeSubscriptions,
 			TotalCommandsHandled = TotalCommandsHandled,
 			DisconnectedClientCount = DisconnectedClientCount,
+			ActiveConnectionCount = server?.ActiveConnectionCount ?? 0,
 			IdleMode = IsBusy ? "busy" : "waiting-for-client-or-command",
 			Counters = new Dictionary<string, long>
 			{
 				["commandsHandled"] = TotalCommandsHandled,
 				["activeSubscriptions"] = activeSubscriptions.Count,
 				["disconnectedClients"] = DisconnectedClientCount,
+				["activeConnections"] = server?.ActiveConnectionCount ?? 0,
 			},
 		};
 	}

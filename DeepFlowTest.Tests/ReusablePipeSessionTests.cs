@@ -48,6 +48,32 @@ public sealed class ReusablePipeSessionTests
 	}
 
 	[Test]
+	public async Task ReusableNamedPipeServerAcceptsSequentialCommandsOnOneClient()
+	{
+		var pipeName = UniquePipeName();
+		var connectionIds = new string?[2];
+		var serverTask = Task.Run(() =>
+		{
+			using var server = new ReusableNamedPipeServer(pipeName);
+			for (var index = 0; index < 2; index++)
+			{
+				var command = server.WaitForNextCommand()!.Value;
+				connectionIds[index] = command.ConnectionId;
+				command.Respond(new StandardIpcResponse { Status = $"response-{index + 1}" });
+			}
+		});
+
+		using var client = new NamedPipeClient(pipeName);
+		var first = MessagePacker.ConvertTo<StandardIpcResponse>(await client.SendAsync(new HelloCommandRequest()));
+		var second = MessagePacker.ConvertTo<StandardIpcResponse>(await client.SendAsync(new PingCommandRequest()));
+
+		Assert.That(first.Status, Is.EqualTo("response-1"));
+		Assert.That(second.Status, Is.EqualTo("response-2"));
+		await serverTask;
+		Assert.That(connectionIds[0], Is.Not.Empty.And.EqualTo(connectionIds[1]));
+	}
+
+	[Test]
 	public void DuplicateSessionStartupReturnsExistingSession()
 	{
 		var started = 0;
@@ -84,6 +110,8 @@ public sealed class ReusablePipeSessionTests
 			var hello = MessagePacker.ConvertTo<HelloCommandResponse>(await helloClient.SendAsync(new HelloCommandRequest()));
 			Assert.That(hello.PipeName, Is.EqualTo(pipeName));
 			Assert.That(hello.IsReusable, Is.True);
+			Assert.That(hello.ConnectionId, Is.Not.Empty);
+			Assert.That(hello.ControlConnectionMode, Is.EqualTo(ProtocolConstants.ControlConnectionModes.PersistentSerialized));
 		}
 
 		using (var statusClient = new NamedPipeClient(pipeName))
@@ -117,6 +145,8 @@ public sealed class ReusablePipeSessionTests
 		Assert.That(start.Status, Is.EqualTo(ProtocolConstants.Statuses.Started));
 		Assert.That(status.IsSending, Is.True);
 		Assert.That(status.ActiveSubscriptionCount, Is.EqualTo(1));
+		Assert.That(status.ActiveConnectionCount, Is.GreaterThanOrEqualTo(2));
+		Assert.That(status.Counters["activeConnections"], Is.GreaterThanOrEqualTo(2));
 	}
 
 	[Test]

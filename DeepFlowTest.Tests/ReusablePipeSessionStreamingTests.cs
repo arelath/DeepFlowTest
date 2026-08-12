@@ -49,7 +49,7 @@ public sealed class ReusablePipeSessionStreamingTests
 		Assert.That(frame.SubscriptionId, Is.EqualTo(start.SubscriptionId));
 		Assert.That(frame.StreamKind, Is.EqualTo(ProtocolConstants.StreamKinds.EventLog));
 		Assert.That(frame.SequenceNumber, Is.GreaterThanOrEqualTo(1));
-		Assert.That(MessagePacker.ConvertTo<System.Collections.Generic.Dictionary<string, object?>>(frame.Data!)["status"]!.ToString(), Is.EqualTo("heartbeat"));
+		Assert.That(MessagePacker.ConvertTo<EventLogHeartbeatFrame>(frame.Data!).Status, Is.EqualTo("heartbeat"));
 		Assert.That(status.IsSending, Is.True);
 		Assert.That(status.ActiveSubscriptions[0].LastSequenceNumber, Is.GreaterThanOrEqualTo(1));
 		Assert.That(stop.Status, Is.EqualTo(ProtocolConstants.Statuses.Stopped));

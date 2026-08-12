@@ -1,17 +1,22 @@
 namespace DeepFlowTest.Interop;
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
+using System.Threading;
 using DeepFlowTest.Contracts;
 
 public sealed class ReusableNamedPipeServer : IDisposable
 {
 	private readonly object sync = new();
 	private readonly List<ConnectionState> activeConnections = new();
-	private bool isDisposed;
+	private readonly BlockingCollection<CommandQueueItem> commandQueue = new();
+	private Thread? acceptThread;
+	private int started;
+	private volatile bool isDisposed;
 
 	public ReusableNamedPipeServer(string pipeName)
 	{
@@ -22,13 +27,29 @@ public sealed class ReusableNamedPipeServer : IDisposable
 
 	public string PipeName { get; }
 
-	public int ReceivedCommandCount { get; private set; }
+	public int ReceivedCommandCount => Volatile.Read(ref receivedCommandCount);
 
-	public int DisconnectedClientCount { get; private set; }
+	public int DisconnectedClientCount => Volatile.Read(ref disconnectedClientCount);
+
+	public int ActiveConnectionCount
+	{
+		get
+		{
+			lock (sync)
+				return activeConnections.Count(connection => connection.Pipe.IsConnected);
+		}
+	}
 
 	public void Dispose()
 	{
-		isDisposed = true;
+		lock (sync)
+		{
+			if (isDisposed)
+				return;
+
+			isDisposed = true;
+		}
+		commandQueue.CompleteAdding();
 		ConnectionState[] connections;
 		lock (sync)
 			connections = activeConnections.ToArray();
@@ -52,48 +73,127 @@ public sealed class ReusableNamedPipeServer : IDisposable
 
 	public NamedPipeServer.Command? WaitForNextCommand()
 	{
-		if (isDisposed)
-			throw new ObjectDisposedException(nameof(ReusableNamedPipeServer));
-
-		var connection = GetConnectedPipe();
-		MessagePacker.MessageFrame frame;
+		EnsureStarted();
 		try
 		{
-			frame = MessagePacker.ReadFrame(connection.Pipe);
+			return commandQueue.Take().Command;
 		}
-		catch (IOException)
+		catch (InvalidOperationException) when (isDisposed)
 		{
-			HandleDisconnectedClient(connection);
-			return null;
+			throw new ObjectDisposedException(nameof(ReusableNamedPipeServer));
 		}
-		catch (ObjectDisposedException)
-		{
-			HandleDisconnectedClient(connection);
-			return null;
-		}
+	}
 
-		if (!frame.HasFrame || frame.Message is null)
-		{
-			HandleDisconnectedClient(connection);
-			return null;
-		}
+	private void EnsureStarted()
+	{
+		if (isDisposed)
+			throw new ObjectDisposedException(nameof(ReusableNamedPipeServer));
+		if (Interlocked.Exchange(ref started, 1) == 1)
+			return;
 
-		ReceivedCommandCount++;
-		var hasResponded = false;
-		var keepConnectionOpen = false;
+		acceptThread = new Thread(AcceptConnections)
+		{
+			IsBackground = true,
+			Name = $"{nameof(ReusableNamedPipeServer)}:{PipeName}",
+		};
+		acceptThread.Start();
+	}
+
+	private void AcceptConnections()
+	{
+		while (!isDisposed)
+		{
+			NamedPipeServerStream? pipe = null;
+			try
+			{
+				pipe = new NamedPipeServerStream(
+					PipeName,
+					PipeDirection.InOut,
+					maxNumberOfServerInstances: NamedPipeServerStream.MaxAllowedServerInstances,
+					transmissionMode: PipeTransmissionMode.Byte,
+					options: PipeOptions.Asynchronous);
+				var connection = new ConnectionState(pipe, Guid.NewGuid().ToString("N"), new StreamWriteLock());
+				lock (sync)
+					activeConnections.Add(connection);
+
+				pipe.WaitForConnection();
+				if (isDisposed)
+				{
+					ClosePipe(connection, clientDisconnected: true);
+					return;
+				}
+
+				ThreadPool.QueueUserWorkItem(_ => ReadCommands(connection));
+				pipe = null;
+			}
+			catch (ObjectDisposedException) when (isDisposed)
+			{
+				return;
+			}
+			catch (IOException) when (isDisposed)
+			{
+				return;
+			}
+			finally
+			{
+				pipe?.Dispose();
+			}
+		}
+	}
+
+	private void ReadCommands(ConnectionState connection)
+	{
+		while (!isDisposed && IsActive(connection))
+		{
+			MessagePacker.MessageFrame frame;
+			try
+			{
+				frame = MessagePacker.ReadFrame(connection.Pipe);
+			}
+			catch (IOException)
+			{
+				HandleDisconnectedClient(connection);
+				return;
+			}
+			catch (ObjectDisposedException)
+			{
+				HandleDisconnectedClient(connection);
+				return;
+			}
+
+			if (!frame.HasFrame || frame.Message is null)
+			{
+				HandleDisconnectedClient(connection);
+				return;
+			}
+
+			Interlocked.Increment(ref receivedCommandCount);
+			Interlocked.Increment(ref connection.ReceivedCommandCount);
+			var command = CreateCommand(connection, frame.Message);
+			try
+			{
+				commandQueue.Add(new CommandQueueItem(command));
+			}
+			catch (InvalidOperationException) when (isDisposed)
+			{
+				return;
+			}
+		}
+	}
+
+	private NamedPipeServer.Command CreateCommand(ConnectionState connection, object value)
+	{
+		var hasResponded = 0;
 		var connectionId = connection.ConnectionId;
 
-		bool CheckHasResponded() => hasResponded;
-		void HoldConnectionOpen() => keepConnectionOpen = true;
+		bool CheckHasResponded() => Volatile.Read(ref hasResponded) == 1;
+		void HoldConnectionOpen() { }
 		void Respond(object response)
 		{
-			if (hasResponded)
+			if (Interlocked.Exchange(ref hasResponded, 1) == 1)
 				return;
 
 			TrySend(response);
-			hasResponded = true;
-			if (!keepConnectionOpen)
-				ClosePipe(connection, clientDisconnected: false);
 		}
 
 		bool TrySend(object response)
@@ -119,7 +219,7 @@ public sealed class ReusableNamedPipeServer : IDisposable
 
 		return new NamedPipeServer.Command
 		{
-			Value = frame.Message,
+			Value = value,
 			Respond = Respond,
 			CheckHasResponded = CheckHasResponded,
 			ConnectionId = connectionId,
@@ -128,26 +228,22 @@ public sealed class ReusableNamedPipeServer : IDisposable
 		};
 	}
 
-	private ConnectionState GetConnectedPipe()
-	{
-		var pipe = new NamedPipeServerStream(
-			PipeName,
-			PipeDirection.InOut,
-			maxNumberOfServerInstances: NamedPipeServerStream.MaxAllowedServerInstances,
-			transmissionMode: PipeTransmissionMode.Byte,
-			options: PipeOptions.Asynchronous);
-		var connection = new ConnectionState(pipe, Guid.NewGuid().ToString("N"), new StreamWriteLock());
-		lock (sync)
-			activeConnections.Add(connection);
-
-		pipe.WaitForConnection();
-		return connection;
-	}
-
 	private void HandleDisconnectedClient(ConnectionState connection)
 	{
-		DisconnectedClientCount++;
-		ClosePipe(connection, clientDisconnected: true);
+		if (ClosePipe(connection, clientDisconnected: true))
+		{
+			Interlocked.Increment(ref disconnectedClientCount);
+			if (Volatile.Read(ref connection.ReceivedCommandCount) == 0 && !isDisposed && !commandQueue.IsAddingCompleted)
+			{
+				try
+				{
+					commandQueue.Add(new CommandQueueItem(command: null));
+				}
+				catch (InvalidOperationException) when (isDisposed)
+				{
+				}
+			}
+		}
 	}
 
 	private bool IsActive(ConnectionState connection)
@@ -156,14 +252,31 @@ public sealed class ReusableNamedPipeServer : IDisposable
 			return activeConnections.Contains(connection);
 	}
 
-	private void ClosePipe(ConnectionState connection, bool clientDisconnected)
+	private bool ClosePipe(ConnectionState connection, bool clientDisconnected)
 	{
+		var removed = false;
 		lock (sync)
-			activeConnections.Remove(connection);
+			removed = activeConnections.Remove(connection);
+		if (!removed)
+			return false;
 
 		connection.Pipe.Dispose();
 		if (clientDisconnected && !string.IsNullOrEmpty(connection.ConnectionId))
 			ClientDisconnected?.Invoke(connection.ConnectionId);
+		return true;
+	}
+
+	private int receivedCommandCount;
+	private int disconnectedClientCount;
+
+	private sealed class CommandQueueItem
+	{
+		public CommandQueueItem(NamedPipeServer.Command? command)
+		{
+			Command = command;
+		}
+
+		public NamedPipeServer.Command? Command { get; }
 	}
 
 	private sealed class ConnectionState
@@ -180,5 +293,7 @@ public sealed class ReusableNamedPipeServer : IDisposable
 		public string ConnectionId { get; }
 
 		public StreamWriteLock WriteLock { get; }
+
+		public int ReceivedCommandCount;
 	}
 }

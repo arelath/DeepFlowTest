@@ -219,6 +219,7 @@ public static class CliOutput
 		writer.WriteLine($"busy: {FormatBool(status.IsBusy)}");
 		writer.WriteLine($"sending: {FormatBool(status.IsSending)}");
 		writer.WriteLine($"subscriptions: {status.ActiveSubscriptionCount}");
+		writer.WriteLine($"connections: {status.ActiveConnectionCount}");
 		writer.WriteLine($"commands: {status.TotalCommandsHandled}");
 		writer.WriteLine($"idle: {status.IdleMode}");
 	}

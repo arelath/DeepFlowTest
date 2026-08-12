@@ -8,14 +8,17 @@
       "targetBound": true,
       "assertions": [
         { "path": "data.response.isWpfAvailable", "equals": "True" },
-        { "path": "data.response.nodeCount", "minimum": 1 }
+        { "path": "data.response.nodeCount", "minimum": 1 },
+        { "path": "data.hello.controlConnectionMode", "equals": "persistent-serialized" },
+        { "path": "data.hello.connectionId", "exists": true }
       ]
     },
     {
       "name": "pipe-status",
       "arguments": ["pipe", "status"],
       "targetBound": true,
-      "contains": ["deepflowtest-cli-v1-pid", "\"isReusable\":true"]
+      "contains": ["deepflowtest-cli-v1-pid", "\"isReusable\":true"],
+      "assertions": [{ "path": "data.response.activeConnectionCount", "minimum": 1 }]
     },
     {
       "name": "reuse-listener-without-injection",

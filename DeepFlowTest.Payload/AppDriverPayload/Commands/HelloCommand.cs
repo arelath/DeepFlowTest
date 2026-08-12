@@ -7,7 +7,11 @@ using DeepFlowTest.Interop;
 
 internal static class HelloCommand
 {
-	public static object Process(HelloCommandRequest request, AppDriverPayloadStartupOptions options, ReusablePipeSession? reusableSession)
+	public static object Process(
+		HelloCommandRequest request,
+		AppDriverPayloadStartupOptions options,
+		ReusablePipeSession? reusableSession,
+		string? connectionId = null)
 	{
 		if (!string.Equals(request.ProtocolVersion, ProtocolConstants.ProtocolVersion, StringComparison.Ordinal))
 		{
@@ -24,6 +28,10 @@ internal static class HelloCommand
 				?? typeof(HelloCommand).Assembly.GetName().Version?.ToString(),
 			PipeName = options.PipeName,
 			IsReusable = reusableSession is not null || options.Mode == PayloadStartupModes.ReusableCli,
+			ConnectionId = connectionId,
+			ControlConnectionMode = reusableSession is not null || options.Mode == PayloadStartupModes.ReusableCli
+				? ProtocolConstants.ControlConnectionModes.PersistentSerialized
+				: ProtocolConstants.ControlConnectionModes.OneShot,
 			ProcessId = PayloadEnvironment.ProcessId,
 			ProcessArchitecture = PayloadEnvironment.ProcessArchitecture,
 			FrameworkFamily = PayloadEnvironment.FrameworkFamily,

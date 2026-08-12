@@ -137,10 +137,11 @@ public sealed class NamedPipeCliAppSessionConnector : ICliAppSessionConnector
 		error = null;
 		try
 		{
-			var created = new NamedPipeCliAppSession(connection, null);
+			var created = new NamedPipeCliAppSession(connection, null, timeoutMs);
 			var hello = created.Send<HelloCommandResponse>(
 				new HelloCommandRequest { ProtocolVersion = ProtocolConstants.ProtocolVersion },
 				Math.Max(1, timeoutMs));
+			created.ConfigureControlConnection(hello);
 			if (!string.Equals(hello.ProtocolVersion, ProtocolConstants.ProtocolVersion, StringComparison.Ordinal))
 			{
 				created.Dispose();
@@ -183,10 +184,18 @@ public sealed class NamedPipeCliAppSessionConnector : ICliAppSessionConnector
 public sealed class NamedPipeCliAppSession : ICliAppSession
 {
 	private readonly AppConnection connection;
+	private readonly NamedPipeClient controlClient;
+	private bool disposed;
+	private bool reuseControlConnection = true;
 
-	public NamedPipeCliAppSession(AppConnection connection, HelloCommandResponse? hello)
+	public NamedPipeCliAppSession(AppConnection connection, HelloCommandResponse? hello, int connectTimeoutMs = TimeoutDefaults.CliOneShotConnectTimeoutCapMs)
 	{
 		this.connection = connection ?? throw new ArgumentNullException(nameof(connection));
+		controlClient = new NamedPipeClient(
+			connection.PipeName,
+			getTargetExitCode: () => connection.TargetProcess.HasExited ? 0 : null,
+			connectTimeoutMs: Math.Min(TimeoutDefaults.CliOneShotConnectTimeoutCapMs, Math.Max(1, connectTimeoutMs)),
+			connectRetryCount: 1);
 		Hello = hello ?? new HelloCommandResponse();
 	}
 
@@ -196,12 +205,12 @@ public sealed class NamedPipeCliAppSession : ICliAppSession
 	{
 		try
 		{
-			using var client = new NamedPipeClient(
-				connection.PipeName,
-				getTargetExitCode: () => connection.TargetProcess.HasExited ? 0 : null,
-				connectTimeoutMs: Math.Min(TimeoutDefaults.CliOneShotConnectTimeoutCapMs, Math.Max(1, timeoutMs)),
-				connectRetryCount: 1);
-			var response = client.Send(command, Math.Max(1, timeoutMs));
+			if (disposed)
+				throw new ObjectDisposedException(nameof(NamedPipeCliAppSession));
+			var effectiveTimeoutMs = Math.Max(1, timeoutMs);
+			var response = reuseControlConnection
+				? controlClient.Send(command, effectiveTimeoutMs)
+				: SendOneShot(command, effectiveTimeoutMs);
 			return MessagePacker.ConvertTo<TResponse>(response);
 		}
 		catch (NamedPipeSessionException ex)
@@ -218,6 +227,27 @@ public sealed class NamedPipeCliAppSession : ICliAppSession
 		}
 	}
 
+	internal void ConfigureControlConnection(HelloCommandResponse hello)
+	{
+		reuseControlConnection = hello.IsReusable
+			&& string.Equals(
+				hello.ControlConnectionMode,
+				ProtocolConstants.ControlConnectionModes.PersistentSerialized,
+				StringComparison.Ordinal);
+		if (!reuseControlConnection)
+			controlClient.Dispose();
+	}
+
+	private object SendOneShot(IpcCommand command, int timeoutMs)
+	{
+		using var client = new NamedPipeClient(
+			connection.PipeName,
+			getTargetExitCode: () => connection.TargetProcess.HasExited ? 0 : null,
+			connectTimeoutMs: Math.Min(TimeoutDefaults.CliOneShotConnectTimeoutCapMs, timeoutMs),
+			connectRetryCount: 1);
+		return client.Send(command, timeoutMs);
+	}
+
 	public ICliStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs) =>
 		NamedPipeCliStreamSession.Create(
 			connection.PipeName,
@@ -227,6 +257,11 @@ public sealed class NamedPipeCliAppSession : ICliAppSession
 
 	public void Dispose()
 	{
+		if (disposed)
+			return;
+
+		disposed = true;
+		controlClient.Dispose();
 		connection.Dispose();
 	}
 

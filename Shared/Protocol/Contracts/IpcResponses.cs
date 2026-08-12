@@ -78,6 +78,9 @@ public sealed record class HelloCommandResponse
 		PayloadVersion = payloadVersion;
 		PipeName = pipeName;
 		IsReusable = isReusable;
+		ControlConnectionMode = isReusable
+			? ProtocolConstants.ControlConnectionModes.PersistentSerialized
+			: ProtocolConstants.ControlConnectionModes.OneShot;
 	}
 
 	public string ProtocolVersion { get; set; } = ProtocolConstants.ProtocolVersion;
@@ -87,6 +90,10 @@ public sealed record class HelloCommandResponse
 	public string PipeName { get; set; } = string.Empty;
 
 	public bool IsReusable { get; set; }
+
+	public string? ConnectionId { get; set; }
+
+	public string ControlConnectionMode { get; set; } = ProtocolConstants.ControlConnectionModes.OneShot;
 
 	public int ProcessId { get; set; }
 
@@ -164,6 +171,8 @@ public sealed record class PipeStatusCommandResponse
 	public int TotalCommandsHandled { get; set; }
 
 	public int DisconnectedClientCount { get; set; }
+
+	public int ActiveConnectionCount { get; set; }
 
 	public string IdleMode { get; set; } = "waiting-for-client-or-command";
 

@@ -1,7 +1,11 @@
 namespace DeepFlowTest.Cli.Tests;
 
+using System;
+using System.IO.Pipes;
+using System.Threading.Tasks;
 using DeepFlowTest;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Interop;
 using NUnit.Framework;
 
 [TestFixture]
@@ -83,6 +87,76 @@ public sealed class CliAppSessionTests
 		service.Open(Target(process), new CliAttachOptions()).Dispose();
 
 		Assert.That(process.Killed, Is.False);
+	}
+
+	[Test]
+	public async Task ConnectorHelloAndCommandReuseOneControlConnection()
+	{
+		var pipeName = $"deepflowtest-cli-session-{Guid.NewGuid():N}";
+		var serverTask = Task.Run(() =>
+		{
+			using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte);
+			pipe.WaitForConnection();
+			var hello = MessagePacker.ConvertTo<IpcCommand>(MessagePacker.ReadFrame(pipe).Message!);
+			MessagePacker.WriteFrame(pipe, new HelloCommandResponse
+			{
+				ProtocolVersion = ProtocolConstants.ProtocolVersion,
+				PipeName = pipeName,
+				IsReusable = true,
+				ControlConnectionMode = ProtocolConstants.ControlConnectionModes.PersistentSerialized,
+			});
+			var ping = MessagePacker.ConvertTo<IpcCommand>(MessagePacker.ReadFrame(pipe).Message!);
+			MessagePacker.WriteFrame(pipe, new PingCommandResponse { ProcessId = 42 });
+			return new[] { hello.Kind, ping.Kind };
+		});
+
+		using var connection = AppConnection.ForAttach(new FakeTargetProcess { Id = 42 }, pipeName, "dotnet");
+		var connector = new NamedPipeCliAppSessionConnector();
+		Assert.That(connector.TryConnect(connection, 2000, out var session, out var error), Is.True, error?.Message);
+		using (session)
+		{
+			var ping = session!.Send<PingCommandResponse>(new PingCommandRequest(), 2000);
+			Assert.That(ping.ProcessId, Is.EqualTo(42));
+		}
+
+		Assert.That(await serverTask, Is.EqualTo(new[] { ProtocolConstants.Commands.Hello, ProtocolConstants.Commands.Ping }));
+	}
+
+	[Test]
+	public async Task ConnectorFallsBackWhenHelloAdvertisesOneShotConnections()
+	{
+		var pipeName = $"deepflowtest-cli-session-{Guid.NewGuid():N}";
+		var serverTask = Task.Run(() =>
+		{
+			var kinds = new System.Collections.Generic.List<string>();
+			using (var helloPipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte))
+			{
+				helloPipe.WaitForConnection();
+				kinds.Add(MessagePacker.ConvertTo<IpcCommand>(MessagePacker.ReadFrame(helloPipe).Message!).Kind);
+				MessagePacker.WriteFrame(helloPipe, new HelloCommandResponse
+				{
+					ProtocolVersion = ProtocolConstants.ProtocolVersion,
+					ControlConnectionMode = ProtocolConstants.ControlConnectionModes.OneShot,
+				});
+			}
+
+			using var pingPipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte);
+			pingPipe.WaitForConnection();
+			kinds.Add(MessagePacker.ConvertTo<IpcCommand>(MessagePacker.ReadFrame(pingPipe).Message!).Kind);
+			MessagePacker.WriteFrame(pingPipe, new PingCommandResponse { ProcessId = 42 });
+			return kinds;
+		});
+
+		using var connection = AppConnection.ForAttach(new FakeTargetProcess { Id = 42 }, pipeName, "dotnet");
+		var connector = new NamedPipeCliAppSessionConnector();
+		Assert.That(connector.TryConnect(connection, 2000, out var session, out var error), Is.True, error?.Message);
+		using (session)
+		{
+			var ping = session!.Send<PingCommandResponse>(new PingCommandRequest(), 2000);
+			Assert.That(ping.ProcessId, Is.EqualTo(42));
+		}
+
+		Assert.That(await serverTask, Is.EqualTo(new[] { ProtocolConstants.Commands.Hello, ProtocolConstants.Commands.Ping }));
 	}
 
 	private static TargetInfo Target(FakeTargetProcess? process = null) =>
