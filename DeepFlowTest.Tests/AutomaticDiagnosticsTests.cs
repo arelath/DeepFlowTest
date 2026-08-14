@@ -55,7 +55,94 @@ public sealed class AutomaticDiagnosticsTests
 		Assert.That(ArtifactKinds(manifest), Does.Contain("final-tree"));
 		Assert.That(ArtifactKinds(manifest), Does.Contain("protocol-log"));
 		Assert.That(sink.Attachments.Select(Path.GetFileName), Does.Contain("manifest.json"));
+		var treePath = sink.Attachments.Single(path => Path.GetFileName(path) == "final-tree.txt");
+		var treeText = File.ReadAllText(treePath);
+		Assert.That(treeText, Does.StartWith("dft-condensed/1 profile=diagnostic source=compact-json"));
+		Assert.That(treeText, Does.Contain("@1 snapshot"));
+		Assert.That(treeText, Does.Contain("Window [1] .DiagnosticsWindow"));
 		Assert.That(driver.Diagnostics, Is.Empty);
+	}
+
+	[Test]
+	public void ExplicitFailureCaptureRunsWhileTargetIsAliveAndIsNotRetriedDuringDispose()
+	{
+		var root = CreateCleanDirectory("explicit-failure-capture");
+		var sink = new FakeArtifactSink(root, "collection fixture");
+		var session = new DiagnosticsCommandSession();
+		var process = new FakeTargetProcess();
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(process, "diagnostics-pipe"),
+			session,
+			new AppDriverOptions
+			{
+				AutomaticDiagnostics = new AutomaticDiagnosticsOptions
+				{
+					OutputDirectory = root,
+					ArtifactSink = sink,
+				},
+			});
+		var failure = new InvalidOperationException("real xUnit test failure");
+
+		driver.CaptureFailureDiagnostics(failure, "Tools.Tests.UI.SharedSessionTest");
+
+		var artifactDirectory = driver.AutomaticDiagnosticsArtifactDirectory;
+		Assert.That(artifactDirectory, Is.Not.Null);
+		Assert.Multiple(() =>
+		{
+			Assert.That(Path.GetFileName(artifactDirectory), Does.Contain("Tools.Tests.UI.SharedSessionTest"));
+			Assert.That(File.Exists(Path.Combine(artifactDirectory!, "final-screenshot.png")), Is.True);
+			Assert.That(File.Exists(Path.Combine(artifactDirectory!, "final-tree.txt")), Is.True);
+			Assert.That(sink.Attachments.Select(Path.GetFileName), Does.Contain("final-screenshot.png"));
+			Assert.That(sink.Attachments.Select(Path.GetFileName), Does.Contain("final-tree.txt"));
+			Assert.That(session.ScreenshotRequestCount, Is.EqualTo(1));
+			Assert.That(session.VisualTreeRequestCount, Is.EqualTo(1));
+		});
+
+		session.TargetUnavailable = true;
+		process.HasExited = true;
+		Assert.DoesNotThrow(driver.Dispose);
+
+		var manifest = JObject.Parse(File.ReadAllText(driver.AutomaticDiagnosticsManifestPath!));
+		var treeArtifact = ((JArray)manifest["artifacts"]!).Single(static artifact => (string?)artifact["kind"] == "final-tree");
+		Assert.Multiple(() =>
+		{
+			Assert.That(session.ScreenshotRequestCount, Is.EqualTo(1));
+			Assert.That(session.VisualTreeRequestCount, Is.EqualTo(1));
+			Assert.That(session.StopRequestCount, Is.Zero);
+			Assert.That(driver.Diagnostics.Select(static diagnostic => diagnostic.Code), Does.Not.Contain("final-screenshot-failed"));
+			Assert.That(driver.Diagnostics.Select(static diagnostic => diagnostic.Code), Does.Not.Contain("final-tree-failed"));
+			Assert.That(driver.Diagnostics.Select(static diagnostic => diagnostic.Code), Does.Not.Contain("recording-stop-failed"));
+			Assert.That((string?)manifest["testName"], Is.EqualTo("Tools.Tests.UI.SharedSessionTest"));
+			Assert.That((string?)manifest["failure"], Does.Contain("real xUnit test failure"));
+			Assert.That((string?)treeArtifact["description"], Is.EqualTo("Final visual tree captured after failure for 'Tools.Tests.UI.SharedSessionTest'."));
+		});
+	}
+
+	[Test]
+	public void FailureTreeCaptureIsBestEffortWhenTheTargetIsUnavailable()
+	{
+		var root = CreateCleanDirectory("unavailable-final-tree");
+		var sink = new FakeArtifactSink(root, "unavailable final tree");
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(new FakeTargetProcess(), "diagnostics-pipe"),
+			new DiagnosticsCommandSession(throwOnTree: true),
+			new AppDriverOptions
+			{
+				AutomaticDiagnostics = new AutomaticDiagnosticsOptions
+				{
+					OutputDirectory = root,
+					ArtifactSink = sink,
+					CaptureFinalScreenshotOnFailure = false,
+				},
+			});
+
+		driver.MarkDiagnosticsFailure(new InvalidOperationException("application failed"));
+		Assert.DoesNotThrow(driver.Dispose);
+
+		Assert.That(driver.Diagnostics.Select(static diagnostic => diagnostic.Code), Does.Contain("final-tree-failed"));
+		Assert.That(sink.Logged.Select(static diagnostic => diagnostic.Code), Does.Contain("final-tree-failed"));
+		Assert.That(sink.Attachments.Select(Path.GetFileName), Does.Not.Contain("final-tree.txt"));
+		Assert.That(File.Exists(driver.AutomaticDiagnosticsManifestPath!), Is.True);
 	}
 
 	[TestCase(AutomaticDiagnosticsMode.Manual)]
@@ -122,6 +209,41 @@ public sealed class AutomaticDiagnosticsTests
 		Assert.DoesNotThrow(driver.Dispose);
 		Assert.That(driver.Diagnostics.Select(static diagnostic => diagnostic.Code), Does.Contain("recording-stop-failed"));
 		Assert.That(File.Exists(driver.AutomaticDiagnosticsManifestPath!), Is.True);
+	}
+
+	[Test]
+	public void AutomaticRecorderTreatsExitedTargetAsCleanStreamEnd()
+	{
+		var root = CreateCleanDirectory("automatic-target-exit");
+		var session = new DiagnosticsCommandSession();
+		var process = new FakeTargetProcess();
+		var driver = AppDriver.CreateForTests(
+			AppConnection.ForAttach(process, "diagnostics-pipe"),
+			session,
+			new AppDriverOptions
+			{
+				AutomaticDiagnostics = new AutomaticDiagnosticsOptions
+				{
+					Mode = AutomaticDiagnosticsMode.Always,
+					OutputDirectory = root,
+					RetentionPolicy = DiagnosticsRetentionPolicy.KeepAll,
+					CaptureFinalScreenshotOnFailure = false,
+					CaptureFinalTreeOnFailure = false,
+				},
+			});
+
+		Assert.That(SpinWait.SpinUntil(() => session.FrameRead, TimeSpan.FromSeconds(2)), Is.True);
+		session.TargetUnavailable = true;
+		process.HasExited = true;
+
+		Assert.DoesNotThrow(driver.Dispose);
+		Assert.Multiple(() =>
+		{
+			Assert.That(session.StopRequestCount, Is.Zero);
+			Assert.That(driver.Diagnostics.Select(static diagnostic => diagnostic.Code), Does.Not.Contain("recording-stop-failed"));
+			Assert.That(File.Exists(driver.AutomaticSemanticRecordingOutputPath!), Is.True);
+			Assert.That(File.Exists(driver.AutomaticDiagnosticsManifestPath!), Is.True);
+		});
 	}
 
 	[Test]
@@ -312,18 +434,59 @@ public sealed class AutomaticDiagnosticsTests
 
 		public bool FrameRead { get; private set; }
 
+		public bool TargetUnavailable { get; set; }
+
+		public int ScreenshotRequestCount { get; private set; }
+
+		public int VisualTreeRequestCount { get; private set; }
+
+		public int StopRequestCount { get; private set; }
+
 		public TResponse Send<TResponse>(IpcCommand command)
 		{
 			object response = command switch
 			{
-				StopSendingCommandRequest stop when throwWhenStopping => throw new InvalidOperationException("stop failed"),
-				StopSendingCommandRequest stop => new StopSendingCommandResponse(stop.SubscriptionId, ProtocolConstants.Statuses.Stopped),
-				ScreenshotCommandRequest => new ScreenshotCommandResponse(Convert.ToBase64String([1, 2, 3, 4])),
-				GetVisualTreeCommandRequest when throwOnTree => throw new InvalidOperationException("tree failed"),
-				GetVisualTreeCommandRequest => VisualTreeSnapshot.Create(1, []),
+				StopSendingCommandRequest stop => StopRecording(stop),
+				ScreenshotCommandRequest => CaptureScreenshot(),
+				GetVisualTreeCommandRequest => CaptureVisualTree(),
 				_ => throw new InvalidOperationException("Unexpected command " + command.Kind),
 			};
 			return (TResponse)response;
+		}
+
+		private StopSendingCommandResponse StopRecording(StopSendingCommandRequest stop)
+		{
+			StopRequestCount++;
+			if (TargetUnavailable)
+				throw new InvalidOperationException("target unavailable");
+			if (throwWhenStopping)
+				throw new InvalidOperationException("stop failed");
+			return new StopSendingCommandResponse(stop.SubscriptionId, ProtocolConstants.Statuses.Stopped);
+		}
+
+		private ScreenshotCommandResponse CaptureScreenshot()
+		{
+			ScreenshotRequestCount++;
+			if (TargetUnavailable)
+				throw new InvalidOperationException("target unavailable");
+			return new ScreenshotCommandResponse(Convert.ToBase64String([1, 2, 3, 4]));
+		}
+
+		private VisualTreeSnapshot CaptureVisualTree()
+		{
+			VisualTreeRequestCount++;
+			if (throwOnTree || TargetUnavailable)
+				throw new InvalidOperationException("tree failed");
+			return VisualTreeSnapshot.Create(1,
+			[
+				new VisualTreeNodeDto
+				{
+					TargetId = "dft-target-1",
+					TypeName = "Window",
+					IsRoot = true,
+					Properties = { [KnownProperties.Name] = "DiagnosticsWindow" },
+				},
+			]);
 		}
 
 		public IAppDriverStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs)

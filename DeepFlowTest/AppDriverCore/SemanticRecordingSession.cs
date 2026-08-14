@@ -140,17 +140,19 @@ public sealed class SemanticRecordingSession : IDisposable
 	{
 		await Task.Yield();
 		cancellationToken.ThrowIfCancellationRequested();
-		CompleteCore(throwOnError: true);
+		CompleteCore(throwOnError: true, requestRemoteStop: true);
 	}
 
-	public void Dispose() => CompleteCore(throwOnError: false);
+	public void Dispose() => CompleteCore(throwOnError: false, requestRemoteStop: true);
+
+	internal void CompleteAfterTargetExit() => CompleteCore(throwOnError: false, requestRemoteStop: false);
 
 	internal string? FlushBuffered(string outputPath, long maximumBytes)
 	{
 		if (buffer is null)
 			return OutputPath;
 		if (!disposed)
-			CompleteCore(throwOnError: false);
+			CompleteCore(throwOnError: false, requestRemoteStop: true);
 
 		try
 		{
@@ -195,27 +197,30 @@ public sealed class SemanticRecordingSession : IDisposable
 		return output.ToString();
 	}
 
-	private void CompleteCore(bool throwOnError)
+	private void CompleteCore(bool throwOnError, bool requestRemoteStop)
 	{
 		if (!disposed)
 		{
 			disposed = true;
 			WaitForFramesBeforeStop(minFrames: 1);
 			cancellation.Cancel();
-			try
+			if (requestRemoteStop)
 			{
-				if (!string.IsNullOrWhiteSpace(streamSession.Start.SubscriptionId))
+				try
 				{
-					commandSession.Send<StopSendingCommandResponse>(new StopSendingCommandRequest
+					if (!string.IsNullOrWhiteSpace(streamSession.Start.SubscriptionId))
 					{
-						SubscriptionId = streamSession.Start.SubscriptionId,
-						TimeoutMs = Math.Min(timeoutMs, TimeoutDefaults.StreamStopTimeoutMs),
-					});
+						commandSession.Send<StopSendingCommandResponse>(new StopSendingCommandRequest
+						{
+							SubscriptionId = streamSession.Start.SubscriptionId,
+							TimeoutMs = Math.Min(timeoutMs, TimeoutDefaults.StreamStopTimeoutMs),
+						});
+					}
 				}
-			}
-			catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
-			{
-				SetBackgroundError(ex, "recording-stop-failed", "Failed to stop the semantic recording stream.");
+				catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+				{
+					SetBackgroundError(ex, "recording-stop-failed", "Failed to stop the semantic recording stream.");
+				}
 			}
 
 			DisposeSafely(streamSession, "stream-dispose-failed", "Failed to dispose the semantic recording stream.");

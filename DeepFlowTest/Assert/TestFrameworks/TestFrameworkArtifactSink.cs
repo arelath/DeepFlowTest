@@ -8,9 +8,24 @@ using System.Reflection;
 
 internal sealed class TestFrameworkArtifactSink : IDiagnosticsArtifactSink
 {
+	private readonly Func<object?> getXUnitContext;
+	private DiagnosticsTestContext? explicitFailureContext;
+
+	public TestFrameworkArtifactSink()
+		: this(ResolveCurrentXUnitContext)
+	{
+	}
+
+	internal TestFrameworkArtifactSink(Func<object?> getXUnitContext)
+	{
+		this.getXUnitContext = getXUnitContext ?? throw new ArgumentNullException(nameof(getXUnitContext));
+	}
+
 	public DiagnosticsTestContext GetCurrentTestContext()
 	{
-		return TryGetNUnitContext()
+		return explicitFailureContext
+			?? TryGetXUnitContext()
+			?? TryGetNUnitContext()
 			?? new DiagnosticsTestContext
 			{
 				ResultsDirectory = ResolveFallbackResultsDirectory(),
@@ -18,8 +33,31 @@ internal sealed class TestFrameworkArtifactSink : IDiagnosticsArtifactSink
 			};
 	}
 
+	internal void SetExplicitFailureContext(string? testName)
+	{
+		if (explicitFailureContext is not null)
+			return;
+
+		var current = TryGetXUnitContext()
+			?? TryGetNUnitContext()
+			?? new DiagnosticsTestContext
+			{
+				ResultsDirectory = ResolveFallbackResultsDirectory(),
+				TestName = ResolveFallbackTestName(),
+			};
+		explicitFailureContext = new DiagnosticsTestContext
+		{
+			ResultsDirectory = current.ResultsDirectory,
+			TestName = string.IsNullOrWhiteSpace(testName) ? current.TestName : testName!.Trim(),
+			HasFailed = true,
+		};
+	}
+
 	public void AttachArtifact(string path, string description)
 	{
+		if (TryAttachXUnitArtifact(path))
+			return;
+
 		var testContextType = FindLoadedType("nunit.framework", "NUnit.Framework.TestContext");
 		var attach = testContextType?.GetMethod(
 			"AddTestAttachment",
@@ -36,8 +74,90 @@ internal sealed class TestFrameworkArtifactSink : IDiagnosticsArtifactSink
 		Trace.WriteLine($"DeepFlowTest artifact: {path} ({description})");
 	}
 
-	public void Log(AppDriverDiagnostic diagnostic) =>
-		Trace.WriteLine($"DeepFlowTest diagnostics [{diagnostic.Severity}] {diagnostic.Code}: {diagnostic.Message}");
+	public void Log(AppDriverDiagnostic diagnostic)
+	{
+		var message = $"DeepFlowTest diagnostics [{diagnostic.Severity}] {diagnostic.Code}: {diagnostic.Message}";
+		if (!TrySendXUnitDiagnostic(message))
+			Trace.WriteLine(message);
+	}
+
+	private DiagnosticsTestContext? TryGetXUnitContext()
+	{
+		try
+		{
+			var current = getXUnitContext();
+			var test = GetProperty(current, "Test");
+			if (test is null)
+				return null;
+
+			var state = GetProperty(current, "TestState");
+			var result = GetProperty(state, "Result")?.ToString();
+			return new DiagnosticsTestContext
+			{
+				ResultsDirectory = ResolveFallbackResultsDirectory(),
+				TestName = GetStringProperty(test, "TestDisplayName")
+					?? GetStringProperty(test, "DisplayName")
+					?? ResolveFallbackTestName(),
+				HasFailed = string.Equals(result, "Failed", StringComparison.OrdinalIgnoreCase),
+			};
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			return null;
+		}
+	}
+
+	private bool TryAttachXUnitArtifact(string path)
+	{
+		try
+		{
+			var current = getXUnitContext();
+			if (GetProperty(current, "Test") is null)
+				return false;
+
+			var attach = current?.GetType().GetMethod(
+				"AddAttachment",
+				BindingFlags.Public | BindingFlags.Instance,
+				binder: null,
+				types: [typeof(string), typeof(byte[]), typeof(string)],
+				modifiers: null);
+			if (attach is null)
+				return false;
+
+			attach.Invoke(current, [Path.GetFileName(path), File.ReadAllBytes(path), ResolveMediaType(path)]);
+			return true;
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			return false;
+		}
+	}
+
+	private bool TrySendXUnitDiagnostic(string message)
+	{
+		try
+		{
+			var current = getXUnitContext();
+			if (GetProperty(current, "Test") is null)
+				return false;
+
+			var send = current?.GetType().GetMethod(
+				"SendDiagnosticMessage",
+				BindingFlags.Public | BindingFlags.Instance,
+				binder: null,
+				types: [typeof(string)],
+				modifiers: null);
+			if (send is null)
+				return false;
+
+			send.Invoke(current, [message]);
+			return true;
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			return false;
+		}
+	}
 
 	private static DiagnosticsTestContext? TryGetNUnitContext()
 	{
@@ -73,7 +193,35 @@ internal sealed class TestFrameworkArtifactSink : IDiagnosticsArtifactSink
 			?.GetType(typeName);
 
 	private static string? GetStringProperty(object? instance, string propertyName) =>
-		instance?.GetType().GetProperty(propertyName)?.GetValue(instance)?.ToString();
+		GetProperty(instance, propertyName)?.ToString();
+
+	private static object? GetProperty(object? instance, string propertyName) =>
+		instance?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance)?.GetValue(instance);
+
+	private static object? ResolveCurrentXUnitContext()
+	{
+		try
+		{
+			var testContextType = AppDomain.CurrentDomain.GetAssemblies()
+				.Select(static assembly => assembly.GetType("Xunit.TestContext"))
+				.FirstOrDefault(static type => type is not null);
+			return testContextType?.GetProperty("Current", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			return null;
+		}
+	}
+
+	private static string ResolveMediaType(string path) =>
+		Path.GetExtension(path).ToLowerInvariant() switch
+		{
+			".png" => "image/png",
+			".jpg" or ".jpeg" => "image/jpeg",
+			".json" => "application/json",
+			".txt" or ".log" => "text/plain",
+			_ => "application/octet-stream",
+		};
 
 	private static string ResolveFallbackResultsDirectory()
 	{

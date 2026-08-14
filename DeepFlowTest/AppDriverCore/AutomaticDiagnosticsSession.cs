@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using DeepFlowTest.Assert.TestFrameworks;
 using DeepFlowTest.Contracts;
+using DeepFlowTest.Interop;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
@@ -29,11 +30,16 @@ internal sealed class AutomaticDiagnosticsSession
 	private readonly IDiagnosticsArtifactSink sink;
 	private readonly DiagnosticsTestContext initialTestContext;
 	private readonly string artifactRoot;
-	private readonly string sessionDirectory;
 	private readonly string? configuredTracePath;
+	private readonly object completionGate = new();
 	private readonly List<DiagnosticsArtifactManifestEntry> artifacts = [];
+	private string sessionDirectory;
 	private SemanticRecordingSession? recording;
 	private Exception? observedFailure;
+	private string? failureLabel;
+	private int failureCaptureCount;
+	private int attachedArtifactCount;
+	private bool explicitFailureCaptureAttempted;
 	private bool completed;
 
 	private AutomaticDiagnosticsSession(
@@ -58,7 +64,7 @@ internal sealed class AutomaticDiagnosticsSession
 
 	public string? ManifestPath { get; private set; }
 
-	public string? ArtifactDirectory => completed || options.Mode == AutomaticDiagnosticsMode.Always ? sessionDirectory : null;
+	public string? ArtifactDirectory => completed || explicitFailureCaptureAttempted || options.Mode == AutomaticDiagnosticsMode.Always ? sessionDirectory : null;
 
 	public static AutomaticDiagnosticsSession Create(
 		AppDriver driver,
@@ -78,16 +84,44 @@ internal sealed class AutomaticDiagnosticsSession
 
 	public void Complete()
 	{
-		if (completed)
-			return;
-		completed = true;
-		try
+		lock (completionGate)
 		{
-			CompleteCore();
+			if (completed)
+				return;
+			completed = true;
+			try
+			{
+				CompleteCore();
+			}
+			catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+			{
+				RecordDiagnostic(AppDriverDiagnosticSeverity.Error, "automatic-diagnostics-completion-failed", "Automatic diagnostics could not be completed.", ex);
+			}
 		}
-		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+	}
+
+	public void CaptureFailure(Exception? failure, string? label)
+	{
+		lock (completionGate)
 		{
-			RecordDiagnostic(AppDriverDiagnosticSeverity.Error, "automatic-diagnostics-completion-failed", "Automatic diagnostics could not be completed.", ex);
+			if (completed)
+				return;
+
+			MarkFailure(failure);
+			explicitFailureCaptureAttempted = true;
+			try
+			{
+				ApplyFailureLabel(label);
+				if (sink is TestFrameworkArtifactSink frameworkSink)
+					frameworkSink.SetExplicitFailureContext(label);
+				failureCaptureCount++;
+				CaptureFailureArtifacts(failureCaptureCount, label);
+				AttachArtifacts();
+			}
+			catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+			{
+				RecordDiagnostic(AppDriverDiagnosticSeverity.Warning, "failure-diagnostics-capture-failed", "Immediate failure diagnostics could not be fully captured.", ex);
+			}
 		}
 	}
 
@@ -141,12 +175,18 @@ internal sealed class AutomaticDiagnosticsSession
 
 	private void CompleteCore()
 	{
-		var finalContext = GetTestContextSafely();
+		var finalContext = GetFinalTestContext();
 		var failed = observedFailure is not null || finalContext.HasFailed;
-		if (failed)
+		if (failed && !explicitFailureCaptureAttempted)
 			CaptureFailureArtifacts();
 
-		recording?.Dispose();
+		if (recording is not null)
+		{
+			if (HasTargetExited())
+				recording.CompleteAfterTargetExit();
+			else
+				recording.Dispose();
+		}
 		CopyRecordingDiagnostics();
 		var hasReportableDiagnostics = diagnostics.Snapshot().Any(static diagnostic => diagnostic.Severity is AppDriverDiagnosticSeverity.Warning or AppDriverDiagnosticSeverity.Error);
 		var retain = failed || hasReportableDiagnostics || options.RetentionPolicy == DiagnosticsRetentionPolicy.KeepAll;
@@ -178,8 +218,22 @@ internal sealed class AutomaticDiagnosticsSession
 		ApplyRetentionPolicy();
 	}
 
-	private void CaptureFailureArtifacts()
+	private bool HasTargetExited()
 	{
+		try
+		{
+			return driver.Connection.TargetProcess.HasExited;
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			return false;
+		}
+	}
+
+	private void CaptureFailureArtifacts(int captureNumber = 1, string? label = null)
+	{
+		var fileNameSuffix = captureNumber > 1 ? $"-{captureNumber}" : string.Empty;
+		var descriptionLabel = string.IsNullOrWhiteSpace(label) ? string.Empty : $" for '{label!.Trim()}'";
 		if (options.CaptureFinalScreenshotOnFailure)
 		{
 			try
@@ -187,7 +241,7 @@ internal sealed class AutomaticDiagnosticsSession
 				var response = driver.CaptureScreenshot("png");
 				DriverCommandClient.ThrowIfFailure(response, "Final diagnostics screenshot failed.");
 				var bytes = Convert.FromBase64String(response.BytesBase64 ?? string.Empty);
-				TryWriteArtifact("final-screenshot", "final-screenshot.png", bytes, "Final screenshot captured after failure.");
+				TryWriteArtifact("final-screenshot", $"final-screenshot{fileNameSuffix}.png", bytes, $"Final screenshot captured after failure{descriptionLabel}.");
 			}
 			catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 			{
@@ -200,13 +254,30 @@ internal sealed class AutomaticDiagnosticsSession
 			try
 			{
 				var snapshot = driver.GetVisualTree();
-				TryWriteTextArtifact("final-tree", "final-tree.json", JsonConvert.SerializeObject(snapshot, JsonSettings), "Final visual tree captured after failure.");
+				TryWriteTextArtifact("final-tree", $"final-tree{fileNameSuffix}.txt", FormatVisualTree(snapshot), $"Final visual tree captured after failure{descriptionLabel}.");
 			}
 			catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 			{
 				RecordDiagnostic(AppDriverDiagnosticSeverity.Warning, "final-tree-failed", "The final diagnostics visual tree could not be captured.", ex);
 			}
 		}
+	}
+
+	private static string FormatVisualTree(VisualTreeSnapshot snapshot)
+	{
+		using var output = new StringWriter();
+		using (var writer = SemanticRecordingFrameWriter.Create(output, SemanticRecordingOutputFormat.CondensedDiagnostic))
+		{
+			writer.WriteFrame(new SemanticRecordingFrame
+			{
+				FrameKind = "snapshot",
+				SequenceNumber = snapshot.SequenceNumber,
+				TimestampUtc = snapshot.GeneratedUtc,
+				Snapshot = snapshot,
+			});
+		}
+
+		return output.ToString();
 	}
 
 	private void WriteProcessLogs()
@@ -281,8 +352,9 @@ internal sealed class AutomaticDiagnosticsSession
 
 	private void AttachArtifacts()
 	{
-		foreach (var artifact in artifacts.ToArray())
+		while (attachedArtifactCount < artifacts.Count)
 		{
+			var artifact = artifacts[attachedArtifactCount++];
 			var path = Path.Combine(sessionDirectory, artifact.FileName);
 			if (!File.Exists(path) && configuredTracePath is not null && artifact.Kind == "semantic-trace")
 				path = configuredTracePath;
@@ -378,6 +450,35 @@ internal sealed class AutomaticDiagnosticsSession
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
 			return new DiagnosticsTestContext();
+		}
+	}
+
+	private DiagnosticsTestContext GetFinalTestContext()
+	{
+		var context = GetTestContextSafely();
+		if (string.IsNullOrWhiteSpace(failureLabel))
+			return context;
+
+		return new DiagnosticsTestContext
+		{
+			ResultsDirectory = context.ResultsDirectory,
+			TestName = failureLabel!,
+			HasFailed = true,
+		};
+	}
+
+	private void ApplyFailureLabel(string? label)
+	{
+		if (failureLabel is not null || string.IsNullOrWhiteSpace(label))
+			return;
+
+		failureLabel = label!.Trim();
+		if (configuredTracePath is null
+			&& options.Mode != AutomaticDiagnosticsMode.Always
+			&& artifacts.Count == 0
+			&& !Directory.Exists(sessionDirectory))
+		{
+			sessionDirectory = Path.Combine(artifactRoot, CreateSessionDirectoryName(failureLabel, driver.Connection.TargetProcess.Id));
 		}
 	}
 

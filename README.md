@@ -112,9 +112,16 @@ with the core automation package. Install the optional
 `AppDriver` uses `FailureOnly` automatic diagnostics by default. Semantic frames
 are kept in a bounded in-memory ring buffer and are written only when the test or
 driver is marked as failed. A failure artifact set can include the semantic
-trace, final screenshot, final visual-tree snapshot, injector and payload logs,
-protocol diagnostics, and a versioned manifest. The default artifact sink uses
-the test runner's result directory and test name when available.
+trace, final screenshot, a human-readable `final-tree.txt` visual-tree snapshot,
+injector and payload logs, protocol diagnostics, and a versioned manifest. Each
+final-state capture is best effort, so an unavailable target does not mask the
+original test failure. The default artifact sink reads NUnit context and xUnit
+v3's ambient `TestContext`, including the real test name and failure state. It
+also adds artifacts directly to xUnit v3 results. xUnit v2 does not expose an
+ambient result context, so the explicit capture API below supplies the real test
+name and failed state to the default sink for shared xUnit v2 fixtures. A test
+suite can alternatively configure its own
+`AutomaticDiagnosticsOptions.ArtifactSink`.
 
 Select a different lifecycle with `AppDriverOptions.AutomaticDiagnostics`:
 
@@ -131,11 +138,19 @@ var options = new AppDriverOptions
 ```
 
 Use `driver.MarkDiagnosticsFailure(exception)` for failures raised outside a
-DeepFlowTest command or assertion. Automatic recording and artifact errors are
-available through `driver.Diagnostics`; they never make `AppDriver.Dispose()`
-throw. An explicitly started semantic recorder can use `CompleteAsync()` when
-its recording failures should be reported to the caller, while its `Dispose()`
-also remains failure-safe.
+DeepFlowTest command or assertion. If the driver outlives an individual test,
+call `driver.CaptureFailureDiagnostics(exception, testName)` before resetting or
+shutting down the target. It writes and attaches the screenshot and visual tree
+immediately, uses the label as the manifest test name, and prevents teardown from
+retrying final-state capture against a dead target. Repeated calls use numbered
+artifact names so a shared driver can preserve more than one failed test.
+Automatic recording and artifact errors are available through
+`driver.Diagnostics`; they never make `AppDriver.Dispose()` throw. An explicitly
+started semantic recorder can use `CompleteAsync()` when its recording failures
+should be reported to the caller, while its `Dispose()` also remains failure-safe.
+If the target has already exited during automatic-diagnostics teardown, the
+recorder treats that as the expected end of the stream and skips the remote stop
+request while still closing its local reader and flushing buffered frames.
 
 The default command timeout can be adjusted on an active driver. The next
 command, selector wait, binding-failure checkpoint, or newly started stream uses

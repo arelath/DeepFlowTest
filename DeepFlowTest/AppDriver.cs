@@ -281,6 +281,16 @@ public sealed class AppDriver : IDisposable
 	public void MarkDiagnosticsFailure(Exception? failure = null) =>
 		automaticDiagnostics?.MarkFailure(failure);
 
+	/// <summary>
+	/// Marks the current test as failed and immediately captures the configured failure screenshot and visual tree.
+	/// Use this before resetting or shutting down a target that outlives an individual test.
+	/// Capture failures are reported through <see cref="Diagnostics"/> and do not escape this method.
+	/// </summary>
+	/// <param name="failure">The test failure, when available.</param>
+	/// <param name="label">A test name or other label used to identify the captured failure.</param>
+	public void CaptureFailureDiagnostics(Exception? failure = null, string? label = null) =>
+		automaticDiagnostics?.CaptureFailure(failure, label);
+
 	private void ConfigurePayloadDiagnostics()
 	{
 		if (Options.VirtualPointer.IsDefault)
