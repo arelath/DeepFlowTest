@@ -67,6 +67,10 @@ public sealed class AutomaticDiagnosticsTests
 	public void ExplicitFailureCaptureRunsWhileTargetIsAliveAndIsNotRetriedDuringDispose()
 	{
 		var root = CreateCleanDirectory("explicit-failure-capture");
+		var failureDirectory = Path.Combine(root, "FailureScreenshots", "Tools.Tests.UI.SharedSessionTest");
+		Directory.CreateDirectory(failureDirectory);
+		var existingScreenshot = Path.Combine(failureDirectory, "test-framework-screenshot.png");
+		File.WriteAllBytes(existingScreenshot, [9, 8, 7]);
 		var sink = new FakeArtifactSink(root, "collection fixture");
 		var session = new DiagnosticsCommandSession();
 		var process = new FakeTargetProcess();
@@ -83,13 +87,14 @@ public sealed class AutomaticDiagnosticsTests
 			});
 		var failure = new InvalidOperationException("real xUnit test failure");
 
-		driver.CaptureFailureDiagnostics(failure, "Tools.Tests.UI.SharedSessionTest");
+		driver.CaptureFailureDiagnostics(failure, "Tools.Tests.UI.SharedSessionTest", failureDirectory);
 
 		var artifactDirectory = driver.AutomaticDiagnosticsArtifactDirectory;
 		Assert.That(artifactDirectory, Is.Not.Null);
 		Assert.Multiple(() =>
 		{
-			Assert.That(Path.GetFileName(artifactDirectory), Does.Contain("Tools.Tests.UI.SharedSessionTest"));
+			Assert.That(artifactDirectory, Is.EqualTo(Path.GetFullPath(failureDirectory)));
+			Assert.That(File.Exists(existingScreenshot), Is.True);
 			Assert.That(File.Exists(Path.Combine(artifactDirectory!, "final-screenshot.png")), Is.True);
 			Assert.That(File.Exists(Path.Combine(artifactDirectory!, "final-tree.txt")), Is.True);
 			Assert.That(sink.Attachments.Select(Path.GetFileName), Does.Contain("final-screenshot.png"));
@@ -115,6 +120,8 @@ public sealed class AutomaticDiagnosticsTests
 			Assert.That((string?)manifest["testName"], Is.EqualTo("Tools.Tests.UI.SharedSessionTest"));
 			Assert.That((string?)manifest["failure"], Does.Contain("real xUnit test failure"));
 			Assert.That((string?)treeArtifact["description"], Is.EqualTo("Final visual tree captured after failure for 'Tools.Tests.UI.SharedSessionTest'."));
+			Assert.That(Directory.GetParent(driver.AutomaticDiagnosticsManifestPath!)!.FullName, Is.EqualTo(Path.GetFullPath(failureDirectory)));
+			Assert.That(sink.Attachments, Is.All.Matches<string>(path => string.Equals(Path.GetDirectoryName(path), Path.GetFullPath(failureDirectory), StringComparison.OrdinalIgnoreCase)));
 		});
 	}
 

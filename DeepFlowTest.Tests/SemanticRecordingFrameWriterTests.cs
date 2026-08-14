@@ -59,6 +59,36 @@ public sealed class SemanticRecordingFrameWriterTests
 	}
 
 	[Test]
+	public void CondensedAgentUsesSourceAsIdentityForUnnamedImages()
+	{
+		var output = new StringWriter();
+		using (var writer = SemanticRecordingFrameWriter.Create(output, SemanticRecordingOutputFormat.CondensedDiagnostic))
+		{
+			writer.WriteFrame(new SemanticRecordingFrame
+			{
+				FrameKind = "snapshot",
+				SequenceNumber = 1,
+				Snapshot = VisualTreeSnapshot.Create(
+					1,
+					[
+						new VisualTreeNodeDto
+						{
+							TargetId = "dft-target-271a",
+							TypeName = "Image",
+							Properties =
+							{
+								[KnownProperties.Source] = "pack://application:,,,/Assets/toolbar-save.png",
+								[KnownProperties.IsVisible] = false,
+							},
+						},
+					]),
+			});
+		}
+
+		Assert.That(output.ToString(), Does.Contain("Image [271a] source=\"pack://application:,,,/Assets/toolbar-save.png\" !visible"));
+	}
+
+	[Test]
 	public void CondensedAgentWritesActionsSelectorsAndChangedState()
 	{
 		var output = new StringWriter();

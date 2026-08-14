@@ -58,6 +58,7 @@ public sealed partial class TreeService
 		var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
 		var visitedTargetIds = new HashSet<string>(StringComparer.Ordinal);
 		var requestedProperties = options.RequestedPropertyNames ?? VisualTreePropertyExtractor.DefaultPropertyNames;
+		var includeIdentityFallbacks = options.RequestedPropertyNames is null;
 		var isTruncated = false;
 		string? truncationReason = null;
 
@@ -73,7 +74,7 @@ public sealed partial class TreeService
 				break;
 			}
 
-			AddNode(root, parent: null, depth: 0, siblingIndex: nodes.Count, nodes, visited, visitedTargetIds, requestedProperties, options, ref isTruncated, ref truncationReason);
+			AddNode(root, parent: null, depth: 0, siblingIndex: nodes.Count, nodes, visited, visitedTargetIds, requestedProperties, includeIdentityFallbacks, options, ref isTruncated, ref truncationReason);
 		}
 
 		return VisualTreeSnapshot.Create(
@@ -179,6 +180,7 @@ public sealed partial class TreeService
 		HashSet<object> visited,
 		HashSet<string> visitedTargetIds,
 		IEnumerable<string> requestedProperties,
+		bool includeIdentityFallbacks,
 		TreeSnapshotOptions options,
 		ref bool isTruncated,
 		ref string? truncationReason)
@@ -211,7 +213,9 @@ public sealed partial class TreeService
 			RuntimeFamily = wrapper.Metadata.RuntimeFamily,
 			CanReceiveActions = wrapper.Metadata.CanReceiveActions,
 			Hwnd = wrapper.Metadata.Hwnd,
-			Properties = propertyExtractor.Extract(target, requestedProperties),
+			Properties = includeIdentityFallbacks
+				? propertyExtractor.ExtractWithIdentityFallbacks(target, requestedProperties)
+				: propertyExtractor.Extract(target, requestedProperties),
 		};
 		nodes.Add(node);
 		parent?.ChildIds.Add(targetId);
@@ -236,7 +240,7 @@ public sealed partial class TreeService
 			if (isTruncated)
 				break;
 
-			AddNode(children[i], node, depth + 1, i, nodes, visited, visitedTargetIds, requestedProperties, options, ref isTruncated, ref truncationReason);
+			AddNode(children[i], node, depth + 1, i, nodes, visited, visitedTargetIds, requestedProperties, includeIdentityFallbacks, options, ref isTruncated, ref truncationReason);
 		}
 
 		return node;

@@ -21,6 +21,7 @@ public sealed class SemanticRecordingTreeProjector
 		"header",
 		"title",
 		"uid",
+		"source",
 	];
 
 	private static readonly string[] StateProperties =

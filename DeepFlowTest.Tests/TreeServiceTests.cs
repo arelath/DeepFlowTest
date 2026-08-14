@@ -181,6 +181,34 @@ public sealed class TreeServiceTests
 	}
 
 	[Test]
+	public void DefaultSnapshotAndRecordedTargetUseSourceForUnnamedImageIdentity()
+	{
+		var unnamedImage = new Image
+		{
+			Source = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 0, 0, 0, 0 }, 4),
+		};
+		var namedImage = new Image
+		{
+			Name = "namedImage",
+			Source = unnamedImage.Source,
+		};
+		var treeService = new TreeService(rootProvider: () => [unnamedImage, namedImage]);
+
+		var snapshot = treeService.CaptureSnapshot();
+		var unnamedNode = snapshot.Nodes.Single(node => node.TypeName == "Image" && !Equals(node.Properties[KnownProperties.Name], "namedImage"));
+		var namedNode = snapshot.Nodes.Single(node => Equals(node.Properties[KnownProperties.Name], "namedImage"));
+		var recordedTarget = treeService.DescribeTargetForRecording(unnamedImage);
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(unnamedNode.Properties[KnownProperties.Source], Is.Not.Null.And.Not.Empty);
+			Assert.That(namedNode.Properties.ContainsKey(KnownProperties.Source), Is.False);
+			Assert.That(recordedTarget.Properties[KnownProperties.Source], Is.EqualTo(unnamedNode.Properties[KnownProperties.Source]));
+			Assert.That(recordedTarget.SelectorHints.Any(hint => hint.PropertyName == KnownProperties.Source && hint.Kind == "source"), Is.True);
+		});
+	}
+
+	[Test]
 	public void ResourceDictionariesExposeMergedDictionariesAndSystemResources()
 	{
 		var merged = new ResourceDictionary

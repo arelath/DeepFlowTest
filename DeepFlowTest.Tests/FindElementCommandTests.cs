@@ -8,6 +8,8 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Commands;
 using DeepFlowTest.Contracts;
@@ -118,6 +120,31 @@ public sealed class FindElementCommandTests
 			Assert.That(response.Status, Is.EqualTo(ProtocolConstants.Statuses.Ok));
 			Assert.That(response.MatchCount, Is.EqualTo(1));
 			Assert.That(response.Matches[0].TypeName, Is.EqualTo("Button"));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void SourcePropertySelectorFindsUnnamedImage()
+	{
+		var source = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 0, 0, 0, 0 }, 4);
+		var window = CreateWindow("Find image source", new Image { Source = source });
+
+		try
+		{
+			window.Show();
+			var response = Find(new ElementSelectorDto
+			{
+				TypeName = "Image",
+				Properties = { [KnownProperties.Source] = source.ToString() },
+			}, maxMatches: 1);
+
+			Assert.That(response.Status, Is.EqualTo(ProtocolConstants.Statuses.Ok));
+			Assert.That(response.MatchCount, Is.EqualTo(1));
+			Assert.That(response.Matches[0].Properties[KnownProperties.Source], Is.EqualTo(source.ToString()));
 		}
 		finally
 		{

@@ -18,6 +18,15 @@ using Forms = System.Windows.Forms;
 
 public sealed class VisualTreePropertyExtractor
 {
+	private static readonly string[] PrimaryIdentityPropertyNames =
+	[
+		KnownProperties.AutomationId,
+		KnownProperties.AutomationIdAlias,
+		KnownProperties.AutomationName,
+		KnownProperties.AutomationNameAlias,
+		KnownProperties.Name,
+	];
+
 	public static readonly IReadOnlyList<string> DefaultPropertyNames = KnownProperties.DefaultVisualTreePropertyNames;
 
 	public Dictionary<string, object?> Extract(object target, IEnumerable<string>? requestedPropertyNames = null)
@@ -36,6 +45,32 @@ public sealed class VisualTreePropertyExtractor
 
 		return properties;
 	}
+
+	internal Dictionary<string, object?> ExtractWithIdentityFallbacks(object target, IEnumerable<string>? requestedPropertyNames = null)
+	{
+		var properties = Extract(target, requestedPropertyNames);
+		if (HasPrimaryIdentity(properties)
+			|| target is not Image && target is not ImageSource
+			|| properties.ContainsKey(KnownProperties.Source))
+		{
+			return properties;
+		}
+
+		if (TryReadProperty(target, KnownProperties.Source, out var value, out _))
+		{
+			var normalized = NormalizeValue(value);
+			if (normalized is not null && !string.IsNullOrWhiteSpace(Convert.ToString(normalized, CultureInfo.InvariantCulture)))
+				properties[KnownProperties.Source] = normalized;
+		}
+
+		return properties;
+	}
+
+	private static bool HasPrimaryIdentity(IReadOnlyDictionary<string, object?> properties) =>
+		PrimaryIdentityPropertyNames.Any(propertyName =>
+			properties.TryGetValue(propertyName, out var value)
+			&& value is not null and not PropertyExtractionError
+			&& !string.IsNullOrWhiteSpace(Convert.ToString(value, CultureInfo.InvariantCulture)));
 
 	private static IReadOnlyList<string> NormalizeRequestedPropertyNames(IEnumerable<string>? requestedPropertyNames)
 	{
@@ -122,6 +157,18 @@ public sealed class VisualTreePropertyExtractor
 
 				return false;
 			case KnownProperties.Source:
+				if (target is Image image)
+				{
+					value = DescribeImageSource(image.Source);
+					return true;
+				}
+
+				if (target is ImageSource imageSource)
+				{
+					value = DescribeImageSource(imageSource);
+					return true;
+				}
+
 				if (target is ResourceDictionary sourceDictionary)
 				{
 					value = sourceDictionary.Source?.ToString();
@@ -167,6 +214,16 @@ public sealed class VisualTreePropertyExtractor
 			default:
 				return false;
 		}
+	}
+
+	private static string? DescribeImageSource(ImageSource? source)
+	{
+		if (source is null)
+			return null;
+		if (source is BitmapImage bitmapImage && bitmapImage.UriSource is Uri uriSource)
+			return uriSource.OriginalString;
+
+		return Convert.ToString(source, CultureInfo.InvariantCulture);
 	}
 
 	private static bool TryReadWinFormsProperty(Forms.Control target, string propertyName, out object? value)

@@ -127,6 +127,7 @@ internal sealed class CondensedSemanticRecordingFrameWriter : ISemanticRecording
 		"header",
 		"title",
 		"uid",
+		"source",
 	];
 
 	private static readonly string[] StateProperties =

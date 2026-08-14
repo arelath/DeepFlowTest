@@ -40,6 +40,7 @@ internal sealed class AutomaticDiagnosticsSession
 	private int failureCaptureCount;
 	private int attachedArtifactCount;
 	private bool explicitFailureCaptureAttempted;
+	private bool explicitFailureArtifactDirectory;
 	private bool completed;
 
 	private AutomaticDiagnosticsSession(
@@ -100,7 +101,7 @@ internal sealed class AutomaticDiagnosticsSession
 		}
 	}
 
-	public void CaptureFailure(Exception? failure, string? label)
+	public void CaptureFailure(Exception? failure, string? label, string? artifactDirectory)
 	{
 		lock (completionGate)
 		{
@@ -111,6 +112,14 @@ internal sealed class AutomaticDiagnosticsSession
 			explicitFailureCaptureAttempted = true;
 			try
 			{
+				try
+				{
+					ApplyFailureArtifactDirectory(artifactDirectory);
+				}
+				catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+				{
+					RecordDiagnostic(AppDriverDiagnosticSeverity.Warning, "failure-artifact-directory-failed", "The requested failure artifact directory could not be used; diagnostics will use the current session directory.", ex);
+				}
 				ApplyFailureLabel(label);
 				if (sink is TestFrameworkArtifactSink frameworkSink)
 					frameworkSink.SetExplicitFailureContext(label);
@@ -473,13 +482,35 @@ internal sealed class AutomaticDiagnosticsSession
 			return;
 
 		failureLabel = label!.Trim();
-		if (configuredTracePath is null
+		if (!explicitFailureArtifactDirectory
+			&& configuredTracePath is null
 			&& options.Mode != AutomaticDiagnosticsMode.Always
 			&& artifacts.Count == 0
 			&& !Directory.Exists(sessionDirectory))
 		{
 			sessionDirectory = Path.Combine(artifactRoot, CreateSessionDirectoryName(failureLabel, driver.Connection.TargetProcess.Id));
 		}
+	}
+
+	private void ApplyFailureArtifactDirectory(string? artifactDirectory)
+	{
+		if (string.IsNullOrWhiteSpace(artifactDirectory))
+			return;
+
+		var requestedDirectory = Path.GetFullPath(Environment.ExpandEnvironmentVariables(artifactDirectory!));
+		if (string.Equals(sessionDirectory, requestedDirectory, StringComparison.OrdinalIgnoreCase))
+		{
+			explicitFailureArtifactDirectory = true;
+			return;
+		}
+
+		if (failureCaptureCount > 0 || artifacts.Count > 0)
+			throw new InvalidOperationException("The failure diagnostics artifact directory cannot be changed after artifacts have been captured.");
+		if (configuredTracePath is not null || recording?.OutputPath is not null)
+			throw new InvalidOperationException("The failure diagnostics artifact directory cannot be changed after continuous recording has started.");
+
+		sessionDirectory = requestedDirectory;
+		explicitFailureArtifactDirectory = true;
 	}
 
 	private string ResolveArtifactRoot(DiagnosticsTestContext context)

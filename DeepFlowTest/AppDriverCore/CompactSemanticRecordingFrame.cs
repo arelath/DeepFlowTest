@@ -35,6 +35,7 @@ internal static class CompactSemanticRecordingFrame
 			[KnownProperties.Header] = "header",
 			[KnownProperties.Title] = "title",
 			[KnownProperties.Uid] = "uid",
+			[KnownProperties.Source] = "source",
 			[KnownProperties.IsChecked] = "checked",
 			[KnownProperties.Checked] = "checked",
 			[KnownProperties.IsEnabled] = "enabled",
@@ -432,7 +433,7 @@ internal static class CompactSemanticRecordingFrame
 	}
 
 	private static bool IsIdentityProperty(string propertyName) =>
-		propertyName is "name" or "automationName" or "automationId" or "text" or "content" or "header" or "title" or "uid";
+		propertyName is "name" or "automationName" or "automationId" or "text" or "content" or "header" or "title" or "uid" or "source";
 
 	internal static Dictionary<string, object?> CompactPropertyChanges(
 		IReadOnlyDictionary<string, object?> previous,

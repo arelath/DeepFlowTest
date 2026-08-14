@@ -38,6 +38,7 @@ dft-condensed/1 profile=agent source=compact-json
 Window [0001] #MainWindow root
   TextBox [1388] #SearchBox text="hello"
   Button [1389] #SubmitButton .Save
+  Image [271a] source="pack://application:,,,/Assets/toolbar-save.png"
 @3 action at="2026-05-21T22:08:55.2680000Z" kind=click
 > target Button [1389] #SubmitButton summary="Button[AutomationId='SubmitButton']"
 > input mouseButton=left clickCount=1
@@ -157,6 +158,8 @@ Identity properties are printed first. The most compact forms are:
 - `.Save`: `name=Save`
 - `autoName="Save"`: automation name
 - `text="Saved"`, `content="..."`, `header="..."`, `title="..."`, `uid="..."`
+- `source="..."`: source identity used as a fallback for an image without an
+  automation ID or name
 
 Boolean state properties use shorthand:
 
@@ -181,6 +184,12 @@ Condensed output omits noisy data before rendering:
 - child ID lists, HWNDs, framework/runtime internals, and similar transport
   details from the raw frame model
 - nodes without a useful identity, notable state, or window/dialog role
+
+Default snapshots capture `Source` for WPF `Image` and `ImageSource` entries
+only when they have no automation ID or name. This keeps named images compact,
+keeps visible unnamed images in the diagnostic tree, and provides a value that
+can be used with
+`ElementSelector.ByType("Image").WithProperty(KnownProperties.Source, value)`.
 
 MCP condensed output also enables structural pruning. In that mode, layout-only
 `Border`, `Grid`, `ContentPresenter`, `Rectangle`, and `Canvas` nodes are

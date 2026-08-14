@@ -289,7 +289,23 @@ public sealed class AppDriver : IDisposable
 	/// <param name="failure">The test failure, when available.</param>
 	/// <param name="label">A test name or other label used to identify the captured failure.</param>
 	public void CaptureFailureDiagnostics(Exception? failure = null, string? label = null) =>
-		automaticDiagnostics?.CaptureFailure(failure, label);
+		automaticDiagnostics?.CaptureFailure(failure, label, artifactDirectory: null);
+
+	/// <summary>
+	/// Marks the current test as failed and immediately captures the configured failure screenshot and visual tree
+	/// in an existing per-test artifact directory. Use this overload to keep DeepFlowTest diagnostics beside
+	/// screenshots or other artifacts produced by the test framework.
+	/// </summary>
+	/// <param name="failure">The test failure, when available.</param>
+	/// <param name="label">A test name or other label used to identify the captured failure.</param>
+	/// <param name="artifactDirectory">The exact directory in which the failure diagnostics should be written.</param>
+	public void CaptureFailureDiagnostics(Exception? failure, string? label, string artifactDirectory)
+	{
+		if (string.IsNullOrWhiteSpace(artifactDirectory))
+			throw new ArgumentException("The artifact directory cannot be empty.", nameof(artifactDirectory));
+
+		automaticDiagnostics?.CaptureFailure(failure, label, artifactDirectory);
+	}
 
 	private void ConfigurePayloadDiagnostics()
 	{

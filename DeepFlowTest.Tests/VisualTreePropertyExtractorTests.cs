@@ -6,6 +6,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Media.Imaging;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Utility.WpfUtility.Tree;
 using NUnit.Framework;
@@ -68,6 +69,22 @@ public sealed class VisualTreePropertyExtractorTests
 
 		Assert.That(properties.Keys, Is.EqualTo(new[] { KnownProperties.Text }));
 		Assert.That(properties[KnownProperties.Text], Is.EqualTo("visible"));
+	}
+
+	[Test]
+	public void BitmapImageSourceUsesItsUriAsAStablePropertyValue()
+	{
+		const string sourceUri = "pack://application:,,,/Assets/toolbar-save.png";
+		var source = new BitmapImage();
+		source.BeginInit();
+		source.CreateOptions = BitmapCreateOptions.DelayCreation;
+		source.UriSource = new Uri(sourceUri);
+		source.EndInit();
+		var image = new Image { Source = source };
+
+		var properties = new VisualTreePropertyExtractor().Extract(image, [KnownProperties.Source]);
+
+		Assert.That(properties[KnownProperties.Source], Is.EqualTo(sourceUri));
 	}
 
 	[Test]

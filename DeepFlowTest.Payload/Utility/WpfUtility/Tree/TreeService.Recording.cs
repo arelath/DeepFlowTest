@@ -38,8 +38,9 @@ public sealed partial class TreeService
 		{
 		}
 
-		var properties = propertyExtractor.Extract(target, RecordingIdentityPropertyNames);
-		return RecordingIdentityPropertyNames.Any(propertyName => HasUsefulProperty(properties, propertyName));
+		var properties = propertyExtractor.ExtractWithIdentityFallbacks(target, RecordingIdentityPropertyNames);
+		return RecordingIdentityPropertyNames.Any(propertyName => HasUsefulProperty(properties, propertyName))
+			|| HasUsefulProperty(properties, KnownProperties.Source);
 	}
 
 	internal RecordedTarget DescribeTargetForRecording(
@@ -51,7 +52,7 @@ public sealed partial class TreeService
 
 		using var wrapper = TargetObjectWrapper.Create(target);
 		var propertyNames = MergeRecordingPropertyNames(requestedPropertyNames);
-		var properties = propertyExtractor.Extract(target, propertyNames);
+		var properties = propertyExtractor.ExtractWithIdentityFallbacks(target, propertyNames);
 		var targetId = targetIds.GetOrCreateId(target);
 		var summary = BuildRecordingSummary(wrapper.Metadata.DisplayTypeName, properties, targetId);
 		return new RecordedTarget
@@ -101,6 +102,7 @@ public sealed partial class TreeService
 			KnownProperties.Content,
 			KnownProperties.Header,
 			KnownProperties.Title,
+			KnownProperties.Source,
 		})
 		{
 			if (TryGetString(properties, candidate, out var value))
@@ -121,6 +123,7 @@ public sealed partial class TreeService
 		AddHint(hints, properties, KnownProperties.Text, "text", 0.75, "--text");
 		AddHint(hints, properties, KnownProperties.Content, "content", 0.72, "--property");
 		AddHint(hints, properties, KnownProperties.Uid, "uid", 0.80, "--property");
+		AddHint(hints, properties, KnownProperties.Source, "source", 0.78, "--property");
 		hints.Add(new RecordedSelectorHint
 		{
 			Kind = "target-id",

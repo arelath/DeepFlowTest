@@ -144,6 +144,14 @@ shutting down the target. It writes and attaches the screenshot and visual tree
 immediately, uses the label as the manifest test name, and prevents teardown from
 retrying final-state capture against a dead target. Repeated calls use numbered
 artifact names so a shared driver can preserve more than one failed test.
+If the test framework already created a per-test failure-screenshot directory,
+pass it as the third argument to keep the entire DeepFlowTest bundle beside those
+screenshots:
+
+```csharp
+driver.CaptureFailureDiagnostics(exception, testName, failureScreenshotDirectory);
+```
+
 Automatic recording and artifact errors are available through
 `driver.Diagnostics`; they never make `AppDriver.Dispose()` throw. An explicitly
 started semantic recorder can use `CompleteAsync()` when its recording failures
@@ -175,7 +183,10 @@ Each generated `.dft.txt` file uses the condensed agent format: a line-oriented
 recording with short target IDs, user actions, selector hints, the initial
 visual tree snapshot, and later UI deltas. Missing-property entries, empty
 values, layout-only nodes, framework/runtime internals, child ID lists, HWNDs,
-and default visible/enabled state are omitted so the trace stays compact. Set
+and default visible/enabled state are omitted so the trace stays compact.
+Unnamed images use their `Source` as a fallback identity when one is available,
+so they remain visible in diagnostics and can be found with a property selector.
+Set
 `SemanticRecordingOptions.OutputFormat = SemanticRecordingOutputFormat.CompactJson`
 or use `record semantic --recording-format compact-json` when JSON is needed.
 See [CondensedSemanticTextFormat.md](CondensedSemanticTextFormat.md) for the
