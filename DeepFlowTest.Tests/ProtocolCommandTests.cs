@@ -141,6 +141,20 @@ public sealed class ProtocolCommandTests
 	}
 
 	[Test]
+	public void MiddleMouseButtonRoundTripsAsProtocolString()
+	{
+		var click = MessagePacker.ConvertTo<ClickCommandRequest>(new Dictionary<string, object?>
+		{
+			["Kind"] = ProtocolConstants.Commands.Click,
+			["TargetId"] = "button",
+			["MouseButton"] = "middle",
+		});
+
+		Assert.That(click.MouseButton, Is.EqualTo(MouseButtonKind.Middle));
+		Assert.That(click.ToDictionary()["MouseButton"], Is.EqualTo("middle"));
+	}
+
+	[Test]
 	public void BindingFailureDtosRoundTripWithProtocolSeverityStrings()
 	{
 		var failure = new BindingFailureDto

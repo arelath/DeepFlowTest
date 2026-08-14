@@ -328,8 +328,9 @@ public sealed class McpToolTests
 		Assert.That(response.Error!.Code, Is.EqualTo("action-denied"));
 	}
 
-	[Test]
-	public void ClickSendsPayloadCommandWhenActionsAreAllowed()
+	[TestCase("right", MouseButtonKind.Right)]
+	[TestCase("middle", MouseButtonKind.Middle)]
+	public void ClickSendsPayloadCommandWhenActionsAreAllowed(string button, MouseButtonKind expectedButton)
 	{
 		var sessionService = new FakeAppSessionService();
 		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
@@ -341,12 +342,12 @@ public sealed class McpToolTests
 			fixture.Cache,
 			fixture.Options,
 			targetId: "0002",
-			button: "right");
+			button: button);
 
 		Assert.That(response.Success, Is.True);
 		var command = sessionService.Session.Commands.OfType<ClickCommandRequest>().Single();
 		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
-		Assert.That(command.MouseButton, Is.EqualTo(MouseButtonKind.Right));
+		Assert.That(command.MouseButton, Is.EqualTo(expectedButton));
 	}
 
 	[Test]

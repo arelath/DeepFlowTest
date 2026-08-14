@@ -70,6 +70,12 @@ public partial class MainWindow : Window
 		EventDisplay.Text = "HelloWorldButton_RightClick event triggered.";
 	}
 
+	private void HelloWorldButton_MouseDown(object sender, MouseButtonEventArgs e)
+	{
+		if (e.ChangedButton == MouseButton.Middle)
+			EventDisplay.Text = "HelloWorldButton_MiddleClick event triggered.";
+	}
+
 	private void HelloWorldButton_ToolTipOpening(object sender, RoutedEventArgs e)
 	{
 		EventDisplay.Text = "HelloWorldButton_ToolTipOpening event triggered.";

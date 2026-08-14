@@ -313,13 +313,14 @@ public sealed class ElementApiTests
 	public void FluentActionMethodsSendExpectedCommandRequests()
 	{
 		var sessionResponses = new object[] { FindMatch("button", "submit") }
-			.Concat(Enumerable.Range(0, 13).Select(_ => (object)StandardIpcResponse.Ok()))
+			.Concat(Enumerable.Range(0, 14).Select(_ => (object)StandardIpcResponse.Ok()))
 			.ToArray();
 		var session = new FakeSession(sessionResponses);
 		var driver = CreateDriver(session);
 		var element = driver.GetElement(ElementSelector.ByName("submit"));
 
 		element.RightClick()
+			.MiddleClick()
 			.Focus()
 			.Select()
 			.Expand()
@@ -337,6 +338,7 @@ public sealed class ElementApiTests
 		Assert.That(commands.Select(static command => command.GetType()), Is.EqualTo(new[]
 		{
 			typeof(ClickCommandRequest),
+			typeof(ClickCommandRequest),
 			typeof(FocusCommandRequest),
 			typeof(KnownOperationCommandRequest),
 			typeof(KnownOperationCommandRequest),
@@ -352,6 +354,7 @@ public sealed class ElementApiTests
 		}));
 
 		Assert.That(((ClickCommandRequest)commands[0]).MouseButton, Is.EqualTo(MouseButtonKind.Right));
+		Assert.That(((ClickCommandRequest)commands[1]).MouseButton, Is.EqualTo(MouseButtonKind.Middle));
 		Assert.That(commands.OfType<KnownOperationCommandRequest>().Select(static command => command.Operation), Is.EqualTo(new[]
 		{
 			"Select",
@@ -363,11 +366,11 @@ public sealed class ElementApiTests
 			"AcceptDialog",
 			"CancelDialog",
 		}));
-		var typeText = (TypeTextCommandRequest)commands[10];
+		var typeText = (TypeTextCommandRequest)commands[11];
 		Assert.That(typeText.Text, Is.EqualTo("abc"));
 		Assert.That(typeText.ClearFirst, Is.True);
-		Assert.That(((RaiseEventCommandRequest)commands[11]).EventName, Is.EqualTo("Click"));
-		var setProperty = (SetPropertyCommandRequest)commands[12];
+		Assert.That(((RaiseEventCommandRequest)commands[12]).EventName, Is.EqualTo("Click"));
+		var setProperty = (SetPropertyCommandRequest)commands[13];
 		Assert.That(setProperty.PropertyName, Is.EqualTo("Text"));
 		Assert.That(setProperty.PropertyValue, Is.EqualTo("updated"));
 		Assert.That(commands.Select(TargetIdOf), Is.All.EqualTo("button"));

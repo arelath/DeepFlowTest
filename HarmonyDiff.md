@@ -18,7 +18,7 @@ Both projects patch the same WPF/dialog surfaces:
 
 | Target | DeepFlowTest | WpfPilot2 | Notes |
 | --- | --- | --- | --- |
-| `MouseDevice.GetButtonState` | Yes | Yes | Fakes left/right mouse pressed state. |
+| `MouseDevice.GetButtonState` | Yes | Yes | DeepFlowTest fakes left/right/middle mouse pressed state; WpfPilot2 fakes left/right. |
 | `ButtonBase.UpdateIsPressed` | Yes | Yes | Toggles button pressed state without real mouse coordinates. |
 | `GridViewColumnHeader.IsMouseOutside` | Yes | Yes | Forces mouse-inside behavior. |
 | `MenuItem.HandleMouseDown` | Yes | Yes | Clicks menu headers on mouse down. |

@@ -15,6 +15,8 @@ public partial class Element
 
 	public virtual Element RightClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, MouseButton = MouseButtonKind.Right });
 
+	public virtual Element MiddleClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, MouseButton = MouseButtonKind.Middle });
+
 	public virtual Element DoubleClick() =>
 		UsesNativeClickPayload()
 			? SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, ClickCount = 2 })

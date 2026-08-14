@@ -7,18 +7,19 @@ using NUnit.Framework;
 [TestFixture]
 public sealed class ActionCommandHandlerTests
 {
-	[Test]
-	public void ClickSendsPayloadRequest()
+	[TestCase("right", MouseButtonKind.Right)]
+	[TestCase("middle", MouseButtonKind.Middle)]
+	public void ClickSendsPayloadRequest(string button, MouseButtonKind expectedButton)
 	{
 		var session = new FakeAppSessionService();
 		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
 
-		var result = CliTestHost.Run(new[] { "click", "--pid", "1234", "--target", "0002", "--button", "right" }, services);
+		var result = CliTestHost.Run(new[] { "click", "--pid", "1234", "--target", "0002", "--button", button }, services);
 
 		Assert.That(result.ExitCode, Is.EqualTo(0));
 		var command = session.Session.Commands.OfType<ClickCommandRequest>().Single();
 		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
-		Assert.That(command.MouseButton, Is.EqualTo(MouseButtonKind.Right));
+		Assert.That(command.MouseButton, Is.EqualTo(expectedButton));
 	}
 
 	[Test]

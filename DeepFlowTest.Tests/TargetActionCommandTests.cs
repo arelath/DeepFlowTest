@@ -33,6 +33,10 @@ public sealed class TargetActionCommandTests
 	{
 		var clickCount = 0;
 		var rightClickCount = 0;
+		var middleDownCount = 0;
+		var middleUpCount = 0;
+		var middleWasPressedOnDown = false;
+		var middleWasReleasedOnUp = false;
 		var button = new Button { Name = "actionButton", Content = "Ready" };
 		button.Click += (_, _) =>
 		{
@@ -40,6 +44,22 @@ public sealed class TargetActionCommandTests
 			button.Content = "Clicked";
 		};
 		button.MouseRightButtonUp += (_, _) => rightClickCount++;
+		button.MouseDown += (_, args) =>
+		{
+			if (args.ChangedButton == MouseButton.Middle)
+			{
+				middleDownCount++;
+				middleWasPressedOnDown = args.MiddleButton == MouseButtonState.Pressed;
+			}
+		};
+		button.MouseUp += (_, args) =>
+		{
+			if (args.ChangedButton == MouseButton.Middle)
+			{
+				middleUpCount++;
+				middleWasReleasedOnUp = args.MiddleButton == MouseButtonState.Released;
+			}
+		};
 		var window = CreateWindow("Click actions", button);
 
 		try
@@ -56,6 +76,12 @@ public sealed class TargetActionCommandTests
 
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, MouseButton = MouseButtonKind.Right }));
 			Assert.That(rightClickCount, Is.EqualTo(1));
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = targetId, MouseButton = MouseButtonKind.Middle }));
+			Assert.That(middleDownCount, Is.EqualTo(1));
+			Assert.That(middleUpCount, Is.EqualTo(1));
+			Assert.That(middleWasPressedOnDown, Is.True);
+			Assert.That(middleWasReleasedOnUp, Is.True);
 
 			AssertOk(CaptureResponse(new KnownRoutedEventCommandRequest { TargetId = targetId, EventName = "Click" }));
 			Assert.That(clickCount, Is.EqualTo(4));
@@ -616,8 +642,10 @@ public sealed class TargetActionCommandTests
 	{
 		var leftClickCount = 0;
 		var rightClickCount = 0;
+		var middleClickCount = 0;
 		var leftCommand = new TestCommand(() => leftClickCount++);
 		var rightCommand = new TestCommand(() => rightClickCount++);
+		var middleCommand = new TestCommand(() => middleClickCount++);
 		var panel = new StackPanel();
 		var leftTarget = new Border
 		{
@@ -633,10 +661,19 @@ public sealed class TargetActionCommandTests
 			Height = 40,
 			Background = Brushes.Transparent,
 		};
+		var middleTarget = new Border
+		{
+			Name = "middleClickGestureTarget",
+			Width = 80,
+			Height = 40,
+			Background = Brushes.Transparent,
+		};
 		leftTarget.InputBindings.Add(new MouseBinding(leftCommand, new MouseGesture(MouseAction.LeftClick)));
 		rightTarget.InputBindings.Add(new MouseBinding(rightCommand, new MouseGesture(MouseAction.RightClick)));
+		middleTarget.InputBindings.Add(new MouseBinding(middleCommand, new MouseGesture(MouseAction.MiddleClick)));
 		panel.Children.Add(leftTarget);
 		panel.Children.Add(rightTarget);
+		panel.Children.Add(middleTarget);
 		var window = CreateWindow("MouseBinding click gestures", panel);
 
 		try
@@ -644,12 +681,15 @@ public sealed class TargetActionCommandTests
 			window.Show();
 			var leftTargetId = FindTargetId("leftClickGestureTarget");
 			var rightTargetId = FindTargetId("rightClickGestureTarget");
+			var middleTargetId = FindTargetId("middleClickGestureTarget");
 
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = leftTargetId }));
 			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = rightTargetId, MouseButton = MouseButtonKind.Right }));
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = middleTargetId, MouseButton = MouseButtonKind.Middle }));
 
 			Assert.That(leftClickCount, Is.EqualTo(1));
 			Assert.That(rightClickCount, Is.EqualTo(1));
+			Assert.That(middleClickCount, Is.EqualTo(1));
 		}
 		finally
 		{

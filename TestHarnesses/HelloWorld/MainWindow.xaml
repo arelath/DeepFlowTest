@@ -65,6 +65,7 @@
                     Content="Click here"
                     Click="HelloWorldButton_Click"
                     MouseDoubleClick="HelloWorldButton_DoubleClick"
+                    MouseDown="HelloWorldButton_MouseDown"
                     MouseRightButtonDown="HelloWorldButton_RightClick"
                     ToolTipOpening="HelloWorldButton_ToolTipOpening"
                     AutomationProperties.AutomationId="HelloWorldButton"

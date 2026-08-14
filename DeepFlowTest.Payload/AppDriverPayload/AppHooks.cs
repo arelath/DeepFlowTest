@@ -118,12 +118,15 @@ public static class AppHooks
 			IsLeftMousePressed = isPressed;
 		else if (mouseButton == MouseButton.Right)
 			IsRightMousePressed = isPressed;
+		else if (mouseButton == MouseButton.Middle)
+			IsMiddleMousePressed = isPressed;
 	}
 
 	public static void ResetMouseState()
 	{
 		IsLeftMousePressed = null;
 		IsRightMousePressed = null;
+		IsMiddleMousePressed = null;
 		syntheticMouseScreenPosition = null;
 		syntheticCapturedMouseElement = null;
 		syntheticMouseHitTarget = null;
@@ -210,6 +213,8 @@ public static class AppHooks
 
 	public static bool? IsRightMousePressed { get; private set; }
 
+	public static bool? IsMiddleMousePressed { get; private set; }
+
 	public static FieldInfo? MouseOverElement { get; } = typeof(MouseDevice).GetField("_mouseOver", BindingFlags.NonPublic | BindingFlags.Instance);
 
 	public static MethodInfo? WriteElementOverElement { get; } = typeof(UIElement).GetMethod("WriteFlag", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -235,6 +240,7 @@ public static class AppHooks
 	private static void WarmupHookedMembers()
 	{
 		TryWarmup(() => _ = Mouse.PrimaryDevice.LeftButton);
+		TryWarmup(() => _ = Mouse.PrimaryDevice.MiddleButton);
 		TryWarmup(() => _ = Keyboard.PrimaryDevice.Modifiers);
 		TryWarmup(() => _ = Keyboard.PrimaryDevice.GetKeyStates(Key.LeftCtrl));
 		TryWarmup(() => _ = Keyboard.PrimaryDevice.IsKeyDown(Key.LeftCtrl));
@@ -410,6 +416,12 @@ public static class AppHooks
 			if (mouseButton == MouseButton.Left && IsLeftMousePressed is not null)
 			{
 				__result = IsLeftMousePressed == true ? MouseButtonState.Pressed : MouseButtonState.Released;
+				return false;
+			}
+
+			if (mouseButton == MouseButton.Middle && IsMiddleMousePressed is not null)
+			{
+				__result = IsMiddleMousePressed == true ? MouseButtonState.Pressed : MouseButtonState.Released;
 				return false;
 			}
 

@@ -89,6 +89,10 @@ public sealed class HelloWorldHarnessParityTests
 
 		AssertOk(Send(new ClickCommandRequest { TargetId = TargetIdByName("HelloWorldButton"), MouseButton = MouseButtonKind.Right }));
 		AssertEventText("HelloWorldButton_RightClick event triggered.");
+
+		AssertOk(Send(new ClickCommandRequest { TargetId = TargetIdByName("HelloWorldButton"), MouseButton = MouseButtonKind.Middle }));
+		AssertEventText("HelloWorldButton_MiddleClick event triggered.");
+
 		AssertOk(Send(new ClickCommandRequest { TargetId = TargetIdByName("FileContextMenuItem") }));
 		AssertEventText("HelloWorldContextMenuFile_Click event triggered.");
 

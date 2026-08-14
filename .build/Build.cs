@@ -58,7 +58,7 @@ internal sealed class Build
 			new BuildTarget("CompileNativeInjector", CompileNativeInjector),
 			new BuildTarget("RepackPayloads", RepackPayloads, "BuildPayload"),
 			new BuildTarget("Compile", Compile, "Restore", "CompileNativeInjector"),
-			new BuildTarget("TestFast", TestFast, "RepackPayloads"),
+			new BuildTarget("TestFast", TestFast, "Compile"),
 			new BuildTarget("TestCore", TestCore, "Restore"),
 			new BuildTarget("TestClient", TestCore, "BuildClient"),
 			new BuildTarget("TestPayload", TestPayload, "BuildPayload"),

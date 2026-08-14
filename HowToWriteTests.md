@@ -85,6 +85,7 @@ var loginBtn = driver.GetElement(ElementSelector.ByAutomationId("LoginButton"));
 loginBtn.Click();
 loginBtn.DoubleClick();
 loginBtn.RightClick();
+loginBtn.MiddleClick();
 
 // Focus
 loginBtn.Focus();

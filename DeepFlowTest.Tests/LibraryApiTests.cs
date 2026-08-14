@@ -502,17 +502,19 @@ public sealed class LibraryApiTests
 			},
 			MatchCount = 1,
 		};
-		var session = new FakeSession(response, StandardIpcResponse.Ok());
+		var session = new FakeSession(response, StandardIpcResponse.Ok(), StandardIpcResponse.Ok());
 		var driver = AppDriver.CreateForTests(
 			AppConnection.ForAttach(new FakeTargetProcess(), "pipe"),
 			session);
 
 		var button = driver.GetElement<RunButton>(x => x["Name"] == "Run");
-		var clicked = button.Click();
+		var clicked = button.Click().MiddleClick();
 
 		Assert.That(button.TargetId, Is.EqualTo("button"));
 		Assert.That(clicked, Is.SameAs(button));
-		Assert.That(session.SentCommands.OfType<ClickCommandRequest>().Single().TargetId, Is.EqualTo("button"));
+		var commands = session.SentCommands.OfType<ClickCommandRequest>().ToArray();
+		Assert.That(commands.Select(command => command.TargetId), Is.All.EqualTo("button"));
+		Assert.That(commands.Select(command => command.MouseButton), Is.EqualTo(new[] { MouseButtonKind.Left, MouseButtonKind.Middle }));
 	}
 
 	private static FindElementCommandResponse FindMatch(string targetId, string name, string typeName)
