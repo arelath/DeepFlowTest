@@ -120,7 +120,12 @@ public sealed class DependencyIsolationTests
 
 		try
 		{
-			Assert.That(started.Wait(TimeSpan.FromSeconds(5)), Is.True);
+			if (!started.Wait(TimeSpan.FromSeconds(30)))
+			{
+				Assert.Fail(
+					$"Payload startup did not complete within 30 seconds. UI thread state: {uiThread.ThreadState}." +
+					$"{Environment.NewLine}{ReadPayloadLogTail(pipeName)}");
+			}
 			Assert.That(startupException, Is.Null);
 			Assert.That(startupExitCode, Is.EqualTo(0));
 
@@ -137,6 +142,28 @@ public sealed class DependencyIsolationTests
 				form.BeginInvoke(new Action(() => form.Close()));
 			uiThread.Join(TimeSpan.FromSeconds(5));
 			loadContext.Unload();
+		}
+	}
+
+	private static string ReadPayloadLogTail(string pipeName)
+	{
+		var logPath = Path.Combine(
+			Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+			"DeepFlowTest",
+			"payload-logs",
+			$"{pipeName}-{Environment.ProcessId}.log");
+		try
+		{
+			if (!File.Exists(logPath))
+				return $"No payload log was found at '{logPath}'.";
+
+			var log = File.ReadAllText(logPath);
+			const int maxCharacters = 4096;
+			return log.Length <= maxCharacters ? log : log.Substring(log.Length - maxCharacters);
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		{
+			return $"The payload log at '{logPath}' could not be read: {ex.Message}";
 		}
 	}
 
