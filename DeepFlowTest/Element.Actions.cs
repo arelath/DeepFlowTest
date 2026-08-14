@@ -113,6 +113,16 @@ public partial class Element
 		return this;
 	}
 
+	/// <summary>
+	/// Queues <paramref name="code"/> on the target's dispatcher and returns as soon as it is queued, without
+	/// waiting for it or reporting its outcome. Use this when the target is expected to handle the outcome
+	/// itself - an intentional crash, or a shutdown that tears down the pipe - because a normal
+	/// <see cref="Invoke{TInput}"/> would capture the exception as a command failure instead of letting it reach
+	/// the target's unhandled-exception handling.
+	/// </summary>
+	public virtual Element InvokeDetached<TInput>(Expression<Action<TInput>> code) =>
+		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, Detached = true });
+
 	public virtual Element InvokeAsync<TInput>(Expression<Func<TInput, Task>> code, TimeSpan? timeout = null)
 	{
 		SendTargetedWithRepair(() => new InvokeCommandRequest { TargetId = TargetId, Code = Eval.SerializeCode(code), AllowUnsafeCode = true, TimeoutMs = EffectiveCommandTimeout(timeout) });

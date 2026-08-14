@@ -21,6 +21,9 @@ internal static class TargetExpressionEvaluator
 		return awaitTasks ? AwaitTaskResult(result, timeoutMs) : result;
 	}
 
+	public static bool TryGetDelegate(object? rawPayload, out Delegate expression) =>
+		TryGetExpressionDelegate(rawPayload, out expression);
+
 	private static bool TryGetExpressionDelegate(object? rawPayload, out Delegate expression)
 	{
 		expression = null!;

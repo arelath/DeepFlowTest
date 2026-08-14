@@ -448,6 +448,14 @@ public sealed record class InvokeCommandRequest : TargetedIpcCommand
 	public object? Code { get; set; }
 
 	public bool AllowUnsafeCode { get; set; }
+
+	/// <summary>
+	/// Posts the code to the target's dispatcher and responds as soon as it is queued, instead of running it
+	/// inline and reporting its outcome. Use this for actions the target is expected to handle itself - an
+	/// intentional crash, an app shutdown, or anything else whose exception must reach the target's own
+	/// unhandled-exception handling rather than being captured as a command failure.
+	/// </summary>
+	public bool Detached { get; set; }
 }
 
 public sealed record class StartSendingCommandRequest : IpcCommand

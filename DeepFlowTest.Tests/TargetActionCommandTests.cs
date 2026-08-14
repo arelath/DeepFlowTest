@@ -447,6 +447,56 @@ public sealed class TargetActionCommandTests
 		}
 	}
 
+	// Repro for container styles that declare the ContextMenu on the item container
+	// (Actipro's TabItemContainerStyle on DockingWindowContainerTabItem) while the only
+	// element a test can address is a child of the header - typically the TextBlock that
+	// carries the tab title. WPF walks up from the element under the pointer to the nearest
+	// ancestor that owns a ContextMenu and makes that ancestor the PlacementTarget, so the
+	// right-click path has to do the same or the menu never opens (and PlacementTarget.*
+	// bindings inside it resolve against the wrong element).
+	[Test]
+	public void RightClickOpensContextMenuDeclaredOnAncestorContainer()
+	{
+		var contextMenu = new ContextMenu();
+		contextMenu.Items.Add(new MenuItem { Header = "Close other tabs", Name = "ancestorMenuCloseOtherTabs" });
+		var tabTitle = new TextBlock { Name = "ancestorMenuTabTitle", Text = "sinkPedC_01" };
+		var tabContainer = new Border
+		{
+			Name = "ancestorMenuTabContainer",
+			Background = Brushes.Transparent,
+			Width = 140,
+			Height = 32,
+			ContextMenu = contextMenu,
+			Child = tabTitle,
+		};
+		var window = CreateWindow("Ancestor-owned context menu", tabContainer);
+
+		try
+		{
+			window.Show();
+			var tabTitleId = FindTargetId("ancestorMenuTabTitle");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = tabTitleId, MouseButton = MouseButtonKind.Right }));
+
+			Assert.That(
+				WaitUntil(() => contextMenu.IsOpen),
+				Is.True,
+				"Right-clicking a child of the container should open the container's ContextMenu.");
+			Assert.That(
+				contextMenu.PlacementTarget,
+				Is.SameAs(tabContainer),
+				"PlacementTarget must be the element that declares the ContextMenu, not the clicked child.");
+
+			// The opened menu's items must be addressable so tests can click them.
+			Assert.That(FindTargetId("ancestorMenuCloseOtherTabs"), Is.Not.Empty);
+		}
+		finally
+		{
+			contextMenu.IsOpen = false;
+			window.Close();
+		}
+	}
+
 	// Repro for Actipro's docking-tab context menu, which does not use a static
 	// ContextMenu property — instead it subscribes to ContextMenuOpening and
 	// assembles the menu on the fly in response. ClickWpfElement's right-click
@@ -1674,6 +1724,75 @@ public sealed class TargetActionCommandTests
 		}
 		finally
 		{
+			window.Close();
+		}
+	}
+
+	// Repro for commands the app is meant to handle itself - Sage's Debug > Simulate Crash divides by zero on
+	// purpose so its unhandled-exception handler runs and the process exits nonzero. Running the command inline
+	// puts the payload's command handler on the stack, so the exception comes back as a command failure and the
+	// app never crashes. A detached invoke has to queue the code on the dispatcher and answer as soon as it is
+	// queued, leaving the exception to reach the target the same way a real click would.
+	[Test]
+	public void DetachedInvokeLeavesTheExceptionToTheTarget()
+	{
+		var executeCount = 0;
+		var menuItem = new MenuItem
+		{
+			Name = "detachedCrashMenuItem",
+			Header = "Simulate Crash",
+			Command = new TestCommand(() =>
+			{
+				executeCount++;
+				throw new DivideByZeroException("Simulated crash.");
+			}),
+		};
+		var window = CreateWindow("Detached invoke", menuItem);
+		Expression<Action<MenuItem>> executeCommand = x => x.Command.Execute(x.CommandParameter);
+		Exception? dispatcherException = null;
+		void OnUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs args)
+		{
+			dispatcherException = args.Exception;
+			args.Handled = true;
+		}
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("detachedCrashMenuItem");
+
+			var inline = (StandardIpcResponse)CaptureResponse(new InvokeCommandRequest
+			{
+				TargetId = targetId,
+				Code = Eval.SerializeCode(executeCommand),
+				AllowUnsafeCode = true,
+			})!;
+			Assert.That(inline.Success, Is.False, "An inline invoke reports the failure instead of letting the target see it.");
+			Assert.That(executeCount, Is.EqualTo(1));
+
+			window.Dispatcher.UnhandledException += OnUnhandledException;
+
+			AssertOk(CaptureResponse(new InvokeCommandRequest
+			{
+				TargetId = targetId,
+				Code = Eval.SerializeCode(executeCommand),
+				AllowUnsafeCode = true,
+				Detached = true,
+			}));
+
+			Assert.That(
+				WaitUntil(() => dispatcherException is not null),
+				Is.True,
+				"The detached code should have run on the dispatcher and thrown there.");
+			Assert.That(
+				dispatcherException,
+				Is.TypeOf<DivideByZeroException>(),
+				"The target must see the original exception, not the reflection wrapper.");
+			Assert.That(executeCount, Is.EqualTo(2));
+		}
+		finally
+		{
+			window.Dispatcher.UnhandledException -= OnUnhandledException;
 			window.Close();
 		}
 	}

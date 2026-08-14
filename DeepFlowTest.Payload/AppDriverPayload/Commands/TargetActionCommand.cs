@@ -3,9 +3,11 @@ namespace DeepFlowTest.AppDriverPayload.Commands;
 using System;
 using System.Globalization;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Commands.TargetAdapters;
 using DeepFlowTest.Contracts;
@@ -131,6 +133,9 @@ internal static partial class TargetActionCommand
 
 		return WithTarget(ProtocolConstants.Commands.Invoke, request.TargetId, treeService, target =>
 		{
+			if (request.Detached)
+				return PostDetachedInvoke(target, request);
+
 			if (TargetExpressionEvaluator.CanEvaluate(request.Code))
 			{
 				var result = TargetExpressionEvaluator.Evaluate(target, request.Code, request.TimeoutMs, awaitTasks: true);
@@ -155,6 +160,52 @@ internal static partial class TargetActionCommand
 				return ActionResult.Unsupported($"Invoke method '{methodName}' failed: {ex.InnerException.Message}");
 			}
 		});
+	}
+
+	// Detached invokes queue the code on the target's dispatcher and report success as soon as it is queued.
+	// Running it inline would put the payload's command handler on the stack, so anything the code throws is
+	// captured as a command failure and never reaches the target's own unhandled-exception handling. Tests that
+	// drive an intentional crash (or an app shutdown) need the opposite: the exception has to escape to the
+	// dispatcher exactly as it would from a real click.
+	private static ActionResult PostDetachedInvoke(object target, InvokeCommandRequest request)
+	{
+		if (target is not DispatcherObject dispatcherObject)
+			return ActionResult.Unsupported("Detached invoke requires a target that belongs to a dispatcher.");
+
+		Action detachedAction;
+		if (TargetExpressionEvaluator.TryGetDelegate(request.Code, out var expression))
+		{
+			detachedAction = () => InvokeWithoutWrapping(() => expression.DynamicInvoke(target));
+		}
+		else
+		{
+			var methodName = Convert.ToString(TargetValueConverter.UnwrapJsonValue(request.Code), CultureInfo.InvariantCulture);
+			if (string.IsNullOrWhiteSpace(methodName))
+				return ActionResult.Unsupported("Detached invoke requires a public parameterless method name.");
+
+			var method = target.GetType().GetMethod(methodName!, BindingFlags.Instance | BindingFlags.Public | BindingFlags.FlattenHierarchy, null, Type.EmptyTypes, null);
+			if (method is null)
+				return ActionResult.Unsupported($"Method '{methodName}' was not found or is not parameterless.");
+
+			detachedAction = () => InvokeWithoutWrapping(() => method.Invoke(target, null));
+		}
+
+		dispatcherObject.Dispatcher.BeginInvoke(DispatcherPriority.Send, detachedAction);
+		return ActionResult.Ok();
+	}
+
+	// Reflection-based invocation wraps whatever the code throws in a TargetInvocationException. Rethrowing the
+	// inner exception keeps the type and stack the target's handler would have seen from a direct call.
+	private static void InvokeWithoutWrapping(Func<object?> invocation)
+	{
+		try
+		{
+			invocation();
+		}
+		catch (TargetInvocationException ex) when (ex.InnerException is not null)
+		{
+			ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+		}
 	}
 
 	private static object WithTarget(string commandName, string targetId, TreeService treeService, Func<object, ActionResult> action)

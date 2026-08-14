@@ -758,20 +758,26 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 
 	private static void OpenContextMenu(UIElement target)
 	{
-		if (target is not DependencyObject dependencyObject)
-			return;
-
 		var contextMenuOpeningArgs = TryCreateContextMenuOpeningArgs(target);
 		if (contextMenuOpeningArgs is not null)
 			target.RaiseEvent(contextMenuOpeningArgs);
 
-		var contextMenu = ContextMenuService.GetContextMenu(dependencyObject);
-		if (contextMenu is null)
-			return;
+		// WPF resolves the context menu by walking up from the element under the pointer to the nearest
+		// ancestor that declares one, and that ancestor becomes the PlacementTarget. Container styles
+		// (for example Actipro's TabItemContainerStyle, which puts the menu on DockingWindowContainerTabItem
+		// while the addressable element is a TextBlock inside the tab header) would otherwise be missed
+		// entirely - and menu bindings that walk PlacementTarget.* would bind against the wrong element.
+		foreach (var candidate in GetAscendingVisualTree(target))
+		{
+			var contextMenu = ContextMenuService.GetContextMenu(candidate);
+			if (contextMenu is null)
+				continue;
 
-		contextMenu.PlacementTarget = target;
-		contextMenu.Placement = PlacementMode.Bottom;
-		contextMenu.IsOpen = true;
+			contextMenu.PlacementTarget = candidate;
+			contextMenu.Placement = PlacementMode.Bottom;
+			contextMenu.IsOpen = true;
+			return;
+		}
 	}
 
 	private static RoutedEventArgs? TryCreateContextMenuOpeningArgs(UIElement target)
