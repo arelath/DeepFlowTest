@@ -1,5 +1,6 @@
 namespace DeepFlowTest.AppDriverPayload.Commands;
 
+using DeepFlowTest.AppDriverPayload.Commands.TargetActions;
 using DeepFlowTest.Contracts;
 
 internal sealed class HelloCommandHandler : ICommandHandler<HelloCommandRequest, object>, IImmediateCommandHandler
@@ -65,65 +66,65 @@ internal sealed class ScreenshotCommandHandler : ICommandHandler<ScreenshotComma
 internal sealed class ClickCommandHandler : ICommandHandler<ClickCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(ClickCommandRequest request, CommandContext context) =>
-		TargetActionCommand.Click(request, context.TreeService);
+		PointerTargetActionHandler.Click(request, context.TreeService);
 }
 
 internal sealed class MouseWheelCommandHandler : ICommandHandler<MouseWheelCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(MouseWheelCommandRequest request, CommandContext context) =>
-		TargetActionCommand.MouseWheel(request, context.TreeService);
+		PointerTargetActionHandler.MouseWheel(request, context.TreeService);
 }
 
 internal sealed class DragAndDropCommandHandler : ICommandHandler<DragAndDropCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(DragAndDropCommandRequest request, CommandContext context) =>
-		TargetActionCommand.DragAndDrop(request, context.TreeService);
+		PointerTargetActionHandler.DragAndDrop(request, context.TreeService);
 }
 
 internal sealed class FocusCommandHandler : ICommandHandler<FocusCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(FocusCommandRequest request, CommandContext context) =>
-		TargetActionCommand.Focus(request, context.TreeService);
+		ControlTargetActionHandler.Focus(request, context.TreeService);
 }
 
 internal sealed class TypeTextCommandHandler : ICommandHandler<TypeTextCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(TypeTextCommandRequest request, CommandContext context) =>
-		TargetActionCommand.TypeText(request, context.TreeService);
+		KeyboardTargetActionHandler.TypeText(request, context.TreeService);
 }
 
 internal sealed class KeyPressCommandHandler : ICommandHandler<KeyPressCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(KeyPressCommandRequest request, CommandContext context) =>
-		TargetActionCommand.KeyPress(request, context.TreeService);
+		KeyboardTargetActionHandler.KeyPress(request, context.TreeService);
 }
 
 internal sealed class SetPropertyCommandHandler : ICommandHandler<SetPropertyCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(SetPropertyCommandRequest request, CommandContext context) =>
-		TargetActionCommand.SetProperty(request, context.TreeService);
+		PropertyTargetActionHandler.SetProperty(request, context.TreeService);
 }
 
 internal sealed class RaiseEventCommandHandler : ICommandHandler<RaiseEventCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(RaiseEventCommandRequest request, CommandContext context) =>
-		TargetActionCommand.RaiseEvent(request, context.TreeService);
+		RoutedEventTargetActionHandler.RaiseEvent(request, context.TreeService);
 }
 
 internal sealed class KnownRoutedEventCommandHandler : ICommandHandler<KnownRoutedEventCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(KnownRoutedEventCommandRequest request, CommandContext context) =>
-		TargetActionCommand.KnownRoutedEvent(request, context.TreeService);
+		RoutedEventTargetActionHandler.KnownRoutedEvent(request, context.TreeService);
 }
 
 internal sealed class KnownOperationCommandHandler : ICommandHandler<KnownOperationCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(KnownOperationCommandRequest request, CommandContext context) =>
-		TargetActionCommand.KnownOperation(request, context.TreeService);
+		ControlTargetActionHandler.KnownOperation(request, context.TreeService);
 }
 
 internal sealed class InvokeCommandHandler : ICommandHandler<InvokeCommandRequest, object>, IUiCommandHandler
 {
 	public object Handle(InvokeCommandRequest request, CommandContext context) =>
-		TargetActionCommand.Invoke(request, context.TreeService);
+		ReflectionTargetActionHandler.Invoke(request, context.TreeService);
 }

@@ -11,6 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Forms.Integration;
 using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.AppDriverPayload.Commands;
+using DeepFlowTest.AppDriverPayload.Commands.TargetActions;
 using DeepFlowTest.AppDriverPayload.Commands.TargetAdapters;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -813,13 +814,13 @@ public sealed class WinFormsSupportTests
 	private static object? InvokeKnownOperation(KnownOperationCommandRequest request, TreeService treeService)
 	{
 		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
-		return TargetActionCommand.KnownOperation(request, treeService);
+		return ControlTargetActionHandler.KnownOperation(request, treeService);
 	}
 
 	private static object? InvokeSetProperty(SetPropertyCommandRequest request, TreeService treeService)
 	{
 		PayloadLog.Initialize($"deepflowtest-test-{Guid.NewGuid():N}");
-		return TargetActionCommand.SetProperty(request, treeService);
+		return PropertyTargetActionHandler.SetProperty(request, treeService);
 	}
 
 	private static void AssertOk(object? response)

@@ -6,6 +6,15 @@ using DeepFlowTest.Automation;
 
 internal static class McpCommandLineOptions
 {
+	public static McpServerOptions Parse(IReadOnlyList<string> args)
+	{
+		ArgumentNullException.ThrowIfNull(args);
+
+		var options = new McpServerOptions();
+		Apply(options, args);
+		return options;
+	}
+
 	public static void Apply(McpServerOptions options, IReadOnlyList<string> args)
 	{
 		ArgumentNullException.ThrowIfNull(options);

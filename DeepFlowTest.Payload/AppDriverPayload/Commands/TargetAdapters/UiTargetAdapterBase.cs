@@ -77,27 +77,10 @@ internal abstract class UiTargetAdapterBase : IUiTargetAdapter
 	}
 
 	protected static ActionResult UnsupportedAdapterAction(object target, string actionName) =>
-		TargetActionCommand.UnsupportedAdapterAction(target, actionName);
+		UiTargetAdapterRouter.UnsupportedAction(target, actionName);
 
 	protected static bool TrySetClrProperty(object target, string propertyName, object? value, out ActionResult result)
-	{
-		var property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.FlattenHierarchy);
-		if (property is null)
-		{
-			result = default;
-			return false;
-		}
-
-		if (!property.CanWrite || property.GetIndexParameters().Length != 0)
-		{
-			result = ActionResult.Unsupported($"Property '{propertyName}' is read-only.");
-			return true;
-		}
-
-		property.SetValue(target, TargetValueConverter.ConvertValue(value, property.PropertyType), null);
-		result = ActionResult.Ok();
-		return true;
-	}
+		=> TargetPropertyAccessor.TrySetClrProperty(target, propertyName, value, out result);
 
 	protected static bool TrySetBooleanProperty(object target, IReadOnlyList<string> propertyNames, bool value)
 	{

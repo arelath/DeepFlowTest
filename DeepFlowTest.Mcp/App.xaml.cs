@@ -7,56 +7,44 @@ using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Hosting;
 using DeepFlowTest.Mcp.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 
 public partial class App : Application
 {
-	private ServiceProvider? services;
+	private IHost? host;
 
 	protected override async void OnStartup(StartupEventArgs e)
 	{
 		base.OnStartup(e);
 
-		var serviceCollection = new ServiceCollection();
-		serviceCollection.AddLogging(builder =>
-		{
-			builder.ClearProviders();
-			builder.AddDebug();
-		});
-		serviceCollection.AddDeepFlowMcpCore(e.Args);
-		serviceCollection.AddSingleton<McpGuiSettingsStore>();
-		serviceCollection.AddSingleton<MainWindowViewModel>();
-		serviceCollection.AddSingleton<MainWindow>();
-
-		services = serviceCollection.BuildServiceProvider();
-		var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Configuration.McpServerOptions>>().Value;
-		var window = services.GetRequiredService<MainWindow>();
+		host = McpApplicationHost.Build(e.Args);
+		var options = host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Configuration.McpServerOptions>>().Value;
+		var window = host.Services.GetRequiredService<MainWindow>();
 		MainWindow = window;
 		if (options.Http.StartMinimized)
 			window.WindowState = WindowState.Minimized;
 
 		window.Show();
 
-		var host = services.GetRequiredService<DeepFlowMcpHost>();
 		try
 		{
 			await host.StartAsync();
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
-			services.GetRequiredService<MainWindowViewModel>().LastError = ex.Message;
+			host.Services.GetRequiredService<MainWindowViewModel>().LastError = ex.Message;
 		}
 	}
 
 	protected override void OnExit(ExitEventArgs e)
 	{
-		if (services is not null)
+		if (host is not null)
 		{
-			var host = services.GetService<DeepFlowMcpHost>();
-			if (host is not null)
-				host.StopAsync().GetAwaiter().GetResult();
-
-			services.DisposeAsync().AsTask().GetAwaiter().GetResult();
+			host.StopAsync().GetAwaiter().GetResult();
+			if (host is IAsyncDisposable asyncDisposable)
+				asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+			else
+				host.Dispose();
 		}
 
 		base.OnExit(e);

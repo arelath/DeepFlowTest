@@ -13,9 +13,9 @@ using NUnit.Framework;
 public sealed class AdapterRegistrationTests
 {
 	[Test]
-	public void TargetActionCommandRegistersExtractedUiAdaptersInPrecedenceOrder()
+	public void UiTargetAdapterRouterRegistersExtractedUiAdaptersInPrecedenceOrder()
 	{
-		var adapters = GetStaticArray<IUiTargetAdapter>(typeof(TargetActionCommand), "TargetAdapters");
+		var adapters = GetStaticArray<IUiTargetAdapter>(typeof(UiTargetAdapterRouter), "TargetAdapters");
 
 		Assert.That(
 			adapters.Select(static adapter => adapter.GetType()),
@@ -28,10 +28,38 @@ public sealed class AdapterRegistrationTests
 				typeof(ReflectionTargetAdapter),
 			}));
 		Assert.That(
-			typeof(TargetActionCommand)
+			typeof(UiTargetAdapterRouter)
 				.GetNestedTypes(BindingFlags.NonPublic)
 				.Where(static type => type.Name.Contains("Adapter")),
 			Is.Empty);
+	}
+
+	[Test]
+	public void WpfTargetAdapterRoutesToTopLevelCapabilityTypes()
+	{
+		var assembly = typeof(WpfTargetAdapter).Assembly;
+		var capabilityNames = new[]
+		{
+			"WpfPointerInput",
+			"WpfKeyboardInput",
+			"WpfDragDropSimulator",
+			"WpfPropertyAccessor",
+			"WpfRoutedEventInvoker",
+			"WpfControlOperations",
+			"WpfWindowActivation",
+		};
+
+		foreach (var capabilityName in capabilityNames)
+		{
+			var capability = assembly.GetType($"DeepFlowTest.AppDriverPayload.Commands.TargetAdapters.{capabilityName}");
+			Assert.That(capability, Is.Not.Null, capabilityName);
+			Assert.That(capability!.IsNested, Is.False, capabilityName);
+		}
+
+		Assert.That(
+			typeof(WpfTargetAdapter).GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public),
+			Is.Empty,
+			"The framework adapter should remain a stateless capability router.");
 	}
 
 	[Test]

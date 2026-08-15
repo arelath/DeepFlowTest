@@ -1775,6 +1775,104 @@ public sealed class TargetActionCommandTests
 	}
 
 	[Test]
+	public void TargetActionsPreserveSyntheticInputScopeBoundaries()
+	{
+		var pointerScopes = new List<(bool Broad, bool Mouse)>();
+		var probe = new SyntheticScopeProbe { Name = "syntheticScopeProbe", Content = "Probe" };
+		probe.Click += (_, _) => pointerScopes.Add((AppHooks.IsSyntheticInputActive, AppHooks.IsSyntheticMouseInputActive));
+		var keyboardProbe = new TextCompositionCaptureControl { Name = "syntheticKeyboardProbe" };
+		var panel = new StackPanel();
+		panel.Children.Add(probe);
+		panel.Children.Add(keyboardProbe);
+		var window = CreateWindow("Synthetic input scope contracts", panel);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			DoEvents();
+			var probeId = FindTargetId("syntheticScopeProbe");
+			var keyboardProbeId = FindTargetId("syntheticKeyboardProbe");
+
+			AssertOk(CaptureResponse(new ClickCommandRequest { TargetId = probeId }));
+			Assert.That(pointerScopes, Is.EqualTo(new[] { (Broad: true, Mouse: true) }));
+			AssertSyntheticScopesAreInactive();
+
+			AssertOk(CaptureResponse(new KnownRoutedEventCommandRequest { TargetId = probeId, EventName = "Click" }));
+			Assert.That(pointerScopes, Is.EqualTo(new[] { (Broad: true, Mouse: true), (Broad: true, Mouse: false) }));
+			AssertSyntheticScopesAreInactive();
+
+			AssertOk(CaptureResponse(new SetPropertyCommandRequest
+			{
+				TargetId = probeId,
+				PropertyName = nameof(SyntheticScopeProbe.ProbeValue),
+				PropertyValue = "updated",
+			}));
+			Assert.That(probe.PropertySawBroadScope, Is.True);
+			Assert.That(probe.PropertySawMouseScope, Is.False);
+			AssertSyntheticScopesAreInactive();
+
+			AssertOk(CaptureResponse(new InvokeCommandRequest
+			{
+				TargetId = probeId,
+				Code = nameof(SyntheticScopeProbe.ObserveInvokeScope),
+				AllowUnsafeCode = true,
+			}));
+			Assert.That(probe.InvokeSawBroadScope, Is.True);
+			Assert.That(probe.InvokeSawMouseScope, Is.False);
+			AssertSyntheticScopesAreInactive();
+
+			AssertOk(CaptureResponse(new KeyPressCommandRequest { TargetId = keyboardProbeId, Keys = "A" }));
+			Assert.That(keyboardProbe.KeySawBroadScope, Is.True);
+			Assert.That(keyboardProbe.KeySawKeyboardScope, Is.True);
+			AssertSyntheticScopesAreInactive();
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void TargetActionDispatcherProducesExactlyOneResponseForSuccessAndFailure()
+	{
+		var button = new Button { Name = "singleResponseButton", Content = "Single" };
+		var window = CreateWindow("Single response contract", button);
+
+		try
+		{
+			window.Show();
+			var targetId = FindTargetId("singleResponseButton");
+
+			var success = CaptureDispatch(new ClickCommandRequest { TargetId = targetId });
+			Assert.That(success.ResponseCount, Is.EqualTo(1));
+			AssertOk(success.Response);
+
+			var failure = CaptureDispatch(new KnownOperationCommandRequest { TargetId = targetId, Operation = "unsupported-operation" });
+			Assert.That(failure.ResponseCount, Is.EqualTo(1));
+			Assert.That(((StandardIpcResponse)failure.Response!).ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.UnsupportedTarget));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void UntargetedInvalidKeyPreservesDispatcherProtocolError()
+	{
+		var capture = CaptureDispatch(new KeyPressCommandRequest { Keys = "not-a-wpf-key" });
+
+		Assert.That(capture.ResponseCount, Is.EqualTo(1));
+		Assert.That(capture.Response, Is.TypeOf<StandardIpcResponse>());
+		var response = (StandardIpcResponse)capture.Response!;
+		Assert.That(response.Success, Is.False);
+		Assert.That(response.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.ProtocolError));
+		Assert.That(response.Error, Does.Contain(nameof(ArgumentException)));
+		AssertSyntheticScopesAreInactive();
+	}
+
+	[Test]
 	public void ExpressionInvokeSetPropertyAndRaiseEventRunAgainstTarget()
 	{
 		var clickCount = 0;
@@ -2054,6 +2152,13 @@ public sealed class TargetActionCommandTests
 		Assert.That(standard.Status, Is.EqualTo(ProtocolConstants.Statuses.Ok));
 	}
 
+	private static void AssertSyntheticScopesAreInactive()
+	{
+		Assert.That(AppHooks.IsSyntheticInputActive, Is.False);
+		Assert.That(AppHooks.IsSyntheticMouseInputActive, Is.False);
+		Assert.That(AppHooks.IsSyntheticKeyboardInputActive, Is.False);
+	}
+
 	private static bool WaitUntil(Func<bool> condition, int timeoutMs = 5_000)
 	{
 		var stopwatch = Stopwatch.StartNew();
@@ -2123,11 +2228,52 @@ public sealed class TargetActionCommandTests
 	{
 		public string ReceivedText { get; private set; } = string.Empty;
 
+		public bool KeySawBroadScope { get; private set; }
+
+		public bool KeySawKeyboardScope { get; private set; }
+
 		protected override void OnPreviewTextInput(TextCompositionEventArgs e)
 		{
 			ReceivedText += e.Text;
 			e.Handled = true;
 			base.OnPreviewTextInput(e);
+		}
+
+		protected override void OnPreviewKeyDown(KeyEventArgs e)
+		{
+			KeySawBroadScope = AppHooks.IsSyntheticInputActive;
+			KeySawKeyboardScope = AppHooks.IsSyntheticKeyboardInputActive;
+			base.OnPreviewKeyDown(e);
+		}
+	}
+
+	public sealed class SyntheticScopeProbe : Button
+	{
+		private string probeValue = string.Empty;
+
+		public string ProbeValue
+		{
+			get => probeValue;
+			set
+			{
+				PropertySawBroadScope = AppHooks.IsSyntheticInputActive;
+				PropertySawMouseScope = AppHooks.IsSyntheticMouseInputActive;
+				probeValue = value;
+			}
+		}
+
+		public bool PropertySawBroadScope { get; private set; }
+
+		public bool PropertySawMouseScope { get; private set; }
+
+		public bool InvokeSawBroadScope { get; private set; }
+
+		public bool InvokeSawMouseScope { get; private set; }
+
+		public void ObserveInvokeScope()
+		{
+			InvokeSawBroadScope = AppHooks.IsSyntheticInputActive;
+			InvokeSawMouseScope = AppHooks.IsSyntheticMouseInputActive;
 		}
 	}
 
