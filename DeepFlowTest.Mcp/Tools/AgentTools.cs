@@ -649,14 +649,11 @@ internal static class AgentTools
 	public static CallToolResult CloseContext(
 		McpToolRunner runner,
 		McpSessionHost host,
-		McpElementHandleRegistry handles,
 		[Description("Context handle returned by deepflow_open_context.")] string contextId)
 	{
 		var response = runner.Run(() =>
 		{
-			host.RequireContext(contextId);
 			host.CloseContext(contextId);
-			handles.RemoveContext(contextId);
 			return new McpCloseContextResult { ContextId = contextId, Closed = true };
 		}, new { contextId });
 		return McpCallToolResults.FromLegacy(response, static data => (McpCloseContextResult)data!, result =>

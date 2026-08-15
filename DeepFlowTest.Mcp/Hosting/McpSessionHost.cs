@@ -1,103 +1,45 @@
 namespace DeepFlowTest.Mcp.Hosting;
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Contracts;
 using DeepFlowTest.Mcp.Configuration;
-using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 
 internal sealed class McpSessionHost : IDisposable
 {
-	private readonly object gate = new();
 	private readonly McpTargetSessionFactory sessionFactory;
-	private readonly McpSnapshotCache snapshotCache;
-	private readonly McpStreamRegistry streamRegistry;
+	private readonly McpContextRegistry contextRegistry;
 	private readonly IMcpActivitySink? activity;
-	private readonly IOptions<McpServerOptions> options;
-	private readonly McpElementHandleRegistry? elementHandles;
-	private readonly Dictionary<string, ContextState> contexts = new(StringComparer.Ordinal);
-	private McpSession? current;
 
 	public McpSessionHost(
 		McpTargetSessionFactory sessionFactory,
-		McpSnapshotCache snapshotCache,
-		McpStreamRegistry streamRegistry)
-		: this(sessionFactory, snapshotCache, streamRegistry, activity: null, Options.Create(new McpServerOptions()), elementHandles: null)
-	{
-	}
-
-	public McpSessionHost(
-		McpTargetSessionFactory sessionFactory,
-		McpSnapshotCache snapshotCache,
-		McpStreamRegistry streamRegistry,
-		IMcpActivitySink? activity)
-		: this(sessionFactory, snapshotCache, streamRegistry, activity, Options.Create(new McpServerOptions()), elementHandles: null)
-	{
-	}
-
-	public McpSessionHost(
-		McpTargetSessionFactory sessionFactory,
-		McpSnapshotCache snapshotCache,
-		McpStreamRegistry streamRegistry,
-		IMcpActivitySink? activity,
-		IOptions<McpServerOptions> options)
-		: this(sessionFactory, snapshotCache, streamRegistry, activity, options, elementHandles: null)
-	{
-	}
-
-	public McpSessionHost(
-		McpTargetSessionFactory sessionFactory,
-		McpSnapshotCache snapshotCache,
-		McpStreamRegistry streamRegistry,
-		IMcpActivitySink? activity,
-		IOptions<McpServerOptions> options,
-		McpElementHandleRegistry? elementHandles)
+		McpContextRegistry contextRegistry,
+		IMcpActivitySink? activity = null)
 	{
 		this.sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
-		this.snapshotCache = snapshotCache ?? throw new ArgumentNullException(nameof(snapshotCache));
-		this.streamRegistry = streamRegistry ?? throw new ArgumentNullException(nameof(streamRegistry));
+		this.contextRegistry = contextRegistry ?? throw new ArgumentNullException(nameof(contextRegistry));
 		this.activity = activity;
-		this.options = options ?? throw new ArgumentNullException(nameof(options));
-		this.elementHandles = elementHandles;
 	}
 
 	public McpTargetStatus Status
 	{
 		get
 		{
-			lock (gate)
-			{
-				if (current is not null && !current.IsAlive)
-				{
-					streamRegistry.StopForSession(current.SessionId);
-					snapshotCache.Invalidate(current.SessionId);
-					elementHandles?.RemoveContext(ToContextId(current.SessionId));
-				}
-
-				return ToStatus(current, lastActivityUtc: null);
-			}
+			var lookup = contextRegistry.GetSelectedLegacy();
+			return lookup.Status ?? UnattachedStatus();
 		}
 	}
 
-	public McpSession? Current
-	{
-		get
-		{
-			lock (gate)
-				return current;
-		}
-	}
+	public McpSession? Current => contextRegistry.SelectedLegacySession;
 
 	public McpTargetStatus Attach(McpTargetSelector selector, int? timeoutMs = null, bool noInject = false, string? pipeId = null)
 	{
 		var session = sessionFactory.Attach(selector, timeoutMs, noInject, pipeId);
-		var status = ReplaceCurrent(session);
+		var status = Open(session, selectForLegacy: true);
 		PublishTarget("target.attach", "attach", status);
 		return status;
 	}
@@ -105,7 +47,7 @@ internal sealed class McpSessionHost : IDisposable
 	public McpTargetStatus Launch(McpLaunchOptions launchOptions)
 	{
 		var session = sessionFactory.Launch(launchOptions);
-		var status = ReplaceCurrent(session);
+		var status = Open(session, selectForLegacy: true);
 		PublishTarget("target.launch", "launch", status);
 		return status;
 	}
@@ -113,50 +55,29 @@ internal sealed class McpSessionHost : IDisposable
 	public McpTargetStatus AttachContext(McpTargetSelector selector, int? timeoutMs = null, bool noInject = false, string? pipeId = null)
 	{
 		var session = sessionFactory.Attach(selector, timeoutMs, noInject, pipeId);
-		return AddContext(session, "context.attach");
+		return OpenContext(session, "context.attach");
 	}
 
 	public McpTargetStatus LaunchContext(McpLaunchOptions launchOptions)
 	{
 		var session = sessionFactory.Launch(launchOptions);
-		return AddContext(session, "context.launch");
+		return OpenContext(session, "context.launch");
 	}
 
 	public McpTargetStatus Detach()
 	{
-		lock (gate)
-		{
-			if (current is not null)
-			{
-				streamRegistry.StopForSession(current.SessionId);
-				snapshotCache.Invalidate(current.SessionId);
-				elementHandles?.RemoveContext(ToContextId(current.SessionId));
-			}
-			current?.Dispose();
-			current = null;
-			var status = ToStatus(null, lastActivityUtc: null);
-			PublishTarget("target.detach", "detach", status);
-			return status;
-		}
+		contextRegistry.CloseSelectedLegacy();
+		var status = UnattachedStatus();
+		PublishTarget("target.detach", "detach", status);
+		return status;
 	}
 
 	public McpSession RequireSession()
 	{
-		lock (gate)
-		{
-			if (current is null)
-				throw new AutomationException(AutomationErrorCodes.InvalidArguments, "No target is attached. Call deepflow_attach_target or deepflow_launch_target first.");
-
-			if (!current.IsAlive)
-			{
-				streamRegistry.StopForSession(current.SessionId);
-				snapshotCache.Invalidate(current.SessionId);
-				elementHandles?.RemoveContext(ToContextId(current.SessionId));
-				throw new AutomationException(AutomationErrorCodes.TargetExited, $"Target process {current.Target.ProcessId} has exited.");
-			}
-
-			return current;
-		}
+		var lookup = contextRegistry.GetSelectedLegacy();
+		if (lookup.Kind == McpContextLookupKind.Missing)
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "No target is attached. Call deepflow_attach_target or deepflow_launch_target first.");
+		return RequireLiveSession(lookup);
 	}
 
 	public McpSession RequireContext(string contextId)
@@ -164,46 +85,21 @@ internal sealed class McpSessionHost : IDisposable
 		if (string.IsNullOrWhiteSpace(contextId))
 			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "contextId is required.");
 
-		lock (gate)
-		{
-			CleanupExpiredContexts();
-			if (contexts.TryGetValue(contextId, out var state))
-			{
-				if (!state.Session.IsAlive)
-				{
-					RemoveContextCore(contextId, state);
-					throw new AutomationException(AutomationErrorCodes.TargetExited, $"Target process {state.Session.Target.ProcessId} has exited.");
-				}
-
-				state.LastActivityUtc = DateTimeOffset.UtcNow;
-				return state.Session;
-			}
-
-			if (current is not null && string.Equals(contextId, ToContextId(current.SessionId), StringComparison.Ordinal))
-			{
-				if (!current.IsAlive)
-				{
-					streamRegistry.StopForSession(current.SessionId);
-					snapshotCache.Invalidate(current.SessionId);
-					elementHandles?.RemoveContext(contextId);
-					throw new AutomationException(AutomationErrorCodes.TargetExited, $"Target process {current.Target.ProcessId} has exited.");
-				}
-
-				return current;
-			}
-		}
-
-		throw new AutomationException(AutomationErrorCodes.StaleTarget, $"Context '{contextId}' is not active. Open a new context and retry.");
+		var lookup = contextRegistry.Get(contextId);
+		if (lookup.Kind == McpContextLookupKind.Missing)
+			throw new AutomationException(AutomationErrorCodes.StaleTarget, $"Context '{contextId}' is not active. Open a new context and retry.");
+		return RequireLiveSession(lookup);
 	}
 
 	public McpTargetStatus GetContextStatus(string contextId)
 	{
-		var session = RequireContext(contextId);
-		lock (gate)
-		{
-			var lastActivity = contexts.TryGetValue(contextId, out var state) ? state.LastActivityUtc : (DateTimeOffset?)null;
-			return ToStatus(session, lastActivity);
-		}
+		if (string.IsNullOrWhiteSpace(contextId))
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "contextId is required.");
+
+		var lookup = contextRegistry.Get(contextId);
+		if (lookup.Kind == McpContextLookupKind.Missing)
+			throw new AutomationException(AutomationErrorCodes.StaleTarget, $"Context '{contextId}' is not active. Open a new context and retry.");
+		return lookup.Status!;
 	}
 
 	public bool TryGetContextStatus(string contextId, out McpTargetStatus status)
@@ -222,9 +118,15 @@ internal sealed class McpSessionHost : IDisposable
 
 	public McpPolicyOptions GetContextPolicy(string contextId)
 	{
-		_ = RequireContext(contextId);
-		lock (gate)
-			return contexts.TryGetValue(contextId, out var state) ? state.Policy : CopyPolicy(options.Value.Policy);
+		if (string.IsNullOrWhiteSpace(contextId))
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "contextId is required.");
+
+		var lookup = contextRegistry.Get(contextId);
+		if (lookup.Kind == McpContextLookupKind.Missing)
+			throw new AutomationException(AutomationErrorCodes.StaleTarget, $"Context '{contextId}' is not active. Open a new context and retry.");
+		if (lookup.Kind == McpContextLookupKind.Exited)
+			throw TargetExited(lookup.State!.Session);
+		return McpContextRegistry.CopyPolicy(lookup.State!.Policy);
 	}
 
 	public McpTargetStatus CloseContext(string contextId)
@@ -232,24 +134,13 @@ internal sealed class McpSessionHost : IDisposable
 		if (string.IsNullOrWhiteSpace(contextId))
 			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "contextId is required.");
 
-		lock (gate)
-		{
-			if (!contexts.Remove(contextId, out var state))
-			{
-				if (current is not null && string.Equals(contextId, ToContextId(current.SessionId), StringComparison.Ordinal))
-					return Detach();
+		var result = contextRegistry.Close(contextId);
+		if (!result.Closed)
+			throw new AutomationException(AutomationErrorCodes.StaleTarget, $"Context '{contextId}' is not active.");
 
-				throw new AutomationException(AutomationErrorCodes.StaleTarget, $"Context '{contextId}' is not active.");
-			}
-
-			streamRegistry.StopForSession(state.Session.SessionId);
-			snapshotCache.Invalidate(state.Session.SessionId);
-			elementHandles?.RemoveContext(contextId);
-			state.Session.Dispose();
-			var status = ToStatus(null, lastActivityUtc: null);
-			PublishTarget("context.close", "close", status);
-			return status;
-		}
+		var status = UnattachedStatus();
+		PublishTarget(result.WasSelectedLegacy ? "target.detach" : "context.close", result.WasSelectedLegacy ? "detach" : "close", status);
+		return status;
 	}
 
 	public TResponse Send<TResponse>(IpcCommand command, int timeoutMs)
@@ -284,120 +175,40 @@ internal sealed class McpSessionHost : IDisposable
 
 	public void Dispose()
 	{
-		McpSession[] sessions;
-		lock (gate)
-		{
-			foreach (var contextId in contexts.Keys)
-				elementHandles?.RemoveContext(contextId);
-			if (current is not null)
-				elementHandles?.RemoveContext(ToContextId(current.SessionId));
-			sessions = contexts.Values.Select(static state => state.Session)
-				.Concat(current is null ? [] : [current])
-				.DistinctBy(static session => session.SessionId)
-				.ToArray();
-			contexts.Clear();
-			current = null;
-			streamRegistry.StopAll();
-			snapshotCache.Invalidate();
-		}
+		contextRegistry.Dispose();
+	}
 
-		foreach (var session in sessions)
+	private McpTargetStatus Open(McpSession session, bool selectForLegacy)
+	{
+		try
+		{
+			return contextRegistry.Open(session, selectForLegacy);
+		}
+		catch
+		{
 			session.Dispose();
-	}
-
-	private McpTargetStatus ReplaceCurrent(McpSession session)
-	{
-		lock (gate)
-		{
-			if (current is not null)
-			{
-				streamRegistry.StopForSession(current.SessionId);
-				snapshotCache.Invalidate(current.SessionId);
-				elementHandles?.RemoveContext(ToContextId(current.SessionId));
-			}
-			current?.Dispose();
-			current = session;
-			return ToStatus(current, lastActivityUtc: null);
+			throw;
 		}
 	}
 
-	private McpTargetStatus AddContext(McpSession session, string activityKind)
+	private McpTargetStatus OpenContext(McpSession session, string activityKind)
 	{
-		lock (gate)
-		{
-			CleanupExpiredContexts();
-			var contextId = ToContextId(session.SessionId);
-			var state = new ContextState(session, DateTimeOffset.UtcNow, CopyPolicy(options.Value.Policy));
-			contexts[contextId] = state;
-			var status = ToStatus(session, state.LastActivityUtc);
-			PublishTarget(activityKind, session.Source, status);
-			return status;
-		}
+		var status = Open(session, selectForLegacy: false);
+		PublishTarget(activityKind, session.Source, status);
+		return status;
 	}
 
-	private void CleanupExpiredContexts()
+	private static McpSession RequireLiveSession(McpContextLookup lookup)
 	{
-		var timeout = options.Value.ContextIdleTimeoutMs;
-		if (timeout <= 0)
-			return;
-
-		var deadline = DateTimeOffset.UtcNow.AddMilliseconds(-timeout);
-		foreach (var pair in contexts.Where(pair => pair.Value.LastActivityUtc <= deadline).ToArray())
-		{
-			contexts.Remove(pair.Key);
-			RemoveContextCore(pair.Key, pair.Value);
-		}
+		if (lookup.Kind == McpContextLookupKind.Exited)
+			throw TargetExited(lookup.State!.Session);
+		return lookup.State!.Session;
 	}
 
-	private void RemoveContextCore(string contextId, ContextState state)
-	{
-		contexts.Remove(contextId);
-		streamRegistry.StopForSession(state.Session.SessionId);
-		snapshotCache.Invalidate(state.Session.SessionId);
-		elementHandles?.RemoveContext(contextId);
-		state.Session.Dispose();
-	}
+	private static AutomationException TargetExited(McpSession session) =>
+		new(AutomationErrorCodes.TargetExited, $"Target process {session.Target.ProcessId} has exited.");
 
-	private McpTargetStatus ToStatus(McpSession? session, DateTimeOffset? lastActivityUtc)
-	{
-		if (session is null)
-			return new McpTargetStatus { Attached = false, IsAlive = false };
-
-		var isAlive = session.IsAlive;
-		return new McpTargetStatus
-		{
-			ContextId = ToContextId(session.SessionId),
-			Revision = snapshotCache.GetLatestRevision(session.SessionId),
-			LastActivityUtc = lastActivityUtc,
-			ExpiresAtUtc = lastActivityUtc?.AddMilliseconds(Math.Max(0, options.Value.ContextIdleTimeoutMs)),
-			Attached = true,
-			SessionId = session.SessionId.ToString("N"),
-			ProcessId = session.Target.ProcessId,
-			ProcessName = session.Target.ProcessName,
-			MainWindowTitle = session.Target.MainWindowTitle,
-			Architecture = session.Target.Architecture,
-			FrameworkFamily = session.Target.FrameworkFamily,
-			ProtocolVersion = session.AppSession.Hello.ProtocolVersion,
-			Source = session.Source,
-			LaunchedByServer = session.LaunchedByServer,
-			TerminateOnDetach = session.TerminateOnDetach,
-			IsAlive = isAlive,
-			ExitReason = isAlive ? null : session.ExitCode is { } exitCode ? $"exited:{exitCode}" : "exited",
-		};
-	}
-
-	private static string ToContextId(Guid sessionId) => $"ctx_{sessionId:N}";
-
-	private static McpPolicyOptions CopyPolicy(McpPolicyOptions policy) =>
-		new()
-		{
-			AllowLaunch = policy.AllowLaunch,
-			AllowActions = policy.AllowActions,
-			AllowArbitraryInvoke = policy.AllowArbitraryInvoke,
-			AllowFileWrites = policy.AllowFileWrites,
-			AllowedExecutableRoots = [.. policy.AllowedExecutableRoots],
-			AllowedEnvironmentVariables = [.. policy.AllowedEnvironmentVariables],
-		};
+	private static McpTargetStatus UnattachedStatus() => new() { Attached = false, IsAlive = false };
 
 	private static void ThrowIfFailedPayloadResponse(object response)
 	{
@@ -441,13 +252,4 @@ internal sealed class McpSessionHost : IDisposable
 			Summary = status.Attached ? $"{status.ProcessName} ({status.ProcessId})" : "No target attached.",
 			Details = status,
 		});
-
-	private sealed class ContextState(McpSession session, DateTimeOffset lastActivityUtc, McpPolicyOptions policy)
-	{
-		public McpSession Session { get; } = session;
-
-		public DateTimeOffset LastActivityUtc { get; set; } = lastActivityUtc;
-
-		public McpPolicyOptions Policy { get; } = policy;
-	}
 }

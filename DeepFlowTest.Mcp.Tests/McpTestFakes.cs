@@ -51,13 +51,15 @@ internal static class McpTestHost
 		var activity = new McpActivityStore(optionSource);
 		var resources = new DeepFlowResourceStore(optionSource, activity);
 		var factory = new McpTargetSessionFactory(services, launcher ?? new FakeProcessLauncher(), optionSource);
-		var host = new McpSessionHost(factory, cache, streams, activity, optionSource, handles);
+		var contexts = new McpContextRegistry(cache, streams, handles, optionSource);
+		var host = new McpSessionHost(factory, contexts, activity);
 		var runner = new McpToolRunner(host, resources, NullLogger<McpToolRunner>.Instance, activity);
 		var provider = new ServiceCollection()
 			.AddSingleton(host)
 			.AddSingleton(cache)
 			.AddSingleton(streams)
 			.AddSingleton(handles)
+			.AddSingleton(contexts)
 			.AddSingleton(resources)
 			.AddSingleton(activity)
 			.AddSingleton(services)
@@ -177,6 +179,8 @@ internal sealed class FakeAppSession : IAutomationSession
 
 	public bool Disposed { get; private set; }
 
+	public int DisposeCount { get; private set; }
+
 	public VisualTreeSnapshot Snapshot { get; set; } = McpTestHost.Snapshot();
 
 	public IReadOnlyList<StreamMessage> StreamFrames { get; set; } =
@@ -226,6 +230,7 @@ internal sealed class FakeAppSession : IAutomationSession
 
 	public void Dispose()
 	{
+		DisposeCount++;
 		Disposed = true;
 	}
 }

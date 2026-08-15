@@ -23,6 +23,7 @@ internal static class McpServiceCollectionExtensions
 		services.AddSingleton<McpSnapshotCache>();
 		services.AddSingleton<McpElementHandleRegistry>();
 		services.AddSingleton<McpStreamRegistry>();
+		services.AddSingleton<McpContextRegistry>();
 		services.AddSingleton<DeepFlowResourceStore>();
 		services.AddSingleton<McpSessionHost>();
 		services.AddSingleton<McpToolRunner>();
@@ -46,6 +47,7 @@ internal static class McpServiceCollectionExtensions
 		services.AddSingleton(source.GetRequiredService<McpSnapshotCache>());
 		services.AddSingleton(source.GetRequiredService<McpElementHandleRegistry>());
 		services.AddSingleton(source.GetRequiredService<McpStreamRegistry>());
+		services.AddSingleton(source.GetRequiredService<McpContextRegistry>());
 		services.AddSingleton(source.GetRequiredService<DeepFlowResourceStore>());
 		services.AddSingleton(source.GetRequiredService<McpSessionHost>());
 		services.AddSingleton(source.GetRequiredService<McpToolRunner>());
