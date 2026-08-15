@@ -107,6 +107,7 @@ public sealed class RepositoryConfigurationTests
 			"TestFast",
 			"TestCore",
 			"TestCli",
+			"TestMcp",
 			"CompileTestHarnesses",
 			"TestIntegration",
 			"TestCompat",
@@ -121,8 +122,24 @@ public sealed class RepositoryConfigurationTests
 
 		Assert.That(buildScript, Does.Contain("new BuildTarget(\"Compile\", Compile, \"Restore\", \"CompileNativeInjector\")"));
 		Assert.That(buildScript, Does.Contain("new BuildTarget(\"TestFast\", TestFast, \"Compile\")"));
+		Assert.That(buildScript, Does.Contain("new BuildTarget(\"TestMcp\", TestMcp, \"Restore\")"));
 		Assert.That(buildScript, Does.Contain("RepackPayloads();"));
 		Assert.That(buildScript, Does.Contain("RunDotNet(\"build\", CliProject"));
+	}
+
+	[Test]
+	public void FastTestLaneRunsEveryUnitTestProject()
+	{
+		var buildScript = File.ReadAllText(Path.Combine(FindRepositoryRoot(), ".build", "Build.cs"));
+		var testFastStart = buildScript.IndexOf("private void TestFast()", StringComparison.Ordinal);
+		var testFastEnd = buildScript.IndexOf("private void TestCore()", testFastStart, StringComparison.Ordinal);
+		var testFast = buildScript.Substring(testFastStart, testFastEnd - testFastStart);
+
+		Assert.That(testFast, Does.Contain("RunDotNetTest(CoreTestsProject"));
+		Assert.That(testFast, Does.Contain("RunDotNetTest(PayloadTestsProject"));
+		Assert.That(testFast, Does.Contain("RunDotNetTest(CliTestsProject"));
+		Assert.That(testFast, Does.Contain("RunDotNetTest(McpTestsProject"));
+		Assert.That(buildScript, Does.Contain("private string McpTestsProject => Path.Combine(rootDirectory, \"DeepFlowTest.Mcp.Tests\", \"DeepFlowTest.Mcp.Tests.csproj\")"));
 	}
 
 	[Test]
@@ -136,6 +153,7 @@ public sealed class RepositoryConfigurationTests
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Recorder", "DeepFlowTest.Recorder.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Tests", "DeepFlowTest.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Cli.Tests", "DeepFlowTest.Cli.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
+		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Mcp.Tests", "DeepFlowTest.Mcp.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "TestHarnesses", "Directory.Build.props", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 	}
 
@@ -200,6 +218,7 @@ public sealed class RepositoryConfigurationTests
 			"Restore",
 			"Compile",
 			"TestFast",
+			"TestMcp",
 			"CompileTestHarnesses",
 			"PublishCli",
 			"Pack",
@@ -227,6 +246,20 @@ public sealed class RepositoryConfigurationTests
 		Assert.That(File.Exists(Path.Combine(root, "fasttest.ps1")), Is.True);
 		Assert.That(File.Exists(Path.Combine(root, "fastbuild.cmd")), Is.True);
 		Assert.That(File.Exists(Path.Combine(root, "fasttest.cmd")), Is.True);
+	}
+
+	[Test]
+	public void QuickIterationScriptsIncludePayloadAndMcpAliases()
+	{
+		var root = FindRepositoryRoot();
+		var fastTest = File.ReadAllText(Path.Combine(root, "fasttest.ps1"));
+		var fastBuild = File.ReadAllText(Path.Combine(root, "fastbuild.ps1"));
+
+		Assert.That(fastTest, Does.Contain("\"payload\" = @{ Project = \"DeepFlowTest.Payload.Tests\\DeepFlowTest.Payload.Tests.csproj\""));
+		Assert.That(fastTest, Does.Contain("\"payload-tests\" = @{ Project = \"DeepFlowTest.Payload.Tests\\DeepFlowTest.Payload.Tests.csproj\""));
+		Assert.That(fastTest, Does.Contain("\"mcp\" = @{ Project = \"DeepFlowTest.Mcp.Tests\\DeepFlowTest.Mcp.Tests.csproj\""));
+		Assert.That(fastTest, Does.Contain("\"mcp-tests\" = @{ Project = \"DeepFlowTest.Mcp.Tests\\DeepFlowTest.Mcp.Tests.csproj\""));
+		Assert.That(fastBuild, Does.Contain("\"mcp\" = @{ Project = \"DeepFlowTest.Mcp\\DeepFlowTest.Mcp.csproj\""));
 	}
 
 	[Test]

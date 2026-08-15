@@ -18,7 +18,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1 PublishCli --configuration 
 powershell -ExecutionPolicy Bypass -File .\build.ps1 Pack --configuration Release
 ```
 
-`Compile` builds both native injector architectures, managed projects, and repacked payloads. `TestFast` runs the client, payload, and CLI unit tests. `TestIntegration` launches the desktop harness and exercises real-process attachment. `TestCliE2E` runs the packaged CLI against the real WPF and WinForms harnesses and writes command logs under `artifacts/cli-e2e-suites`. `TestFull` combines the declared fast and integration lanes; run the longer CLI E2E lane explicitly on an interactive Windows worker.
+`Compile` builds both native injector architectures, managed projects, and repacked payloads. `TestFast` runs the client, payload, CLI, and MCP unit tests. `TestMcp` runs the MCP suite by itself. `TestIntegration` launches the desktop harness and exercises real-process attachment. `TestCliE2E` runs the packaged CLI against the real WPF and WinForms harnesses and writes command logs under `artifacts/cli-e2e-suites`. `TestFull` combines the declared fast and integration lanes; run the longer CLI E2E lane explicitly on an interactive Windows worker.
 
 ## Fast iteration
 
@@ -27,8 +27,11 @@ Use `fastbuild.ps1` and `fasttest.ps1` while changing one managed project:
 ```powershell
 .\fastbuild.ps1 core
 .\fasttest.ps1 core -Filter TargetActionCommandTests
+.\fasttest.ps1 payload
 .\fastbuild.ps1 cli
 .\fasttest.ps1 cli
+.\fastbuild.ps1 mcp
+.\fasttest.ps1 mcp
 ```
 
 The fast scripts do not replace `Compile` when an integration test needs newly repacked payload assemblies.

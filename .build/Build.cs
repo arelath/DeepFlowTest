@@ -63,6 +63,7 @@ internal sealed class Build
 			new BuildTarget("TestClient", TestCore, "BuildClient"),
 			new BuildTarget("TestPayload", TestPayload, "BuildPayload"),
 			new BuildTarget("TestCli", TestCli, "Restore"),
+			new BuildTarget("TestMcp", TestMcp, "Restore"),
 			new BuildTarget("CompileTestHarnesses", CompileTestHarnesses, "Restore"),
 			new BuildTarget("TestIntegration", TestIntegration, "Compile", "CompileTestHarnesses"),
 			new BuildTarget("TestCliE2E", TestCliE2E, "Compile", "CompileTestHarnesses"),
@@ -139,6 +140,7 @@ internal sealed class Build
 		RunDotNetTest(CoreTestsProject, "--configuration", configuration, "--no-restore");
 		RunDotNetTest(PayloadTestsProject, "--configuration", configuration, "--no-restore");
 		RunDotNetTest(CliTestsProject, "--configuration", configuration, "--no-restore");
+		RunDotNetTest(McpTestsProject, "--configuration", configuration, "--no-restore");
 	}
 
 	private void TestCore()
@@ -154,6 +156,11 @@ internal sealed class Build
 	private void TestCli()
 	{
 		RunDotNetTest(CliTestsProject, "--configuration", configuration, "--no-restore");
+	}
+
+	private void TestMcp()
+	{
+		RunDotNetTest(McpTestsProject, "--configuration", configuration, "--no-restore");
 	}
 
 	private void CompileTestHarnesses()
@@ -360,6 +367,8 @@ internal sealed class Build
 	private string PayloadTestsProject => Path.Combine(rootDirectory, "DeepFlowTest.Payload.Tests", "DeepFlowTest.Payload.Tests.csproj");
 
 	private string CliTestsProject => Path.Combine(rootDirectory, "DeepFlowTest.Cli.Tests", "DeepFlowTest.Cli.Tests.csproj");
+
+	private string McpTestsProject => Path.Combine(rootDirectory, "DeepFlowTest.Mcp.Tests", "DeepFlowTest.Mcp.Tests.csproj");
 
 	private string CliProject => Path.Combine(rootDirectory, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj");
 
