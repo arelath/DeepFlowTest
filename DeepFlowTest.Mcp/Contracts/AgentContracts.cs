@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using ModelContextProtocol.Protocol;
 
 internal enum McpAmbiguityPolicy
@@ -123,7 +123,7 @@ internal abstract record class McpAgentSelector
 {
 	public virtual string? Handle { get; init; }
 
-	public abstract ElementSelector ToCliSelector();
+	public abstract ElementSelector ToAutomationSelector();
 }
 
 internal sealed record class McpHandleSelector : McpAgentSelector
@@ -131,7 +131,7 @@ internal sealed record class McpHandleSelector : McpAgentSelector
 	[Description("Stable element handle returned by deepflow_find.")]
 	public override string? Handle { get; init; }
 
-	public override ElementSelector ToCliSelector() => new();
+	public override ElementSelector ToAutomationSelector() => new();
 }
 
 internal sealed record class McpTargetIdSelector : McpAgentSelector
@@ -139,7 +139,7 @@ internal sealed record class McpTargetIdSelector : McpAgentSelector
 	[Description("Exact current runtime target ID. Prefer handle or semantic fields across UI revisions.")]
 	public string TargetId { get; init; } = string.Empty;
 
-	public override ElementSelector ToCliSelector() => new() { TargetId = TargetId };
+	public override ElementSelector ToAutomationSelector() => new() { TargetId = TargetId };
 }
 
 internal sealed record class McpSemanticSelector : McpAgentSelector
@@ -186,7 +186,7 @@ internal sealed record class McpSemanticSelector : McpAgentSelector
 	[Description("Fallback selector used only when the primary selector has no match; ambiguity never falls through.")]
 	public McpSemanticSelector? Fallback { get; init; }
 
-	public override ElementSelector ToCliSelector() =>
+	public override ElementSelector ToAutomationSelector() =>
 		new()
 		{
 			TypeName = Type,
@@ -605,7 +605,7 @@ internal static class McpCallToolResults
 
 	public static CallToolResult Error(McpToolResponse response, string? contextId = null, long? revision = null)
 	{
-		var source = response.Error ?? new McpToolError { Code = CliErrorCodes.UnexpectedError, Message = "Tool execution failed." };
+		var source = response.Error ?? new McpToolError { Code = AutomationErrorCodes.UnexpectedError, Message = "Tool execution failed." };
 		var error = new McpAgentToolError
 		{
 			Code = NormalizeCode(source.Code, source.Details),
@@ -628,42 +628,42 @@ internal static class McpCallToolResults
 	private static string NormalizeCode(string code, object? details) =>
 		code switch
 		{
-			CliErrorCodes.AmbiguousTarget => "ambiguous_element",
-			CliErrorCodes.StaleTarget when details is McpStaleElementDetails => "stale_element",
-			CliErrorCodes.StaleTarget => "stale_context",
+			AutomationErrorCodes.AmbiguousTarget => "ambiguous_element",
+			AutomationErrorCodes.StaleTarget when details is McpStaleElementDetails => "stale_element",
+			AutomationErrorCodes.StaleTarget => "stale_context",
 			_ => code.Replace('-', '_'),
 		};
 
 	private static bool IsRetryable(string code) =>
-		code is CliErrorCodes.InvalidArguments
-			or CliErrorCodes.TargetNotFound
-			or CliErrorCodes.NoMatch
-			or CliErrorCodes.AmbiguousTarget
-			or CliErrorCodes.StaleTarget
-			or CliErrorCodes.CommandTimeout
-			or CliErrorCodes.TargetExited
-			or CliErrorCodes.PipeFailed
-			or CliErrorCodes.ProtocolError;
+		code is AutomationErrorCodes.InvalidArguments
+			or AutomationErrorCodes.TargetNotFound
+			or AutomationErrorCodes.NoMatch
+			or AutomationErrorCodes.AmbiguousTarget
+			or AutomationErrorCodes.StaleTarget
+			or AutomationErrorCodes.CommandTimeout
+			or AutomationErrorCodes.TargetExited
+			or AutomationErrorCodes.PipeFailed
+			or AutomationErrorCodes.ProtocolError;
 
 	private static bool IsSafeToRepeat(string code) =>
-		code is CliErrorCodes.InvalidArguments
-			or CliErrorCodes.TargetNotFound
-			or CliErrorCodes.NoMatch
-			or CliErrorCodes.AmbiguousTarget
-			or CliErrorCodes.StaleTarget;
+		code is AutomationErrorCodes.InvalidArguments
+			or AutomationErrorCodes.TargetNotFound
+			or AutomationErrorCodes.NoMatch
+			or AutomationErrorCodes.AmbiguousTarget
+			or AutomationErrorCodes.StaleTarget;
 
 	private static McpRecoveryDirective? CreateRecovery(string code, object? details, string? message)
 	{
 		var kind = code switch
 		{
-			CliErrorCodes.AmbiguousTarget => "refine_selector",
-			CliErrorCodes.StaleTarget when details is McpStaleElementDetails => "refresh_and_resolve",
-			CliErrorCodes.StaleTarget => "open_context",
-			CliErrorCodes.NoMatch or CliErrorCodes.TargetNotFound => "observe_and_find",
-			CliErrorCodes.CommandTimeout => "increase_timeout_or_diagnose",
-			CliErrorCodes.TargetExited => "open_context",
-			CliErrorCodes.PipeFailed or CliErrorCodes.ProtocolError => "diagnose_context",
-			CliErrorCodes.InvalidArguments => "correct_arguments",
+			AutomationErrorCodes.AmbiguousTarget => "refine_selector",
+			AutomationErrorCodes.StaleTarget when details is McpStaleElementDetails => "refresh_and_resolve",
+			AutomationErrorCodes.StaleTarget => "open_context",
+			AutomationErrorCodes.NoMatch or AutomationErrorCodes.TargetNotFound => "observe_and_find",
+			AutomationErrorCodes.CommandTimeout => "increase_timeout_or_diagnose",
+			AutomationErrorCodes.TargetExited => "open_context",
+			AutomationErrorCodes.PipeFailed or AutomationErrorCodes.ProtocolError => "diagnose_context",
+			AutomationErrorCodes.InvalidArguments => "correct_arguments",
 			_ when message is not null => "follow_guidance",
 			_ => string.Empty,
 		};

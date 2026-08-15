@@ -35,9 +35,9 @@ public sealed class CliReadServiceTests
 	[Test]
 	public void VisualTreeReaderMapsMalformedResponseToProtocolError()
 	{
-		var ex = Assert.Throws<CliException>(() => new VisualTreeResponseReader().Read(new object()));
+		var ex = Assert.Throws<AutomationException>(() => new VisualTreeResponseReader().Read(new object()));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.ProtocolError));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.ProtocolError));
 	}
 
 	[Test]
@@ -45,7 +45,7 @@ public sealed class CliReadServiceTests
 	{
 		Assert.That(
 			() => new VisualTreeResponseReader().Read(Snapshot(Node(""))),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ProtocolError));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.ProtocolError));
 	}
 
 	[Test]
@@ -65,16 +65,16 @@ public sealed class CliReadServiceTests
 	{
 		var response = StandardIpcResponse.FromError("stale", ProtocolConstants.ErrorCodes.StaleTarget);
 
-		var ex = Assert.Throws<CliException>(() => new VisualTreeResponseReader().Read(response));
+		var ex = Assert.Throws<AutomationException>(() => new VisualTreeResponseReader().Read(response));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.StaleTarget));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.StaleTarget));
 	}
 
 	[Test]
 	public void TargetIdServiceResolvesFullAndShortIds()
 	{
 		var snapshot = Snapshot(Node("root-aaaa1111", isRoot: true), Node("child-bbbb2222", "root-aaaa1111"));
-		var service = new CliTargetIdService();
+		var service = new TargetIdService();
 
 		Assert.That(service.Resolve("child-bbbb2222", snapshot), Is.EqualTo("child-bbbb2222"));
 		Assert.That(service.Resolve("bbbb2222", snapshot), Is.EqualTo("child-bbbb2222"));
@@ -85,17 +85,17 @@ public sealed class CliReadServiceTests
 	{
 		var snapshot = Snapshot(Node("left-same", isRoot: true), Node("right-same", isRoot: true));
 
-		var ex = Assert.Throws<CliException>(() => new CliTargetIdService().Resolve("same", snapshot));
+		var ex = Assert.Throws<AutomationException>(() => new TargetIdService().Resolve("same", snapshot));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.AmbiguousTarget));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.AmbiguousTarget));
 	}
 
 	[Test]
 	public void TargetIdServiceReportsStaleId()
 	{
-		var ex = Assert.Throws<CliException>(() => new CliTargetIdService().Resolve("missing", Snapshot(Node("root", isRoot: true))));
+		var ex = Assert.Throws<AutomationException>(() => new TargetIdService().Resolve("missing", Snapshot(Node("root", isRoot: true))));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.StaleTarget));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.StaleTarget));
 	}
 
 	[Test]
@@ -162,7 +162,7 @@ public sealed class CliReadServiceTests
 		Assert.That(byText.MatchCount, Is.EqualTo(1));
 		Assert.That(
 			() => service.Find(snapshot, new FindSnapshotOptions { PropertyRegex = new KeyValuePair<string, string>(KnownProperties.Text, "[") }),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.InvalidArguments));
 	}
 
 	[Test]

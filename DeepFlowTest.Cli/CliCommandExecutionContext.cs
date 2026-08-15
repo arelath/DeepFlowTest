@@ -46,7 +46,7 @@ internal sealed class CliCommandExecutionContext
 		Execute(
 			commandName,
 			targetBound: false,
-			() => throw new CliException(CliErrorCodes.NotImplemented, $"Command '{commandName}' is not implemented."));
+			() => throw new AutomationException(AutomationErrorCodes.NotImplemented, $"Command '{commandName}' is not implemented."));
 
 	public int Execute(string commandName, bool targetBound, Func<object> execute)
 	{
@@ -68,15 +68,15 @@ internal sealed class CliCommandExecutionContext
 			CliOutput.Write(CliResponseFactory.Success(commandName, data, stopwatch), options, Stdout);
 			return 0;
 		}
-		catch (CliException ex)
+		catch (AutomationException ex)
 		{
 			CliOutput.Write(CliResponseFactory.Error(commandName, ex.ErrorCode, ex.Message, stopwatch, ex.Details), options, Stdout);
 			return ExitCodeMapper.Map(ex.ErrorCode);
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
-			CliOutput.Write(CliResponseFactory.Error(commandName, CliErrorCodes.UnexpectedError, ex.Message, stopwatch), options, Stdout);
-			return ExitCodeMapper.Map(CliErrorCodes.UnexpectedError);
+			CliOutput.Write(CliResponseFactory.Error(commandName, AutomationErrorCodes.UnexpectedError, ex.Message, stopwatch), options, Stdout);
+			return ExitCodeMapper.Map(AutomationErrorCodes.UnexpectedError);
 		}
 	}
 }

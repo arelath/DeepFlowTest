@@ -2,7 +2,7 @@ namespace DeepFlowTest.Mcp.Configuration;
 
 using System;
 using System.Collections.Generic;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 
 internal static class McpCommandLineOptions
 {
@@ -135,11 +135,11 @@ internal static class McpCommandLineOptions
 			return inlineValue;
 
 		if (index + 1 >= args.Count)
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Missing value for '{option}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Missing value for '{option}'.");
 
 		var value = args[++index];
 		if (!allowOptionLikeValue && value.StartsWith("--", StringComparison.Ordinal))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Missing value for '{option}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Missing value for '{option}'.");
 
 		return value;
 	}
@@ -147,7 +147,7 @@ internal static class McpCommandLineOptions
 	private static string NormalizeHttpPath(string path)
 	{
 		if (string.IsNullOrWhiteSpace(path))
-			throw new CliException(CliErrorCodes.InvalidArguments, "HTTP path cannot be empty.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "HTTP path cannot be empty.");
 
 		path = path.Trim();
 		return path.StartsWith("/", StringComparison.Ordinal) ? path : "/" + path;
@@ -156,7 +156,7 @@ internal static class McpCommandLineOptions
 	private static int ParseInt(string value, string option)
 	{
 		if (!int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var result))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid integer value for '{option}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid integer value for '{option}'.");
 
 		return result;
 	}
@@ -166,6 +166,6 @@ internal static class McpCommandLineOptions
 		{
 			"agent" => McpToolProfile.Agent,
 			"full" or "legacy" => McpToolProfile.Full,
-			_ => throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid tool profile '{value}'. Expected 'agent' or 'full'."),
+			_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid tool profile '{value}'. Expected 'agent' or 'full'."),
 		};
 }

@@ -3,7 +3,7 @@ namespace DeepFlowTest.Mcp.Hosting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Mcp.Activity;
@@ -145,14 +145,14 @@ internal sealed class McpSessionHost : IDisposable
 		lock (gate)
 		{
 			if (current is null)
-				throw new CliException(CliErrorCodes.InvalidArguments, "No target is attached. Call deepflow_attach_target or deepflow_launch_target first.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, "No target is attached. Call deepflow_attach_target or deepflow_launch_target first.");
 
 			if (!current.IsAlive)
 			{
 				streamRegistry.StopForSession(current.SessionId);
 				snapshotCache.Invalidate(current.SessionId);
 				elementHandles?.RemoveContext(ToContextId(current.SessionId));
-				throw new CliException(CliErrorCodes.TargetExited, $"Target process {current.Target.ProcessId} has exited.");
+				throw new AutomationException(AutomationErrorCodes.TargetExited, $"Target process {current.Target.ProcessId} has exited.");
 			}
 
 			return current;
@@ -162,7 +162,7 @@ internal sealed class McpSessionHost : IDisposable
 	public McpSession RequireContext(string contextId)
 	{
 		if (string.IsNullOrWhiteSpace(contextId))
-			throw new CliException(CliErrorCodes.InvalidArguments, "contextId is required.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "contextId is required.");
 
 		lock (gate)
 		{
@@ -172,7 +172,7 @@ internal sealed class McpSessionHost : IDisposable
 				if (!state.Session.IsAlive)
 				{
 					RemoveContextCore(contextId, state);
-					throw new CliException(CliErrorCodes.TargetExited, $"Target process {state.Session.Target.ProcessId} has exited.");
+					throw new AutomationException(AutomationErrorCodes.TargetExited, $"Target process {state.Session.Target.ProcessId} has exited.");
 				}
 
 				state.LastActivityUtc = DateTimeOffset.UtcNow;
@@ -186,14 +186,14 @@ internal sealed class McpSessionHost : IDisposable
 					streamRegistry.StopForSession(current.SessionId);
 					snapshotCache.Invalidate(current.SessionId);
 					elementHandles?.RemoveContext(contextId);
-					throw new CliException(CliErrorCodes.TargetExited, $"Target process {current.Target.ProcessId} has exited.");
+					throw new AutomationException(AutomationErrorCodes.TargetExited, $"Target process {current.Target.ProcessId} has exited.");
 				}
 
 				return current;
 			}
 		}
 
-		throw new CliException(CliErrorCodes.StaleTarget, $"Context '{contextId}' is not active. Open a new context and retry.");
+		throw new AutomationException(AutomationErrorCodes.StaleTarget, $"Context '{contextId}' is not active. Open a new context and retry.");
 	}
 
 	public McpTargetStatus GetContextStatus(string contextId)
@@ -213,7 +213,7 @@ internal sealed class McpSessionHost : IDisposable
 			status = GetContextStatus(contextId);
 			return true;
 		}
-		catch (CliException)
+		catch (AutomationException)
 		{
 			status = new McpTargetStatus { ContextId = contextId, Attached = false, IsAlive = false };
 			return false;
@@ -230,7 +230,7 @@ internal sealed class McpSessionHost : IDisposable
 	public McpTargetStatus CloseContext(string contextId)
 	{
 		if (string.IsNullOrWhiteSpace(contextId))
-			throw new CliException(CliErrorCodes.InvalidArguments, "contextId is required.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "contextId is required.");
 
 		lock (gate)
 		{
@@ -239,7 +239,7 @@ internal sealed class McpSessionHost : IDisposable
 				if (current is not null && string.Equals(contextId, ToContextId(current.SessionId), StringComparison.Ordinal))
 					return Detach();
 
-				throw new CliException(CliErrorCodes.StaleTarget, $"Context '{contextId}' is not active.");
+				throw new AutomationException(AutomationErrorCodes.StaleTarget, $"Context '{contextId}' is not active.");
 			}
 
 			streamRegistry.StopForSession(state.Session.SessionId);
@@ -278,7 +278,7 @@ internal sealed class McpSessionHost : IDisposable
 		}
 		catch (Exception ex) when (ex is ProtocolException or InvalidCastException or JsonException)
 		{
-			throw new CliException(CliErrorCodes.ProtocolError, ex.Message, response);
+			throw new AutomationException(AutomationErrorCodes.ProtocolError, ex.Message, response);
 		}
 	}
 
@@ -404,7 +404,7 @@ internal sealed class McpSessionHost : IDisposable
 		if (!TryConvertFailedPayloadResponse(response, out var standard))
 			return;
 
-		throw new CliException(
+		throw new AutomationException(
 			ProtocolErrorMapper.Map(standard.ErrorCode),
 			standard.Error ?? "Payload command failed.",
 			standard);

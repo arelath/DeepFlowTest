@@ -3,7 +3,7 @@ namespace DeepFlowTest.Mcp.Resources;
 using System;
 using System.ComponentModel;
 using System.Text.Json;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Configuration;

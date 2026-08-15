@@ -24,9 +24,9 @@ public sealed class TargetResolverTests
 	{
 		var resolver = Resolver(Source());
 
-		var ex = Assert.Throws<CliException>(() => resolver.Resolve(new TargetSelector { ProcessId = 42 }));
+		var ex = Assert.Throws<AutomationException>(() => resolver.Resolve(new TargetSelector { ProcessId = 42 }));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.TargetNotFound));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.TargetNotFound));
 	}
 
 	[Test]
@@ -70,9 +70,9 @@ public sealed class TargetResolverTests
 		cache.Remember(new[] { Process(7, "CachedApp"), Process(8, "CachedApp") });
 		var resolver = Resolver(Source(), cache);
 
-		var ex = Assert.Throws<CliException>(() => resolver.Resolve(new TargetSelector { ProcessName = "CachedApp" }));
+		var ex = Assert.Throws<AutomationException>(() => resolver.Resolve(new TargetSelector { ProcessName = "CachedApp" }));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.AmbiguousTarget));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.AmbiguousTarget));
 	}
 
 	[Test]
@@ -80,9 +80,9 @@ public sealed class TargetResolverTests
 	{
 		var resolver = Resolver(Source(Process(1, "AppOne"), Process(2, "AppTwo")));
 
-		var ex = Assert.Throws<CliException>(() => resolver.Resolve(new TargetSelector { ProcessName = "App" }));
+		var ex = Assert.Throws<AutomationException>(() => resolver.Resolve(new TargetSelector { ProcessName = "App" }));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.AmbiguousTarget));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.AmbiguousTarget));
 		Assert.That(ex.Details, Is.Not.Null);
 	}
 
@@ -111,9 +111,9 @@ public sealed class TargetResolverTests
 	{
 		var resolver = Resolver(Source(Process(5, "App", hasExited: true)));
 
-		var ex = Assert.Throws<CliException>(() => resolver.Resolve(new TargetSelector { ProcessId = 5 }));
+		var ex = Assert.Throws<AutomationException>(() => resolver.Resolve(new TargetSelector { ProcessId = 5 }));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.TargetExited));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.TargetExited));
 	}
 
 	[Test]

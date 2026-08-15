@@ -92,7 +92,7 @@ public static class CliOutput
 	{
 		if (!envelope.Ok)
 		{
-			writer.WriteLine($"{envelope.Error?.Code ?? CliErrorCodes.UnexpectedError}: {envelope.Error?.Message}");
+			writer.WriteLine($"{envelope.Error?.Code ?? AutomationErrorCodes.UnexpectedError}: {envelope.Error?.Message}");
 			return;
 		}
 
@@ -143,7 +143,7 @@ public static class CliOutput
 		{
 			if (!envelope.Ok)
 			{
-				writer.WriteLine($"{envelope.Error?.Code ?? CliErrorCodes.UnexpectedError}: {envelope.Error?.Message}");
+				writer.WriteLine($"{envelope.Error?.Code ?? AutomationErrorCodes.UnexpectedError}: {envelope.Error?.Message}");
 				continue;
 			}
 
@@ -276,7 +276,7 @@ public static class CliOutput
 
 		writer.WriteLine(selectors.TargetId);
 		foreach (var suggestion in selectors.Suggestions)
-			writer.WriteLine($"{suggestion.Confidence:0.00} {suggestion.Cli}");
+			writer.WriteLine($"{suggestion.Confidence:0.00} {suggestion.CommandLine}");
 	}
 
 	private static void PruneEmpty(JsonNode? node)

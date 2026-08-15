@@ -1,4 +1,4 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 using System.Collections.Generic;
@@ -26,12 +26,12 @@ public sealed class NodeSnapshotOptions
 
 public sealed class NodeSnapshotService
 {
-	private readonly CliTargetIdService targetIds;
+	private readonly TargetIdService targetIds;
 	private readonly TreeSnapshotService treeService;
 
-	public NodeSnapshotService(CliTargetIdService? targetIds = null, TreeSnapshotService? treeService = null)
+	public NodeSnapshotService(TargetIdService? targetIds = null, TreeSnapshotService? treeService = null)
 	{
-		this.targetIds = targetIds ?? new CliTargetIdService();
+		this.targetIds = targetIds ?? new TargetIdService();
 		this.treeService = treeService ?? new TreeSnapshotService(this.targetIds);
 	}
 

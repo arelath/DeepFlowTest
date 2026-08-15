@@ -12,7 +12,7 @@ public sealed class ActionGateTests
 
 		Assert.That(
 			() => gate.Demand("click", new CliCommonOptions()),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ActionDenied));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.ActionDenied));
 	}
 
 	[Test]
@@ -30,6 +30,6 @@ public sealed class ActionGateTests
 
 		Assert.That(
 			() => gate.Demand("invoke", new CliCommonOptions(), arbitraryInvoke: true),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ArbitraryInvokeDenied));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.ArbitraryInvokeDenied));
 	}
 }

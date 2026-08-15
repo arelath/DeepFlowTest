@@ -77,18 +77,18 @@ public sealed class CliDefaultsStore
 		{
 			var document = ReadDocument();
 			var defaults = document.Deserialize<CliDefaults>(JsonOptions)
-				?? throw new CliException(CliErrorCodes.InvalidConfig, "CLI defaults config must be a JSON object.");
+				?? throw new AutomationException(AutomationErrorCodes.InvalidConfig, "CLI defaults config must be a JSON object.");
 			ApplyLegacyFlatValues(defaults, document);
 			Validate(defaults);
 			return defaults;
 		}
-		catch (CliException)
+		catch (AutomationException)
 		{
 			throw;
 		}
 		catch (Exception ex) when (ex is IOException or JsonException or NotSupportedException)
 		{
-			throw new CliException(CliErrorCodes.InvalidConfig, $"CLI defaults config is invalid: {ex.Message}");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, $"CLI defaults config is invalid: {ex.Message}");
 		}
 	}
 
@@ -135,7 +135,7 @@ public sealed class CliDefaultsStore
 
 	public JsonObject ToDocument(CliDefaults defaults) =>
 		JsonSerializer.SerializeToNode(defaults, JsonOptions) as JsonObject
-			?? throw new CliException(CliErrorCodes.InvalidConfig, "Could not serialize CLI defaults.");
+			?? throw new AutomationException(AutomationErrorCodes.InvalidConfig, "Could not serialize CLI defaults.");
 
 	public IReadOnlyDictionary<string, object?> ToDictionary(CliDefaults defaults)
 	{
@@ -146,11 +146,11 @@ public sealed class CliDefaultsStore
 	private static void Validate(CliDefaults defaults)
 	{
 		if (defaults.SchemaVersion != 1)
-			throw new CliException(CliErrorCodes.InvalidConfig, "schemaVersion must be 1.");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, "schemaVersion must be 1.");
 		if (defaults.Common is null)
-			throw new CliException(CliErrorCodes.InvalidConfig, "common must be a JSON object.");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, "common must be a JSON object.");
 		if (defaults.Commands is null)
-			throw new CliException(CliErrorCodes.InvalidConfig, "commands must be a JSON object.");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, "commands must be a JSON object.");
 
 		RequireOneOf(defaults.Common.Format, "common.format", "json", "text");
 		RequireOneOf(defaults.Common.After, "common.after", "none", "target", "tree");
@@ -171,11 +171,11 @@ public sealed class CliDefaultsStore
 		try
 		{
 			defaults = document.Deserialize<CliDefaults>(JsonOptions)
-				?? throw new CliException(CliErrorCodes.InvalidConfig, "CLI defaults config must be a JSON object.");
+				?? throw new AutomationException(AutomationErrorCodes.InvalidConfig, "CLI defaults config must be a JSON object.");
 		}
 		catch (JsonException ex)
 		{
-			throw new CliException(CliErrorCodes.InvalidConfig, $"CLI defaults config is invalid: {ex.Message}");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, $"CLI defaults config is invalid: {ex.Message}");
 		}
 
 		Validate(defaults);
@@ -184,24 +184,24 @@ public sealed class CliDefaultsStore
 	private static void RequireOneOf(string? value, string path, params string[] allowedValues)
 	{
 		if (value is null || !allowedValues.Contains(value, StringComparer.Ordinal))
-			throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{value}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{value}'.");
 	}
 
 	private static void RequireDefinedEnum<TEnum>(TEnum value, string path)
 		where TEnum : struct, Enum
 	{
 		if (!Enum.IsDefined(typeof(TEnum), value))
-			throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{value}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{value}'.");
 	}
 
 	private static void RequireStringList(IReadOnlyList<string>? values, string path)
 	{
 		if (values is null)
-			throw new CliException(CliErrorCodes.InvalidConfig, $"{path} must be an array.");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, $"{path} must be an array.");
 
 		for (var index = 0; index < values.Count; index++)
 			if (string.IsNullOrWhiteSpace(values[index]))
-				throw new CliException(CliErrorCodes.InvalidConfig, $"{path}[{index}] must be a non-empty string.");
+				throw new AutomationException(AutomationErrorCodes.InvalidConfig, $"{path}[{index}] must be a non-empty string.");
 	}
 
 	private static void RequireNullableStringList(IReadOnlyList<string>? values, string path)
@@ -214,7 +214,7 @@ public sealed class CliDefaultsStore
 
 	private static JsonObject CreateBuiltInDocument() =>
 		JsonSerializer.SerializeToNode(new CliDefaults(), JsonOptions) as JsonObject
-			?? throw new CliException(CliErrorCodes.InvalidConfig, "Could not create built-in CLI defaults.");
+			?? throw new AutomationException(AutomationErrorCodes.InvalidConfig, "Could not create built-in CLI defaults.");
 
 	private JsonObject ReadDocument()
 	{
@@ -222,15 +222,15 @@ public sealed class CliDefaultsStore
 		{
 			var node = JsonNode.Parse(File.ReadAllText(ConfigPath));
 			return node as JsonObject
-				?? throw new CliException(CliErrorCodes.InvalidConfig, "CLI defaults config must be a JSON object.");
+				?? throw new AutomationException(AutomationErrorCodes.InvalidConfig, "CLI defaults config must be a JSON object.");
 		}
-		catch (CliException)
+		catch (AutomationException)
 		{
 			throw;
 		}
 		catch (Exception ex) when (ex is IOException or JsonException or NotSupportedException)
 		{
-			throw new CliException(CliErrorCodes.InvalidConfig, $"CLI defaults config is invalid: {ex.Message}");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, $"CLI defaults config is invalid: {ex.Message}");
 		}
 	}
 
@@ -258,10 +258,10 @@ public sealed class CliDefaultsStore
 	private static void ApplyValue(CliDefaults defaults, IReadOnlyList<string> parts, JsonNode value)
 	{
 		var document = JsonSerializer.SerializeToNode(defaults, JsonOptions) as JsonObject
-			?? throw new CliException(CliErrorCodes.InvalidConfig, "Could not serialize CLI defaults.");
+			?? throw new AutomationException(AutomationErrorCodes.InvalidConfig, "Could not serialize CLI defaults.");
 		SetValue(document, parts, value.DeepClone());
 		var updated = document.Deserialize<CliDefaults>(JsonOptions)
-			?? throw new CliException(CliErrorCodes.InvalidConfig, "Could not deserialize CLI defaults.");
+			?? throw new AutomationException(AutomationErrorCodes.InvalidConfig, "Could not deserialize CLI defaults.");
 		defaults.SchemaVersion = updated.SchemaVersion;
 		defaults.Common = updated.Common;
 		defaults.Commands = updated.Commands;
@@ -270,11 +270,11 @@ public sealed class CliDefaultsStore
 	private static CliDefaultsPathInfo ResolvePath(string path)
 	{
 		if (string.IsNullOrWhiteSpace(path) || path.Contains('[', StringComparison.Ordinal) || path.Contains(']', StringComparison.Ordinal))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Config path '{path}' is not valid.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Config path '{path}' is not valid.");
 
 		var parts = path.Split('.', StringSplitOptions.RemoveEmptyEntries);
 		if (parts.Length == 0 || string.Join(".", parts) != path)
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Config path '{path}' is not valid.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Config path '{path}' is not valid.");
 
 		var currentType = typeof(CliDefaults);
 		PropertyInfo? property = null;
@@ -283,7 +283,7 @@ public sealed class CliDefaultsStore
 			property = currentType.GetProperties(BindingFlags.Instance | BindingFlags.Public)
 				.FirstOrDefault(candidate => string.Equals(JsonOptions.PropertyNamingPolicy!.ConvertName(candidate.Name), part, StringComparison.Ordinal));
 			if (property is null || property.GetCustomAttribute<JsonIgnoreAttribute>() is not null)
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Unknown config key '{path}'.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unknown config key '{path}'.");
 
 			currentType = property.PropertyType;
 		}
@@ -301,9 +301,9 @@ public sealed class CliDefaultsStore
 	private static void RequireEditableLeaf(CliDefaultsPathInfo info)
 	{
 		if (info.IsReadOnly)
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Config path '{info.Path}' is read-only.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Config path '{info.Path}' is read-only.");
 		if (!info.IsLeaf)
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Config path '{info.Path}' is an object. Set or clear a leaf value instead.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Config path '{info.Path}' is an object. Set or clear a leaf value instead.");
 	}
 
 	private static JsonNode? ParseValue(CliDefaultsPathInfo path, string rawValue, bool json)
@@ -317,7 +317,7 @@ public sealed class CliDefaultsStore
 			}
 			catch (JsonException ex)
 			{
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Value is not valid JSON: {ex.Message}");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Value is not valid JSON: {ex.Message}");
 			}
 		}
 		else
@@ -339,14 +339,14 @@ public sealed class CliDefaultsStore
 		{
 			if (bool.TryParse(rawValue, out var value))
 				return JsonValue.Create(value);
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Config key '{path.Path}' must be a boolean.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Config key '{path.Path}' must be a boolean.");
 		}
 
 		if (type == typeof(int))
 		{
 			if (int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
 				return JsonValue.Create(value);
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Config key '{path.Path}' must be an integer.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Config key '{path.Path}' must be an integer.");
 		}
 
 		if (type == typeof(string))
@@ -363,7 +363,7 @@ public sealed class CliDefaultsStore
 			return array;
 		}
 
-		throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported config value type '{path.ValueType.Name}'.");
+		throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported config value type '{path.ValueType.Name}'.");
 	}
 
 	private static void ValidateValueType(CliDefaultsPathInfo path, JsonNode? value)
@@ -372,7 +372,7 @@ public sealed class CliDefaultsStore
 		{
 			if (path.BuiltInDefaultIsNull)
 				return;
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Null is not allowed for config key '{path.Path}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Null is not allowed for config key '{path.Path}'.");
 		}
 
 		var type = Nullable.GetUnderlyingType(path.ValueType) ?? path.ValueType;
@@ -392,13 +392,13 @@ public sealed class CliDefaultsStore
 			for (var index = 0; index < array.Count; index++)
 			{
 				if (array[index] is not JsonValue item || !item.TryGetValue<string>(out var text) || string.IsNullOrWhiteSpace(text))
-					throw new CliException(CliErrorCodes.InvalidArguments, $"Config key '{path.Path}' list item {index} must be a non-empty string.");
+					throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Config key '{path.Path}' list item {index} must be a non-empty string.");
 			}
 
 			return;
 		}
 
-		throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid value for config key '{path.Path}'.");
+		throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid value for config key '{path.Path}'.");
 	}
 
 	private static string ParseEnumText(Type enumType, string path, string rawValue)
@@ -414,10 +414,10 @@ public sealed class CliDefaultsStore
 		}
 		catch (FormatException)
 		{
-			throw new CliException(CliErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{rawValue}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, $"Config key '{path}' has invalid value '{rawValue}'.");
 		}
 
-		throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported config enum type '{enumType.Name}'.");
+		throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported config enum type '{enumType.Name}'.");
 	}
 
 	private static JsonNode? GetValue(JsonObject document, IReadOnlyList<string> parts)

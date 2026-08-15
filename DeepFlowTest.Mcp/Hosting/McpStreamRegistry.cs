@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Configuration;
@@ -81,7 +81,7 @@ internal sealed class McpStreamRegistry : IDisposable
 		lock (gate)
 		{
 			if (!streams.Remove(streamId, out state!))
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Stream '{streamId}' was not found.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Stream '{streamId}' was not found.");
 		}
 
 		state.Dispose();
@@ -149,14 +149,14 @@ internal sealed class McpStreamRegistry : IDisposable
 				return state;
 		}
 
-		throw new CliException(CliErrorCodes.InvalidArguments, $"Stream '{streamId}' was not found.");
+		throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Stream '{streamId}' was not found.");
 	}
 
 	private sealed class StreamState : IDisposable
 	{
 		private readonly object gate = new();
-		private readonly ICliAppSession appSession;
-		private readonly ICliStreamSession stream;
+		private readonly IAutomationSession appSession;
+		private readonly IAutomationStreamSession stream;
 		private readonly McpSemanticRecordingFormatter? semanticRecordingFormatter;
 		private readonly int capacity;
 		private readonly int timeoutMs;
@@ -165,7 +165,7 @@ internal sealed class McpStreamRegistry : IDisposable
 		private Task? readTask;
 		private bool disposed;
 
-		public StreamState(Guid sessionId, ICliAppSession appSession, ICliStreamSession stream, int capacity, int timeoutMs)
+		public StreamState(Guid sessionId, IAutomationSession appSession, IAutomationStreamSession stream, int capacity, int timeoutMs)
 		{
 			SessionId = sessionId;
 			this.appSession = appSession;
@@ -234,7 +234,7 @@ internal sealed class McpStreamRegistry : IDisposable
 						new StopSendingCommandRequest(SubscriptionId, Math.Min(timeoutMs, TimeoutDefaults.StreamStopTimeoutMs)),
 						Math.Min(timeoutMs, TimeoutDefaults.StreamStopTimeoutMs));
 				}
-				catch (CliException)
+				catch (AutomationException)
 				{
 				}
 
@@ -257,7 +257,7 @@ internal sealed class McpStreamRegistry : IDisposable
 				{
 					break;
 				}
-				catch (CliException)
+				catch (AutomationException)
 				{
 					break;
 				}

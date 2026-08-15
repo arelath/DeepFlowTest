@@ -21,7 +21,7 @@ internal static class CliTestHost
 		CliDefaultsStore? defaultsStore = null,
 		IProcessSnapshotSource? snapshotSource = null,
 		ITargetResolver? targetResolver = null,
-		ICliAppSessionService? appSessionService = null)
+		IAutomationSessionService? appSessionService = null)
 	{
 		return new CliServices(
 			defaultsStore ?? new CliDefaultsStore(CreateTempConfigPath()),
@@ -71,15 +71,15 @@ internal sealed class FakeTargetResolver : ITargetResolver
 	}
 }
 
-internal sealed class FakeAppSessionService : ICliAppSessionService
+internal sealed class FakeAppSessionService : IAutomationSessionService
 {
-	public CliAttachOptions? LastOptions { get; private set; }
+	public AutomationAttachOptions? LastOptions { get; private set; }
 
 	public TargetInfo? LastTarget { get; private set; }
 
 	public FakeCliAppSession Session { get; } = new();
 
-	public ICliAppSession Open(TargetInfo target, CliAttachOptions options)
+	public IAutomationSession Open(TargetInfo target, AutomationAttachOptions options)
 	{
 		LastTarget = target;
 		LastOptions = options;
@@ -87,7 +87,7 @@ internal sealed class FakeAppSessionService : ICliAppSessionService
 	}
 }
 
-internal sealed class FakeCliAppSession : ICliAppSession
+internal sealed class FakeCliAppSession : IAutomationSession
 {
 	public HelloCommandResponse Hello { get; set; } = new()
 	{
@@ -198,7 +198,7 @@ internal sealed class FakeCliAppSession : ICliAppSession
 		return (TResponse)response;
 	}
 
-	public ICliStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs)
+	public IAutomationStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs)
 	{
 		Commands.Add(command);
 		return new FakeCliStreamSession(
@@ -219,7 +219,7 @@ internal sealed class FakeCliAppSession : ICliAppSession
 	}
 }
 
-internal sealed class FakeCliStreamSession : ICliStreamSession
+internal sealed class FakeCliStreamSession : IAutomationStreamSession
 {
 	private int sequence;
 	private readonly StartSendingCommandRequest request;

@@ -450,7 +450,7 @@ public static class CliRootCommand
 			{
 				return parse(value);
 			}
-			catch (CliException ex)
+			catch (AutomationException ex)
 			{
 				result.AddError(ex.Message);
 				return default!;

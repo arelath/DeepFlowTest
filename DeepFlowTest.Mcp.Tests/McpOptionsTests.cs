@@ -2,7 +2,7 @@ namespace DeepFlowTest.Mcp.Tests;
 
 using System;
 using System.IO;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Contracts;
@@ -47,7 +47,7 @@ public sealed class McpOptionsTests
 		Assert.That(options.ContextIdleTimeoutMs, Is.EqualTo(2500));
 		Assert.That(
 			() => McpCommandLineOptions.Apply(options, ["--tool-profile", "wide"]),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.InvalidArguments));
 	}
 
 	[Test]
@@ -101,25 +101,25 @@ public sealed class McpOptionsTests
 	}
 
 	[Test]
-	public void MissingCommandLineValueMapsToCliException()
+	public void MissingCommandLineValueMapsToAutomationException()
 	{
 		Assert.That(
 			() => McpCommandLineOptions.Apply(new McpServerOptions(), new[] { "--launch" }),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.InvalidArguments));
 	}
 
 	[Test]
-	public void InvalidShapeFormatAndSelectorArgumentsMapToCliExceptions()
+	public void InvalidShapeFormatAndSelectorArgumentsMapToAutomationExceptions()
 	{
 		Assert.That(
 			() => McpArgumentParsing.ParseTreeShape("sideways", TreeShape.Flat),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.InvalidArguments));
 		Assert.That(
 			() => McpArgumentParsing.ParseImageFormat("tiff", ImageFormat.Png),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.InvalidArguments));
 		Assert.That(
 			() => McpArgumentParsing.ParsePair("missing-separator", "property"),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.InvalidArguments));
 	}
 
 	[Test]
@@ -127,7 +127,7 @@ public sealed class McpOptionsTests
 	{
 		Assert.That(
 			() => McpArgumentParsing.ValidateExecutableAllowed("C:\\outside\\Harness.exe", new[] { "C:\\allowed" }),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ActionDenied));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.ActionDenied));
 	}
 
 	[Test]

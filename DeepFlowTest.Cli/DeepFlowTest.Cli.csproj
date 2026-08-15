@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" />
+    <ProjectReference Include="..\DeepFlowTest.Automation\DeepFlowTest.Automation.csproj" />
     <ProjectReference Include="..\DeepFlowTest\DeepFlowTest.csproj" />
   </ItemGroup>
 

@@ -3,7 +3,7 @@ namespace DeepFlowTest.Mcp.Hosting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Mcp.Configuration;

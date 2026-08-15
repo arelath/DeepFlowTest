@@ -1,4 +1,4 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 using System.Collections.Generic;
@@ -12,10 +12,10 @@ public sealed class VisualTreeResponseReader
 	public VisualTreeSnapshot Read(object response, IReadOnlyList<string>? requestedProperties = null)
 	{
 		if (response is null)
-			throw new CliException(CliErrorCodes.ProtocolError, "Visual tree response was empty.");
+			throw new AutomationException(AutomationErrorCodes.ProtocolError, "Visual tree response was empty.");
 
 		if (response is StandardIpcResponse standard && standard.Success == false)
-			throw new CliException(ProtocolErrorMapper.Map(standard.ErrorCode), standard.Error ?? "Visual tree command failed.");
+			throw new AutomationException(ProtocolErrorMapper.Map(standard.ErrorCode), standard.Error ?? "Visual tree command failed.");
 
 		if (response is VisualTreeSnapshot snapshot)
 			return NormalizeSnapshot(snapshot, requestedProperties);
@@ -40,7 +40,7 @@ public sealed class VisualTreeResponseReader
 		}
 		catch (Exception ex) when (ex is ProtocolException or InvalidCastException or JsonException)
 		{
-			throw new CliException(CliErrorCodes.ProtocolError, "Visual tree response was malformed.");
+			throw new AutomationException(AutomationErrorCodes.ProtocolError, "Visual tree response was malformed.");
 		}
 	}
 
@@ -51,7 +51,7 @@ public sealed class VisualTreeResponseReader
 		foreach (var node in snapshot.Nodes)
 		{
 			if (string.IsNullOrWhiteSpace(node.TargetId))
-				throw new CliException(CliErrorCodes.ProtocolError, "Visual tree response contained a blank target ID.");
+				throw new AutomationException(AutomationErrorCodes.ProtocolError, "Visual tree response contained a blank target ID.");
 			if (!duplicateCheck.Add(node.TargetId))
 				continue;
 

@@ -6,7 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using DeepFlowTest;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 
 internal static class McpArgumentParsing
@@ -33,7 +33,7 @@ internal static class McpArgumentParsing
 
 		var separator = value.IndexOf('=');
 		if (separator <= 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, $"{argumentName} must use name=value.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"{argumentName} must use name=value.");
 
 		return new KeyValuePair<string, string>(value[..separator], value[(separator + 1)..]);
 	}
@@ -49,7 +49,7 @@ internal static class McpArgumentParsing
 		}
 		catch (FormatException)
 		{
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported tree shape '{value}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported tree shape '{value}'.");
 		}
 	}
 
@@ -64,7 +64,7 @@ internal static class McpArgumentParsing
 		}
 		catch (FormatException)
 		{
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported mouse button '{value}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported mouse button '{value}'.");
 		}
 	}
 
@@ -79,7 +79,7 @@ internal static class McpArgumentParsing
 		}
 		catch (FormatException)
 		{
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported image format '{value}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported image format '{value}'.");
 		}
 	}
 
@@ -96,7 +96,7 @@ internal static class McpArgumentParsing
 				JsonValueKind.Number when document.RootElement.TryGetInt64(out var longValue) => longValue,
 				JsonValueKind.Number => document.RootElement.GetDouble(),
 				JsonValueKind.Null => null,
-				_ => throw new CliException(CliErrorCodes.InvalidArguments, "Only JSON scalar values are supported."),
+				_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Only JSON scalar values are supported."),
 			};
 		}
 		catch (JsonException)
@@ -122,6 +122,6 @@ internal static class McpArgumentParsing
 				return;
 		}
 
-		throw new CliException(CliErrorCodes.ActionDenied, $"Launch path '{fullPath}' is outside the allowed executable roots.");
+		throw new AutomationException(AutomationErrorCodes.ActionDenied, $"Launch path '{fullPath}' is outside the allowed executable roots.");
 	}
 }

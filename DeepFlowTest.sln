@@ -49,6 +49,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "TestHarnesses", "TestHarnes
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HelloWorld", "TestHarnesses\HelloWorld\HelloWorld.csproj", "{2B32F87C-1466-476E-B0CA-17E84E43EDFA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeepFlowTest.Automation", "DeepFlowTest.Automation\DeepFlowTest.Automation.csproj", "{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -215,6 +217,18 @@ Global
 		{2B32F87C-1466-476E-B0CA-17E84E43EDFA}.Release|x64.Build.0 = Release|Any CPU
 		{2B32F87C-1466-476E-B0CA-17E84E43EDFA}.Release|x86.ActiveCfg = Release|Any CPU
 		{2B32F87C-1466-476E-B0CA-17E84E43EDFA}.Release|x86.Build.0 = Release|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Debug|x64.Build.0 = Debug|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Debug|x86.Build.0 = Debug|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Release|x64.ActiveCfg = Release|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Release|x64.Build.0 = Release|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Release|x86.ActiveCfg = Release|Any CPU
+		{4E100F3F-181D-458C-B4F8-055FE2D0D1AA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

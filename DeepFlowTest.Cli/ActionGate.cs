@@ -16,10 +16,10 @@ public sealed class ActionGate
 		_ = options ?? throw new ArgumentNullException(nameof(options));
 
 		if (arbitraryInvoke && !options.AllowArbitraryInvoke)
-			throw new CliException(CliErrorCodes.ArbitraryInvokeDenied, "Arbitrary invoke requires --allow-arbitrary-invoke.");
+			throw new AutomationException(AutomationErrorCodes.ArbitraryInvokeDenied, "Arbitrary invoke requires --allow-arbitrary-invoke.");
 
 		if (IsStrictModeEnabled() && !options.AllowActions)
-			throw new CliException(CliErrorCodes.ActionDenied, $"Strict action mode requires --allow-actions for '{actionName}'.");
+			throw new AutomationException(AutomationErrorCodes.ActionDenied, $"Strict action mode requires --allow-actions for '{actionName}'.");
 	}
 
 	private bool IsStrictModeEnabled()

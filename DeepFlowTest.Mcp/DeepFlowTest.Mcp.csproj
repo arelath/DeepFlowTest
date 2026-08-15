@@ -17,8 +17,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Console" />
     <PackageReference Include="ModelContextProtocol" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <ProjectReference Include="..\DeepFlowTest.Automation\DeepFlowTest.Automation.csproj" />
     <ProjectReference Include="..\DeepFlowTest\DeepFlowTest.csproj" />
-    <ProjectReference Include="..\DeepFlowTest.Cli\DeepFlowTest.Cli.csproj" />
   </ItemGroup>
 
   <Import Project="..\Shared\DeepFlowTestPayloadLayout.targets" />

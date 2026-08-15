@@ -1,4 +1,4 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 using System.Linq;
@@ -7,12 +7,12 @@ using DeepFlowTest.Interop;
 
 public sealed class ElementResolver
 {
-	private readonly CliTargetIdService targetIds;
+	private readonly TargetIdService targetIds;
 	private readonly FindSnapshotService findService;
 
-	public ElementResolver(CliTargetIdService? targetIds = null, FindSnapshotService? findService = null)
+	public ElementResolver(TargetIdService? targetIds = null, FindSnapshotService? findService = null)
 	{
-		this.targetIds = targetIds ?? new CliTargetIdService();
+		this.targetIds = targetIds ?? new TargetIdService();
 		this.findService = findService ?? new FindSnapshotService();
 	}
 
@@ -29,7 +29,7 @@ public sealed class ElementResolver
 		}
 
 		if (selector.IsEmpty)
-			throw new CliException(CliErrorCodes.InvalidArguments, "An element target selector is required.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "An element target selector is required.");
 
 		var result = findService.Find(snapshot, new FindSnapshotOptions
 		{
@@ -51,12 +51,12 @@ public sealed class ElementResolver
 		});
 
 		if (result.MatchCount == 0)
-			throw new CliException(CliErrorCodes.NoMatch, "No matching element was found.");
+			throw new AutomationException(AutomationErrorCodes.NoMatch, "No matching element was found.");
 
 		if (selector.Index.HasValue)
 		{
 			if (selector.Index.Value < 0 || selector.Index.Value >= result.Matches.Count)
-				throw new CliException(CliErrorCodes.NoMatch, $"Element index {selector.Index.Value} is outside the match set.");
+				throw new AutomationException(AutomationErrorCodes.NoMatch, $"Element index {selector.Index.Value} is outside the match set.");
 
 			return ToResolution(snapshot, result.Matches[selector.Index.Value].Node.TargetId);
 		}
@@ -78,7 +78,7 @@ public sealed class ElementResolver
 				Content = match.Node.Properties.TryGetValue(KnownProperties.Content, out var content) ? content : null,
 				match.Node.Path,
 			}).ToArray();
-			throw new CliException(CliErrorCodes.AmbiguousTarget, "Multiple elements matched the selector.", candidates);
+			throw new AutomationException(AutomationErrorCodes.AmbiguousTarget, "Multiple elements matched the selector.", candidates);
 		}
 
 		return ToResolution(snapshot, result.Matches[0].Node.TargetId);

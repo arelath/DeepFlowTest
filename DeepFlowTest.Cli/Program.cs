@@ -43,8 +43,8 @@ public static class Program
 		{
 			var message = string.Join(Environment.NewLine, parseResult.Errors.Select(static error => error.Message));
 			var options = CreateOutputOptions(args, new CliDefaults());
-			CliOutput.Write(CliResponseFactory.Error(commandName, CliErrorCodes.InvalidArguments, message, stopwatch), options, stdout);
-			return ExitCodeMapper.Map(CliErrorCodes.InvalidArguments);
+			CliOutput.Write(CliResponseFactory.Error(commandName, AutomationErrorCodes.InvalidArguments, message, stopwatch), options, stdout);
+			return ExitCodeMapper.Map(AutomationErrorCodes.InvalidArguments);
 		}
 
 		CliDefaults defaults;
@@ -52,7 +52,7 @@ public static class Program
 		{
 			defaults = IsConfigReset(args) ? new CliDefaults() : services.DefaultsStore.Load();
 		}
-		catch (CliException ex)
+		catch (AutomationException ex)
 		{
 			var options = CreateOutputOptions(args, new CliDefaults());
 			CliOutput.Write(CliResponseFactory.Error(commandName, ex.ErrorCode, ex.Message, stopwatch, ex.Details), options, stdout);
@@ -70,15 +70,15 @@ public static class Program
 				Error = stderr,
 			});
 		}
-		catch (CliException ex)
+		catch (AutomationException ex)
 		{
 			CliOutput.Write(CliResponseFactory.Error(commandName, ex.ErrorCode, ex.Message, stopwatch, ex.Details), commonOptions, stdout);
 			return ExitCodeMapper.Map(ex.ErrorCode);
 		}
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
-			CliOutput.Write(CliResponseFactory.Error(commandName, CliErrorCodes.UnexpectedError, ex.Message, stopwatch), commonOptions, stdout);
-			return ExitCodeMapper.Map(CliErrorCodes.UnexpectedError);
+			CliOutput.Write(CliResponseFactory.Error(commandName, AutomationErrorCodes.UnexpectedError, ex.Message, stopwatch), commonOptions, stdout);
+			return ExitCodeMapper.Map(AutomationErrorCodes.UnexpectedError);
 		}
 	}
 
@@ -103,7 +103,7 @@ public static class Program
 			Root = () => context.Execute(
 				"help",
 				targetBound: false,
-				() => throw new CliException(CliErrorCodes.NotImplemented, "Command '' is not implemented.")),
+				() => throw new AutomationException(AutomationErrorCodes.NotImplemented, "Command '' is not implemented.")),
 			Config = () => context.NotImplemented("config"),
 			ConfigGet = () => context.Execute("config get", targetBound: false, () =>
 				context.Services.DefaultsStore.Get(GetConfigPositional(context.Args, 0)) ?? new object()),
@@ -131,7 +131,7 @@ public static class Program
 			ConfigReset = () => context.Execute("config reset", targetBound: false, () =>
 			{
 				if (!HasOption(context.Args, "--yes"))
-					throw new CliException(CliErrorCodes.InvalidArguments, "`config reset` requires --yes.");
+					throw new AutomationException(AutomationErrorCodes.InvalidArguments, "`config reset` requires --yes.");
 				context.Services.DefaultsStore.Reset();
 				return new { reset = true };
 			}),
@@ -257,7 +257,7 @@ public static class Program
 		var snapshot = ReadSnapshot(session, commonOptions, requestProperties, Math.Max(defaults.TreeLimit, options.Limit));
 		var result = new FindSnapshotService().Find(snapshot, options);
 		if (result.MatchCount == 0 && CliArgumentReader.HasOption(args, "--require-match"))
-			throw new CliException(CliErrorCodes.NoMatch, "No matching nodes were found.");
+			throw new AutomationException(AutomationErrorCodes.NoMatch, "No matching nodes were found.");
 
 		return result;
 	}
@@ -284,9 +284,9 @@ public static class Program
 		var properties = GetRequestedProperties(args, defaults);
 		var snapshot = ReadSnapshot(session, commonOptions, properties, defaults.TreeLimit);
 		var targetId = GetTargetIdArgument(args);
-		var fullId = new CliTargetIdService().Resolve(targetId, snapshot);
+		var fullId = new TargetIdService().Resolve(targetId, snapshot);
 		var node = snapshot.Nodes.First(node => node.TargetId == fullId);
-		return new SelectorSuggestionService(new CliTargetIdService(), snapshot).Suggest(node, commonOptions.UseShortIds);
+		return new SelectorSuggestionService(new TargetIdService(), snapshot).Suggest(node, commonOptions.UseShortIds);
 	}
 
 	private static ScreenshotResultData ExecuteScreenshot(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
@@ -294,13 +294,13 @@ public static class Program
 		using var session = OpenSession(services, commonOptions);
 		var format = GetImageFormatOption(args, defaults.Commands.Screenshot.ImageFormat);
 		var targetId = CliArgumentReader.GetOption(args, "--target", "--target-id") ?? defaults.Commands.Screenshot.TargetId;
-		var selector = ElementSelector.FromArgs(args);
+		var selector = ElementSelectorParser.FromArgs(args);
 		if (string.IsNullOrWhiteSpace(targetId) && !selector.IsEmpty)
 			targetId = new ElementResolver().Resolve(ReadSnapshot(session, commonOptions, defaults.PropertyNames, defaults.TreeLimit), selector).TargetId;
 		else if (!string.IsNullOrWhiteSpace(targetId))
 		{
 			var snapshot = ReadSnapshot(session, commonOptions, defaults.PropertyNames, defaults.TreeLimit);
-			targetId = new CliTargetIdService().Resolve(targetId!, snapshot);
+			targetId = new TargetIdService().Resolve(targetId!, snapshot);
 		}
 
 		var response = session.Send<ScreenshotCommandResponse>(
@@ -330,37 +330,12 @@ public static class Program
 
 		var interval = CliArgumentReader.GetInt(args, "--interval-ms", defaults.Commands.Wait.IntervalMs);
 		var requiredMatches = CliArgumentReader.GetInt(args, "--match-count", defaults.Commands.Wait.MatchCount);
-		if (interval <= 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Wait interval must be greater than zero.");
-		if (requiredMatches <= 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Wait match count must be greater than zero.");
-
-		var stopwatch = Stopwatch.StartNew();
 		using var cancellation = CreateConsoleCancellationSource();
-		try
-		{
-			while (stopwatch.ElapsedMilliseconds <= commonOptions.TimeoutMs)
-			{
-				cancellation.Token.ThrowIfCancellationRequested();
-				var snapshot = ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.TreeLimit, options.Limit));
-				var result = new FindSnapshotService().Find(snapshot, options);
-				if (result.MatchCount >= requiredMatches)
-					return result;
-
-				var remaining = commonOptions.TimeoutMs - (int)stopwatch.ElapsedMilliseconds;
-				if (remaining <= 0)
-					break;
-
-				if (cancellation.Token.WaitHandle.WaitOne(Math.Min(interval, remaining)))
-					cancellation.Token.ThrowIfCancellationRequested();
-			}
-		}
-		catch (OperationCanceledException)
-		{
-			throw new CliException(CliErrorCodes.CommandTimeout, "Wait was canceled.");
-		}
-
-		throw new CliException(CliErrorCodes.CommandTimeout, $"Wait timed out after {commonOptions.TimeoutMs} ms.");
+		return new WaitExecutor().Execute(
+			() => ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.TreeLimit, options.Limit)),
+			options,
+			new WaitExecutionOptions(commonOptions.TimeoutMs, interval, requiredMatches),
+			cancellation.Token);
 	}
 
 	private static CliResponseSequence ExecuteStream(
@@ -372,11 +347,11 @@ public static class Program
 	{
 		var interval = CliArgumentReader.GetInt(args, "--interval-ms", defaults.StreamIntervalMs);
 		if (interval < TimeoutDefaults.StreamMinimumIntervalMs)
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Stream interval must be at least {TimeoutDefaults.StreamMinimumIntervalMs} ms.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Stream interval must be at least {TimeoutDefaults.StreamMinimumIntervalMs} ms.");
 
 		var duration = CliArgumentReader.GetInt(args, "--duration-ms", defaults.StreamDurationMs);
 		if (duration < 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Stream duration must be zero or greater.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Stream duration must be zero or greater.");
 
 		var format = streamKind == ProtocolConstants.StreamKinds.Screenshot
 			? GetImageFormatOption(args, defaults.Commands.Stream.ImageFormat)
@@ -443,15 +418,15 @@ public static class Program
 	{
 		var outputPath = CliArgumentReader.GetOption(args, "--output", "--out");
 		if (string.IsNullOrWhiteSpace(outputPath))
-			throw new CliException(CliErrorCodes.InvalidArguments, "record semantic requires --out.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "record semantic requires --out.");
 
 		var interval = CliArgumentReader.GetInt(args, "--interval-ms", defaults.StreamIntervalMs);
 		if (interval < TimeoutDefaults.StreamMinimumIntervalMs)
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Stream interval must be at least {TimeoutDefaults.StreamMinimumIntervalMs} ms.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Stream interval must be at least {TimeoutDefaults.StreamMinimumIntervalMs} ms.");
 
 		var duration = CliArgumentReader.GetInt(args, "--duration-ms", defaults.StreamDurationMs);
 		if (duration < 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Recording duration must be zero or greater.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Recording duration must be zero or greater.");
 
 		var fullOutputPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(outputPath));
 		var directory = Path.GetDirectoryName(fullOutputPath);
@@ -461,7 +436,7 @@ public static class Program
 		var outputFormat = GetSemanticRecordingOutputFormat(args);
 		var properties = CliArgumentReader.GetStringList(args, "--props", defaults.Commands.Stream.Props);
 		using var session = OpenSession(services, commonOptions);
-		ICliStreamSession? stream = null;
+		IAutomationStreamSession? stream = null;
 		var droppedActions = 0;
 		StopSendingCommandResponse? stop = null;
 		using var cancellation = CreateConsoleCancellationSource();
@@ -492,7 +467,7 @@ public static class Program
 				if (frame is null)
 					break;
 				if (frame.Error is not null)
-					throw new CliException(frame.Error.Code, frame.Error.Message);
+					throw new AutomationException(frame.Error.Code, frame.Error.Message);
 				if (frame.Data is null)
 					continue;
 
@@ -552,7 +527,7 @@ public static class Program
 			"condensed-diagnostic" or "diagnostic" => SemanticRecordingOutputFormat.CondensedDiagnostic,
 			"compact-json" or "json" => SemanticRecordingOutputFormat.CompactJson,
 			"raw-json" => SemanticRecordingOutputFormat.RawJson,
-			_ => throw new CliException(CliErrorCodes.InvalidArguments, "Recording format must be condensed-agent, condensed-diagnostic, compact-json, or raw-json."),
+			_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Recording format must be condensed-agent, condensed-diagnostic, compact-json, or raw-json."),
 		};
 	}
 
@@ -566,13 +541,13 @@ public static class Program
 			_ => outputFormat.ToString(),
 		};
 
-	private static ICliAppSession OpenSession(CliServices services, CliCommonOptions commonOptions)
+	private static IAutomationSession OpenSession(CliServices services, CliCommonOptions commonOptions)
 	{
 		var target = services.TargetResolver.Resolve(commonOptions.ToTargetSelector());
 		return services.AppSessionService.Open(target, commonOptions.ToAttachOptions());
 	}
 
-	private static VisualTreeSnapshot ReadSnapshot(ICliAppSession session, CliCommonOptions commonOptions, IReadOnlyList<string> properties, int limit)
+	private static VisualTreeSnapshot ReadSnapshot(IAutomationSession session, CliCommonOptions commonOptions, IReadOnlyList<string> properties, int limit)
 	{
 		var response = session.Send<object>(
 			new GetVisualTreeCommandRequest
@@ -718,7 +693,7 @@ public static class Program
 			foreach (var section in CliArgumentReader.SplitCsv(include))
 			{
 				if (section is not ("path" or "properties" or "children" or "ancestors"))
-					throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported find include section '{section}'.");
+					throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported find include section '{section}'.");
 				sections.Add(section);
 			}
 		}
@@ -733,7 +708,7 @@ public static class Program
 
 		var separator = value.IndexOf('=');
 		if (separator <= 0)
-			throw new CliException(CliErrorCodes.InvalidConfig, $"Default selector value '{value}' must use name=value.");
+			throw new AutomationException(AutomationErrorCodes.InvalidConfig, $"Default selector value '{value}' must use name=value.");
 
 		return new KeyValuePair<string, string>(value[..separator], value[(separator + 1)..]);
 	}
@@ -757,27 +732,42 @@ public static class Program
 	{
 		var targetId = CliArgumentReader.GetOption(args, "--target", "--target-id");
 		if (string.IsNullOrWhiteSpace(targetId))
-			throw new CliException(CliErrorCodes.InvalidArguments, "A target ID is required.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "A target ID is required.");
 
 		return targetId!;
 	}
 
-	private static ActionCommandResult ExecuteClick(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	private static AutomationExecutionOptions CreateAutomationOptions(CliCommonOptions commonOptions, CliDefaults defaults) =>
+		new(
+			commonOptions.TimeoutMs,
+			defaults.TreeLimit,
+			defaults.PropertyNames,
+			commonOptions.After switch
+			{
+				"none" => ObservationMode.None,
+				"tree" => ObservationMode.Tree,
+				_ => ObservationMode.Target,
+			},
+			commonOptions.UseShortIds)
+		{
+			TreeShape = defaults.Commands.Tree.Shape,
+		};
+
+	private static ActionExecutionResult ExecuteClick(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("click", commonOptions);
 		var button = GetClickButtonOption(args, defaults.Commands.Click.Button);
 		var count = CliArgumentReader.GetInt(args, "--count", 1);
 		var isDouble = CliArgumentReader.HasOption(args, "--double") || defaults.Commands.Click.Double;
 		if (count <= 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Click count must be greater than zero.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Click count must be greater than zero.");
 
 		using var session = OpenSession(services, commonOptions);
-		return new ActionCommandSupport().Execute(
+		return new ActionExecutor().Execute(
 			"click",
 			session,
-			commonOptions,
-			defaults,
-			ElementSelector.FromArgs(args),
+			CreateAutomationOptions(commonOptions, defaults),
+			ElementSelectorParser.FromArgs(args),
 			targetId =>
 			{
 				if (isDouble || button == CliClickButton.Double)
@@ -799,20 +789,19 @@ public static class Program
 			requireElementTarget: true);
 	}
 
-	private static ActionCommandResult ExecuteMouseWheel(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	private static ActionExecutionResult ExecuteMouseWheel(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("wheel", commonOptions);
 		var delta = CliArgumentReader.GetInt(args, "--delta", defaults.Commands.Wheel.Delta);
 		if (delta == 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Mouse wheel delta must not be zero.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Mouse wheel delta must not be zero.");
 
 		using var session = OpenSession(services, commonOptions);
-		return new ActionCommandSupport().Execute(
+		return new ActionExecutor().Execute(
 			"wheel",
 			session,
-			commonOptions,
-			defaults,
-			ElementSelector.FromArgs(args),
+			CreateAutomationOptions(commonOptions, defaults),
+			ElementSelectorParser.FromArgs(args),
 			targetId => new MouseWheelCommandRequest
 			{
 				TargetId = targetId ?? string.Empty,
@@ -821,15 +810,15 @@ public static class Program
 			requireElementTarget: true);
 	}
 
-	private static DragAndDropActionCommandResult ExecuteDrag(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	private static TwoTargetActionExecutionResult ExecuteDrag(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("drag", commonOptions);
-		var sourceSelector = ElementSelector.FromArgs(args);
-		var destinationSelector = ElementSelector.FromArgs(args, "to");
+		var sourceSelector = ElementSelectorParser.FromArgs(args);
+		var destinationSelector = ElementSelectorParser.FromArgs(args, "to");
 		if (sourceSelector.IsEmpty)
-			throw new CliException(CliErrorCodes.InvalidArguments, "The drag command requires a source target or selector.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The drag command requires a source target or selector.");
 		if (destinationSelector.IsEmpty)
-			throw new CliException(CliErrorCodes.InvalidArguments, "The drag command requires a destination target or selector.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The drag command requires a destination target or selector.");
 
 		var dragDefaults = defaults.Commands.Drag;
 		var durationMs = CliArgumentReader.GetInt(args, "--duration-ms", dragDefaults.DurationMs);
@@ -845,11 +834,10 @@ public static class Program
 		var validateSameProcess = CliArgumentReader.GetBool(args, "--validate-same-process", dragDefaults.ValidateSameProcess);
 
 		using var session = OpenSession(services, commonOptions);
-		return new ActionCommandSupport().ExecuteTwoTarget(
+		return new ActionExecutor().ExecuteTwoTarget(
 			"drag",
 			session,
-			commonOptions,
-			defaults,
+			CreateAutomationOptions(commonOptions, defaults),
 			sourceSelector,
 			destinationSelector,
 			(sourceTargetId, destinationTargetId) => new DragAndDropCommandRequest
@@ -871,37 +859,35 @@ public static class Program
 			});
 	}
 
-	private static ActionCommandResult ExecuteFocus(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	private static ActionExecutionResult ExecuteFocus(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("focus", commonOptions);
 		using var session = OpenSession(services, commonOptions);
-		return new ActionCommandSupport().Execute(
+		return new ActionExecutor().Execute(
 			"focus",
 			session,
-			commonOptions,
-			defaults,
-			ElementSelector.FromArgs(args),
+			CreateAutomationOptions(commonOptions, defaults),
+			ElementSelectorParser.FromArgs(args),
 			targetId => new FocusCommandRequest { TargetId = targetId ?? string.Empty },
 			requireElementTarget: true,
 			afterProperties: new[] { KnownProperties.IsFocused, KnownProperties.IsKeyboardFocused, KnownProperties.IsKeyboardFocusWithin });
 	}
 
-	private static ActionCommandResult ExecuteType(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	private static ActionExecutionResult ExecuteType(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("type", commonOptions);
 		var text = CliArgumentReader.GetOption(args, "--value", "--text") ?? defaults.Commands.Type.Text;
 		if (text is null)
-			throw new CliException(CliErrorCodes.InvalidArguments, "The type command requires --value or --text.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The type command requires --value or --text.");
 
-		var selector = ElementSelector.FromArgs(args);
+		var selector = ElementSelectorParser.FromArgs(args);
 		selector.Text = CliArgumentReader.GetOption(args, "--selector-text");
 
 		using var session = OpenSession(services, commonOptions);
-		return new ActionCommandSupport().Execute(
+		return new ActionExecutor().Execute(
 			"type",
 			session,
-			commonOptions,
-			defaults,
+			CreateAutomationOptions(commonOptions, defaults),
 			selector,
 			targetId => new TypeTextCommandRequest
 			{
@@ -913,22 +899,21 @@ public static class Program
 			afterProperties: new[] { KnownProperties.Text, KnownProperties.Content });
 	}
 
-	private static ActionCommandResult ExecuteKey(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	private static ActionExecutionResult ExecuteKey(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("key", commonOptions);
 		var keys = CliArgumentReader.GetOption(args, "--keys") ?? defaults.Commands.Key.Keys;
 		if (string.IsNullOrWhiteSpace(keys))
-			throw new CliException(CliErrorCodes.InvalidArguments, "The key command requires --keys.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The key command requires --keys.");
 		ValidateKeys(keys!);
 
-		var selector = ElementSelector.FromArgs(args);
+		var selector = ElementSelectorParser.FromArgs(args);
 
 		using var session = OpenSession(services, commonOptions);
-		return new ActionCommandSupport().Execute(
+		return new ActionExecutor().Execute(
 			"key",
 			session,
-			commonOptions,
-			defaults,
+			CreateAutomationOptions(commonOptions, defaults),
 			selector,
 			targetId => new KeyPressCommandRequest
 			{
@@ -941,24 +926,23 @@ public static class Program
 			afterProperties: new[] { KnownProperties.Text, KnownProperties.Content, KnownProperties.IsKeyboardFocused, KnownProperties.IsKeyboardFocusWithin });
 	}
 
-	private static ActionCommandResult ExecuteSet(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	private static ActionExecutionResult ExecuteSet(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("set", commonOptions);
 		var property = CliArgumentReader.GetOption(args, "--property") ?? defaults.Commands.Set.Property;
 		if (string.IsNullOrWhiteSpace(property))
-			throw new CliException(CliErrorCodes.InvalidArguments, "The set command requires --property.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The set command requires --property.");
 
 		var rawValue = CliArgumentReader.GetOption(args, "--value") ?? defaults.Commands.Set.Value;
 		if (rawValue is null)
-			throw new CliException(CliErrorCodes.InvalidArguments, "The set command requires --value.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The set command requires --value.");
 
 		using var session = OpenSession(services, commonOptions);
-		return new ActionCommandSupport().Execute(
+		return new ActionExecutor().Execute(
 			"set",
 			session,
-			commonOptions,
-			defaults,
-			ElementSelector.FromArgs(args),
+			CreateAutomationOptions(commonOptions, defaults),
+			ElementSelectorParser.FromArgs(args),
 			targetId => new SetPropertyCommandRequest
 			{
 				TargetId = targetId ?? string.Empty,
@@ -969,22 +953,21 @@ public static class Program
 			afterProperties: new[] { property! });
 	}
 
-	private static ActionCommandResult ExecuteRaise(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	private static ActionExecutionResult ExecuteRaise(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		new ActionGate().Demand("raise", commonOptions);
 		var eventName = CliArgumentReader.GetOption(args, "--event") ?? defaults.Commands.Raise.Event;
 		if (string.IsNullOrWhiteSpace(eventName))
-			throw new CliException(CliErrorCodes.InvalidArguments, "The raise command requires --event.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The raise command requires --event.");
 		if (!KnownRoutedEvents.Contains(eventName!))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Routed event '{eventName}' is not allow-listed.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Routed event '{eventName}' is not allow-listed.");
 
 		using var session = OpenSession(services, commonOptions);
-		return new ActionCommandSupport().Execute(
+		return new ActionExecutor().Execute(
 			"raise",
 			session,
-			commonOptions,
-			defaults,
-			ElementSelector.FromArgs(args),
+			CreateAutomationOptions(commonOptions, defaults),
+			ElementSelectorParser.FromArgs(args),
 			targetId => new KnownRoutedEventCommandRequest
 			{
 				TargetId = targetId ?? string.Empty,
@@ -993,31 +976,30 @@ public static class Program
 			requireElementTarget: true);
 	}
 
-	private static ActionCommandResult ExecuteInvoke(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	private static ActionExecutionResult ExecuteInvoke(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		var code = CliArgumentReader.GetOption(args, "--code") ?? defaults.Commands.Invoke.Code;
 		var operation = CliArgumentReader.GetOption(args, "--operation") ?? defaults.Commands.Invoke.Operation;
 		var arbitrary = !string.IsNullOrWhiteSpace(code);
 		new ActionGate().Demand("invoke", commonOptions, arbitraryInvoke: arbitrary);
 		if (string.IsNullOrWhiteSpace(operation) && string.IsNullOrWhiteSpace(code))
-			throw new CliException(CliErrorCodes.InvalidArguments, "The invoke command requires --operation or --code.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The invoke command requires --operation or --code.");
 		if (!string.IsNullOrWhiteSpace(operation) && !string.IsNullOrWhiteSpace(code))
-			throw new CliException(CliErrorCodes.InvalidArguments, "The invoke command accepts either --operation or --code, not both.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The invoke command accepts either --operation or --code, not both.");
 
 		if (!string.IsNullOrWhiteSpace(operation) && !KnownOperations.Contains(operation!))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Known operation '{operation}' is not allow-listed.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Known operation '{operation}' is not allow-listed.");
 
 		object? parsedCode = null;
 		if (!string.IsNullOrWhiteSpace(code))
 			parsedCode = ParseJsonScalarStrict(code!);
 
 		using var session = OpenSession(services, commonOptions);
-		return new ActionCommandSupport().Execute(
+		return new ActionExecutor().Execute(
 			"invoke",
 			session,
-			commonOptions,
-			defaults,
-			ElementSelector.FromArgs(args),
+			CreateAutomationOptions(commonOptions, defaults),
+			ElementSelectorParser.FromArgs(args),
 			targetId => !string.IsNullOrWhiteSpace(operation)
 				? new KnownOperationCommandRequest { TargetId = targetId ?? string.Empty, Operation = operation! }
 				: new InvokeCommandRequest { TargetId = targetId ?? string.Empty, Code = parsedCode, AllowUnsafeCode = commonOptions.AllowArbitraryInvoke },
@@ -1046,7 +1028,7 @@ public static class Program
 		}
 		catch (JsonException ex)
 		{
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid JSON payload: {ex.Message}");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid JSON payload: {ex.Message}");
 		}
 	}
 
@@ -1060,7 +1042,7 @@ public static class Program
 			JsonValueKind.Number when root.TryGetInt64(out var longValue) => longValue,
 			JsonValueKind.Number => root.GetDouble(),
 			JsonValueKind.Null => null,
-			_ => throw new CliException(CliErrorCodes.InvalidArguments, "Only JSON scalar values are supported."),
+			_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Only JSON scalar values are supported."),
 		};
 	}
 
@@ -1078,7 +1060,7 @@ public static class Program
 			if (token.Length == 1 && char.IsLetterOrDigit(token[0]))
 				continue;
 			if (!known.Contains(token, StringComparer.OrdinalIgnoreCase))
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Unknown key name '{token}'.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unknown key name '{token}'.");
 		}
 	}
 
@@ -1121,7 +1103,7 @@ public static class Program
 		{
 			return CliCommonOptions.Parse(args, defaults);
 		}
-		catch (CliException)
+		catch (AutomationException)
 		{
 			return new CliCommonOptions
 			{
@@ -1152,7 +1134,7 @@ public static class Program
 	{
 		var value = GetConfigPositional(args, index);
 		if (string.IsNullOrWhiteSpace(value))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Missing required argument '{name}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Missing required argument '{name}'.");
 
 		return value!;
 	}
@@ -1192,7 +1174,7 @@ public static class Program
 	{
 		var value = GetOptionalPositional(args, index);
 		if (string.IsNullOrWhiteSpace(value))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Missing required argument '{name}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Missing required argument '{name}'.");
 
 		return value;
 	}

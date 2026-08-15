@@ -1,15 +1,15 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 
-public static class CliPipeName
+public static class AutomationPipeName
 {
 	public const string Prefix = "deepflowtest-cli-v1";
 
 	public static string ForTarget(int processId, string? pipeId = null)
 	{
 		if (processId <= 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Process ID must be positive.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Process ID must be positive.");
 
 		if (pipeId is null)
 			return $"{Prefix}-pid-{processId}";
@@ -21,9 +21,9 @@ public static class CliPipeName
 	public static void ValidatePipeId(string pipeId)
 	{
 		if (string.IsNullOrWhiteSpace(pipeId))
-			throw new CliException(CliErrorCodes.InvalidArguments, "Pipe ID must not be empty.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Pipe ID must not be empty.");
 
 		if (pipeId.IndexOfAny(new[] { ' ', '/', '\\', ':' }) >= 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Pipe ID must not contain spaces, slash, backslash, or colon.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Pipe ID must not contain spaces, slash, backslash, or colon.");
 	}
 }

@@ -1,7 +1,7 @@
 namespace DeepFlowTest.Mcp.Contracts;
 
 using System.Collections.Generic;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 
 internal sealed record class McpElementSelector
 {
@@ -33,7 +33,7 @@ internal sealed record class McpElementSelector
 
 	public int? Index { get; init; }
 
-	public ElementSelector ToCliSelector() =>
+	public ElementSelector ToAutomationSelector() =>
 		new()
 		{
 			TargetId = TargetId,

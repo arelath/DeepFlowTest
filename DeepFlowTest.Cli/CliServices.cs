@@ -8,19 +8,19 @@ public sealed class CliServices
 		CliDefaultsStore? defaultsStore = null,
 		IProcessSnapshotSource? processSnapshotSource = null,
 		ITargetResolver? targetResolver = null,
-		ICliAppSessionService? appSessionService = null)
+		IAutomationSessionService? appSessionService = null)
 	{
 		DefaultsStore = defaultsStore ?? new CliDefaultsStore();
-		ProcessSnapshotSource = processSnapshotSource ?? new LiveProcessSnapshotSource();
-		TargetResolver = targetResolver ?? new TargetResolver(ProcessSnapshotSource);
-		AppSessionService = appSessionService ?? new CliAppSessionService();
+		Automation = new AutomationServices(processSnapshotSource, targetResolver, appSessionService);
 	}
 
 	public CliDefaultsStore DefaultsStore { get; }
 
-	public IProcessSnapshotSource ProcessSnapshotSource { get; }
+	public AutomationServices Automation { get; }
 
-	public ITargetResolver TargetResolver { get; }
+	public IProcessSnapshotSource ProcessSnapshotSource => Automation.ProcessSnapshotSource;
 
-	public ICliAppSessionService AppSessionService { get; }
+	public ITargetResolver TargetResolver => Automation.TargetResolver;
+
+	public IAutomationSessionService AppSessionService => Automation.SessionService;
 }

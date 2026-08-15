@@ -2,7 +2,7 @@ namespace DeepFlowTest.Mcp.Tools;
 
 using System;
 using System.ComponentModel;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Contracts;
@@ -18,7 +18,7 @@ internal static class TargetTools
 	[McpServerTool(Name = "deepflow_list_processes"), Description("List local desktop processes that DeepFlowTest may be able to inspect or automate.")]
 	public static McpToolResponse ListProcesses(
 		McpToolRunner runner,
-		CliServices services,
+		AutomationServices services,
 		[Description("When true, return only likely UI automation candidates.")] bool candidatesOnly = true)
 	{
 		return runner.Run(() =>

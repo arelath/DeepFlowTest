@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using DeepFlowTest.Contracts;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Configuration;
 using Microsoft.Extensions.Options;

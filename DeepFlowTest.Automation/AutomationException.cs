@@ -1,10 +1,10 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 
-public sealed class CliException : Exception
+public sealed class AutomationException : Exception
 {
-	public CliException(string errorCode, string message, object? details = null)
+	public AutomationException(string errorCode, string message, object? details = null)
 		: base(message)
 	{
 		ErrorCode = errorCode;
@@ -16,7 +16,7 @@ public sealed class CliException : Exception
 	public object? Details { get; }
 }
 
-public static class CliErrorCodes
+public static class AutomationErrorCodes
 {
 	public const string ActionDenied = "action-denied";
 	public const string AmbiguousTarget = "ambiguous-target";

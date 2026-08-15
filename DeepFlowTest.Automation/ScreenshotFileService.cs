@@ -1,4 +1,4 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 using System.IO;
@@ -19,7 +19,7 @@ public sealed class ScreenshotFileService
 		_ = options ?? throw new ArgumentNullException(nameof(options));
 
 		if (!response.Success)
-			throw new CliException(ProtocolErrorMapper.Map(response.ErrorCode), response.Error ?? "Screenshot command failed.", response);
+			throw new AutomationException(ProtocolErrorMapper.Map(response.ErrorCode), response.Error ?? "Screenshot command failed.", response);
 
 		var format = response.Format;
 		var formatName = format.ToProtocolString();
@@ -30,7 +30,7 @@ public sealed class ScreenshotFileService
 		}
 		catch (FormatException ex)
 		{
-			throw new CliException(CliErrorCodes.ProtocolError, $"Screenshot payload bytes were malformed: {ex.Message}", response);
+			throw new AutomationException(AutomationErrorCodes.ProtocolError, $"Screenshot payload bytes were malformed: {ex.Message}", response);
 		}
 
 		string? outputPath = null;
@@ -46,7 +46,7 @@ public sealed class ScreenshotFileService
 			}
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or System.Security.SecurityException)
 			{
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Could not write screenshot output path: {ex.Message}");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Could not write screenshot output path: {ex.Message}");
 			}
 		}
 
@@ -67,8 +67,17 @@ public sealed class ScreenshotFileService
 		return NormalizeImageFormat(format).ToProtocolString();
 	}
 
-	public static ImageFormat NormalizeImageFormat(string? format) =>
-		CliValueParser.ParseImageFormat(format);
+	public static ImageFormat NormalizeImageFormat(string? format)
+	{
+		try
+		{
+			return ImageFormatExtensions.ParseProtocolString(format);
+		}
+		catch (FormatException)
+		{
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported image format '{format}'.");
+		}
+	}
 
 	private static string NormalizeOutputPath(string outputPath, string format)
 	{
@@ -81,7 +90,7 @@ public sealed class ScreenshotFileService
 		}
 		catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
 		{
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid screenshot output path: {ex.Message}");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid screenshot output path: {ex.Message}");
 		}
 	}
 

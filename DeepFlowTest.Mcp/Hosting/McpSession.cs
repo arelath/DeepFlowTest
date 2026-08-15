@@ -2,7 +2,7 @@ namespace DeepFlowTest.Mcp.Hosting;
 
 using System;
 using System.Diagnostics;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 
 internal sealed class McpSession : IDisposable
 {
@@ -10,7 +10,7 @@ internal sealed class McpSession : IDisposable
 
 	public McpSession(
 		TargetInfo target,
-		ICliAppSession session,
+		IAutomationSession session,
 		string source,
 		IMcpLaunchedProcess? launchedProcess = null,
 		bool terminateOnDetach = false)
@@ -26,7 +26,7 @@ internal sealed class McpSession : IDisposable
 
 	public TargetInfo Target { get; }
 
-	public ICliAppSession AppSession { get; }
+	public IAutomationSession AppSession { get; }
 
 	public DateTimeOffset AttachedAtUtc { get; } = DateTimeOffset.UtcNow;
 
@@ -61,7 +61,7 @@ internal sealed class McpSession : IDisposable
 						process.Dispose();
 				}
 			}
-			catch (Exception ex) when (ex is CliException or InvalidOperationException or System.ComponentModel.Win32Exception)
+			catch (Exception ex) when (ex is AutomationException or InvalidOperationException or System.ComponentModel.Win32Exception)
 			{
 				return false;
 			}
@@ -91,7 +91,7 @@ internal sealed class McpSession : IDisposable
 						process.Dispose();
 				}
 			}
-			catch (Exception ex) when (ex is CliException or InvalidOperationException or System.ComponentModel.Win32Exception)
+			catch (Exception ex) when (ex is AutomationException or InvalidOperationException or System.ComponentModel.Win32Exception)
 			{
 				return null;
 			}

@@ -1,7 +1,7 @@
 namespace DeepFlowTest.Mcp.Hosting;
 
 using System;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Resources;
@@ -17,7 +17,7 @@ internal static class McpServiceCollectionExtensions
 		ArgumentNullException.ThrowIfNull(args);
 
 		services.Configure<McpServerOptions>(options => McpCommandLineOptions.Apply(options, args));
-		services.AddSingleton<CliServices>();
+		services.AddSingleton<AutomationServices>();
 		services.AddSingleton<IMcpProcessLauncher, McpProcessLauncher>();
 		services.AddSingleton<McpTargetSessionFactory>();
 		services.AddSingleton<McpSnapshotCache>();
@@ -40,7 +40,7 @@ internal static class McpServiceCollectionExtensions
 		ArgumentNullException.ThrowIfNull(source);
 
 		services.AddSingleton(source.GetRequiredService<IOptions<McpServerOptions>>());
-		services.AddSingleton(source.GetRequiredService<CliServices>());
+		services.AddSingleton(source.GetRequiredService<AutomationServices>());
 		services.AddSingleton(source.GetRequiredService<IMcpProcessLauncher>());
 		services.AddSingleton(source.GetRequiredService<McpTargetSessionFactory>());
 		services.AddSingleton(source.GetRequiredService<McpSnapshotCache>());

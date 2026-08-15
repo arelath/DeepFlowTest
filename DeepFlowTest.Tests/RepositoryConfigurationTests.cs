@@ -149,12 +149,38 @@ public sealed class RepositoryConfigurationTests
 		Assert.That(ReadProjectProperty(root, "Shared", "DeepFlowTest.Frameworks.props", "DeepFlowTestTargetFrameworks"), Is.EqualTo("net461;netcoreapp3.1;net5.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest", "DeepFlowTest.csproj", "TargetFrameworks"), Is.EqualTo("$(DeepFlowTestTargetFrameworks)"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Payload", "DeepFlowTest.Payload.csproj", "TargetFrameworks"), Is.EqualTo("$(DeepFlowTestTargetFrameworks)"));
+		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Automation", "DeepFlowTest.Automation.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Cli", "DeepFlowTest.Cli.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Recorder", "DeepFlowTest.Recorder.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Tests", "DeepFlowTest.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Cli.Tests", "DeepFlowTest.Cli.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "DeepFlowTest.Mcp.Tests", "DeepFlowTest.Mcp.Tests.csproj", "TargetFramework"), Is.EqualTo("net8.0-windows"));
 		Assert.That(ReadProjectProperty(root, "TestHarnesses", "Directory.Build.props", "TargetFramework"), Is.EqualTo("net8.0-windows"));
+	}
+
+	[Test]
+	public void McpDependsOnAutomationInsteadOfCli()
+	{
+		var root = FindRepositoryRoot();
+		var mcpProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.Mcp", "DeepFlowTest.Mcp.csproj"));
+		var automationProject = File.ReadAllText(Path.Combine(root, "DeepFlowTest.Automation", "DeepFlowTest.Automation.csproj"));
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(mcpProject, Does.Contain(@"..\DeepFlowTest.Automation\DeepFlowTest.Automation.csproj"));
+			Assert.That(mcpProject, Does.Not.Contain(@"..\DeepFlowTest.Cli\DeepFlowTest.Cli.csproj"));
+			Assert.That(automationProject, Does.Not.Contain("DeepFlowTest.Cli"));
+		});
+
+		var offenders = new[] { "DeepFlowTest.Mcp", "DeepFlowTest.Mcp.Tests" }
+			.Select(directory => Path.Combine(root, directory))
+			.SelectMany(directory => Directory.EnumerateFiles(directory, "*.cs", SearchOption.AllDirectories))
+			.Where(file => !IsExcluded(file))
+			.Where(file => File.ReadAllText(file).Contains("DeepFlowTest.Cli", StringComparison.Ordinal))
+			.Select(file => Path.GetRelativePath(root, file))
+			.ToArray();
+
+		Assert.That(offenders, Is.Empty, "MCP source must not import or qualify CLI adapter types.");
 	}
 
 	[Test]

@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Activity;
 using DeepFlowTest.Mcp.Contracts;
@@ -29,7 +29,7 @@ public sealed class McpToolTests
 		var fixture = McpTestHost.CreateHost();
 
 		var response = TargetTools.ListProcesses(fixture.Runner, fixture.Services);
-		var data = (DeepFlowTest.Cli.ProcessListData)response.Data!;
+		var data = (DeepFlowTest.Automation.ProcessListData)response.Data!;
 
 		Assert.That(response.Success, Is.True);
 		Assert.That(data.Processes.Select(static process => process.ProcessName), Is.EqualTo(new[] { "UiApp" }));
@@ -174,10 +174,10 @@ public sealed class McpToolTests
 			fixture.Options,
 			properties: "Name,AutomationId",
 			outputFormat: "json");
-		var data = (DeepFlowTest.Cli.TreeSnapshotData)response.Data!;
+		var data = (DeepFlowTest.Automation.TreeSnapshotData)response.Data!;
 
 		Assert.That(response.Success, Is.True);
-		Assert.That(response.Data, Is.TypeOf<DeepFlowTest.Cli.TreeSnapshotData>());
+		Assert.That(response.Data, Is.TypeOf<DeepFlowTest.Automation.TreeSnapshotData>());
 		Assert.That(data.Nodes.Select(static node => node.TypeName), Does.Contain("Grid"));
 		Assert.That(data.Nodes.Single(static node => node.TargetId == "grid-0002").Properties[KnownProperties.Name], Is.EqualTo("LayoutGrid"));
 	}
@@ -221,7 +221,7 @@ public sealed class McpToolTests
 		var response = TargetTools.PingTarget(fixture.Runner, fixture.Host, fixture.Options);
 
 		Assert.That(response.Success, Is.False);
-		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.StaleTarget));
+		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Automation.AutomationErrorCodes.StaleTarget));
 		Assert.That(response.Error.Message, Is.EqualTo("target went stale"));
 		Assert.That(response.Recovery, Does.Contain("Refresh the visual tree"));
 	}
@@ -239,7 +239,7 @@ public sealed class McpToolTests
 		var response = TargetTools.PingTarget(fixture.Runner, fixture.Host, fixture.Options);
 
 		Assert.That(response.Success, Is.False);
-		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.CommandTimeout));
+		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Automation.AutomationErrorCodes.CommandTimeout));
 		Assert.That(response.Error.Message, Is.EqualTo("target did not answer"));
 		Assert.That(response.Recovery, Does.Contain("Increase timeoutMs"));
 	}
@@ -269,7 +269,7 @@ public sealed class McpToolTests
 		var ping = TargetTools.PingTarget(fixture.Runner, fixture.Host, fixture.Options);
 
 		Assert.That(failed.Success, Is.False);
-		Assert.That(failed.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.CommandTimeout));
+		Assert.That(failed.Error!.Code, Is.EqualTo(DeepFlowTest.Automation.AutomationErrorCodes.CommandTimeout));
 		Assert.That(failed.Error.Message, Does.Contain("10000"));
 		Assert.That(failed.Recovery, Does.Contain("Increase timeoutMs"));
 		Assert.That(ping.Success, Is.True);
@@ -279,8 +279,8 @@ public sealed class McpToolTests
 	public void StreamStartTimeoutReturnsStructuredFailureWithoutRegisteringStream()
 	{
 		var sessionService = new FakeAppSessionService();
-		sessionService.Session.StartStreamHandler = (_, _) => throw new DeepFlowTest.Cli.CliException(
-			DeepFlowTest.Cli.CliErrorCodes.PipeFailed,
+		sessionService.Session.StartStreamHandler = (_, _) => throw new DeepFlowTest.Automation.AutomationException(
+			DeepFlowTest.Automation.AutomationErrorCodes.PipeFailed,
 			"The operation has timed out.");
 		var fixture = McpTestHost.CreateHost(sessionService: sessionService);
 		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
@@ -295,20 +295,20 @@ public sealed class McpToolTests
 		var ping = TargetTools.PingTarget(fixture.Runner, fixture.Host, fixture.Options);
 
 		Assert.That(failed.Success, Is.False);
-		Assert.That(failed.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.PipeFailed));
+		Assert.That(failed.Error!.Code, Is.EqualTo(DeepFlowTest.Automation.AutomationErrorCodes.PipeFailed));
 		Assert.That(failed.Error.Message, Does.Contain("timed out"));
 		Assert.That(failed.Recovery, Does.Contain("Retry ping"));
 		Assert.That(fixture.Streams.ListActiveStreams(), Is.Empty);
 		Assert.That(ping.Success, Is.True);
 	}
 
-	[TestCase(ProtocolConstants.ErrorCodes.InvalidArguments, DeepFlowTest.Cli.CliErrorCodes.InvalidArguments)]
-	[TestCase(ProtocolConstants.ErrorCodes.UnsupportedTarget, DeepFlowTest.Cli.CliErrorCodes.UnsupportedTarget)]
-	[TestCase(ProtocolConstants.ErrorCodes.UnsupportedCommand, DeepFlowTest.Cli.CliErrorCodes.UnsupportedTarget)]
-	[TestCase(ProtocolConstants.ErrorCodes.TargetExited, DeepFlowTest.Cli.CliErrorCodes.TargetExited)]
+	[TestCase(ProtocolConstants.ErrorCodes.InvalidArguments, DeepFlowTest.Automation.AutomationErrorCodes.InvalidArguments)]
+	[TestCase(ProtocolConstants.ErrorCodes.UnsupportedTarget, DeepFlowTest.Automation.AutomationErrorCodes.UnsupportedTarget)]
+	[TestCase(ProtocolConstants.ErrorCodes.UnsupportedCommand, DeepFlowTest.Automation.AutomationErrorCodes.UnsupportedTarget)]
+	[TestCase(ProtocolConstants.ErrorCodes.TargetExited, DeepFlowTest.Automation.AutomationErrorCodes.TargetExited)]
 	public void ProtocolErrorCodesMapToCliErrorClasses(string protocolError, string expectedCliError)
 	{
-		Assert.That(DeepFlowTest.Cli.ProtocolErrorMapper.Map(protocolError), Is.EqualTo(expectedCliError));
+		Assert.That(DeepFlowTest.Automation.ProtocolErrorMapper.Map(protocolError), Is.EqualTo(expectedCliError));
 	}
 
 	[Test]
@@ -393,7 +393,7 @@ public sealed class McpToolTests
 			automationId: "SaveButton");
 
 		Assert.That(response.Success, Is.False);
-		Assert.That(response.Error!.Code, Is.EqualTo(CliErrorCodes.AmbiguousTarget));
+		Assert.That(response.Error!.Code, Is.EqualTo(AutomationErrorCodes.AmbiguousTarget));
 		Assert.That(response.Error.Details, Is.Not.Null);
 		Assert.That(sessionService.Session.Commands.OfType<ClickCommandRequest>(), Is.Empty);
 	}
@@ -616,7 +616,7 @@ public sealed class McpToolTests
 	[Test]
 	public void AgentTimeoutErrorsAreRetryableButNotDeclaredSafeToRepeat()
 	{
-		var result = McpCallToolResults.Error(McpToolResponse.Fail(CliErrorCodes.CommandTimeout, "Timed out."), "ctx_test", 17);
+		var result = McpCallToolResults.Error(McpToolResponse.Fail(AutomationErrorCodes.CommandTimeout, "Timed out."), "ctx_test", 17);
 		using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.StructuredContent));
 
 		Assert.That(result.IsError, Is.True);
@@ -767,7 +767,7 @@ public sealed class McpToolTests
 		Assert.That(result.IsError, Is.False);
 		Assert.That(json.RootElement.GetProperty("isAlive").GetBoolean(), Is.True);
 		Assert.That(json.RootElement.GetProperty("isResponsive").GetBoolean(), Is.False);
-		Assert.That(json.RootElement.GetProperty("targetErrorCode").GetString(), Is.EqualTo(CliErrorCodes.CommandTimeout));
+		Assert.That(json.RootElement.GetProperty("targetErrorCode").GetString(), Is.EqualTo(AutomationErrorCodes.CommandTimeout));
 		Assert.That(json.RootElement.GetProperty("recentLogCount").GetInt32(), Is.EqualTo(1));
 		Assert.That(json.RootElement.GetProperty("recentLogs")[0].GetProperty("code").GetString(), Is.EqualTo("previous_failure"));
 		Assert.That(result.Content.OfType<ResourceLinkBlock>(), Has.Exactly(1).Items);
@@ -1099,7 +1099,7 @@ public sealed class McpToolTests
 			fixture.Cache,
 			fixture.Options,
 			targetId: "button-0003");
-		var data = (McpActionCommandResult)response.Data!;
+		var data = (McpActionExecutionResult)response.Data!;
 		var delta = (McpCondensedRecordingOutput)data.After!;
 
 		Assert.That(response.Success, Is.True);
@@ -1239,7 +1239,7 @@ public sealed class McpToolTests
 		var response = fixture.Runner.Run(() => throw new System.InvalidOperationException("sensitive detail"));
 
 		Assert.That(response.Success, Is.False);
-		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Cli.CliErrorCodes.UnexpectedError));
+		Assert.That(response.Error!.Code, Is.EqualTo(DeepFlowTest.Automation.AutomationErrorCodes.UnexpectedError));
 		Assert.That(response.Error.Message, Does.Not.Contain("sensitive detail"));
 		Assert.That(new DeepFlowResources().RecentLogs(fixture.ServiceProvider), Does.Contain("Unexpected MCP tool failure"));
 	}

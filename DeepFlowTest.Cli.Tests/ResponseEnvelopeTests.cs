@@ -21,7 +21,7 @@ public sealed class ResponseEnvelopeTests
 	[Test]
 	public void ErrorEnvelopeIncludesErrorDetails()
 	{
-		var envelope = CliResponseFactory.Error("ping", CliErrorCodes.TargetNotFound, "missing", Stopwatch.StartNew(), new { pid = 4 });
+		var envelope = CliResponseFactory.Error("ping", AutomationErrorCodes.TargetNotFound, "missing", Stopwatch.StartNew(), new { pid = 4 });
 		var json = CliOutput.ToJson(envelope, pretty: false, hideEmpty: true);
 
 		Assert.That(json, Does.Contain("\"ok\":false"));

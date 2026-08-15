@@ -1,4 +1,4 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 using System.Collections.Generic;
@@ -147,7 +147,7 @@ public sealed class FindSnapshotService(TreeSnapshotService? treeService = null)
 		}
 		catch (ArgumentException ex)
 		{
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid regex: {ex.Message}");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid regex: {ex.Message}");
 		}
 	}
 

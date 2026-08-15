@@ -1,15 +1,16 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
 public sealed class SelectorSuggestionService
 {
-	private readonly CliTargetIdService targetIds;
+	private readonly TargetIdService targetIds;
 
-	public SelectorSuggestionService(CliTargetIdService targetIds, VisualTreeSnapshot snapshot)
+	public SelectorSuggestionService(TargetIdService targetIds, VisualTreeSnapshot snapshot)
 	{
 		this.targetIds = targetIds ?? throw new ArgumentNullException(nameof(targetIds));
 		_ = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
@@ -28,7 +29,7 @@ public sealed class SelectorSuggestionService
 		{
 			Kind = "target-id",
 			Confidence = 0.40,
-			Cli = $"--target {Quote(node.TargetId)}",
+			CommandLine = $"--target {Quote(node.TargetId)}",
 			Explanation = "Full target IDs are exact but may become stale after UI changes.",
 		});
 		if (useShortIds)
@@ -37,7 +38,7 @@ public sealed class SelectorSuggestionService
 			{
 				Kind = "short-id",
 				Confidence = 0.40,
-				Cli = $"--target {Quote(targetIds.GetShortId(node.TargetId))}",
+				CommandLine = $"--target {Quote(targetIds.GetShortId(node.TargetId))}",
 				Explanation = "Short target ID is concise when it is unique in the current snapshot.",
 			});
 		}
@@ -72,7 +73,7 @@ public sealed class SelectorSuggestionService
 		{
 			Kind = propertyName,
 			Confidence = confidence,
-			Cli = cli,
+			CommandLine = cli,
 			Explanation = explanation,
 		});
 	}
@@ -92,7 +93,7 @@ public sealed class SelectorSuggestionService
 			{
 				Kind = property,
 				Confidence = 0.75,
-				Cli = $"--text {Quote(text)}",
+				CommandLine = $"--text {Quote(text)}",
 				Explanation = $"{property} is a readable fallback when automation properties are absent.",
 			});
 			return;
@@ -118,7 +119,8 @@ public sealed class SelectorSuggestion
 
 	public double Confidence { get; set; }
 
-	public string Cli { get; set; } = string.Empty;
+	[JsonPropertyName("cli")]
+	public string CommandLine { get; set; } = string.Empty;
 
 	public string Explanation { get; set; } = string.Empty;
 }

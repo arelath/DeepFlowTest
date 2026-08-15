@@ -1,4 +1,4 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 using System.Collections.Generic;
@@ -47,7 +47,7 @@ public sealed class TargetInfo
 		}
 		catch (ArgumentException ex)
 		{
-			throw new CliException(CliErrorCodes.TargetExited, $"Target process {ProcessId} exited during resolution.", ex.Message);
+			throw new AutomationException(AutomationErrorCodes.TargetExited, $"Target process {ProcessId} exited during resolution.", ex.Message);
 		}
 	}
 
@@ -256,7 +256,7 @@ public sealed class TargetResolver : ITargetResolver
 		if (!string.IsNullOrWhiteSpace(selector.WindowTitle))
 			return ResolveByWindowTitle(selector.WindowTitle);
 
-		throw new CliException(CliErrorCodes.InvalidArguments, "A target selector is required.");
+		throw new AutomationException(AutomationErrorCodes.InvalidArguments, "A target selector is required.");
 	}
 
 	private TargetInfo ResolveByPid(int processId)
@@ -264,7 +264,7 @@ public sealed class TargetResolver : ITargetResolver
 		var result = snapshotSource.GetSnapshots();
 		var match = result.Processes.FirstOrDefault(process => process.ProcessId == processId);
 		if (match is null)
-			throw new CliException(CliErrorCodes.TargetNotFound, $"Process {processId} was not found.");
+			throw new AutomationException(AutomationErrorCodes.TargetNotFound, $"Process {processId} was not found.");
 
 		return ToTarget(match);
 	}
@@ -346,7 +346,7 @@ public sealed class TargetResolver : ITargetResolver
 	private TargetInfo ExactlyOne(IReadOnlyList<ProcessSnapshot> matches, string description)
 	{
 		if (matches.Count == 0)
-			throw new CliException(CliErrorCodes.TargetNotFound, $"No target matched {description}.");
+			throw new AutomationException(AutomationErrorCodes.TargetNotFound, $"No target matched {description}.");
 
 		if (matches.Count > 1)
 		{
@@ -356,7 +356,7 @@ public sealed class TargetResolver : ITargetResolver
 				process.ProcessName,
 				process.MainWindowTitle,
 			}).ToArray();
-			throw new CliException(CliErrorCodes.AmbiguousTarget, $"Multiple targets matched {description}.", candidates);
+			throw new AutomationException(AutomationErrorCodes.AmbiguousTarget, $"Multiple targets matched {description}.", candidates);
 		}
 
 		return ToTarget(matches[0]);
@@ -365,7 +365,7 @@ public sealed class TargetResolver : ITargetResolver
 	private static TargetInfo ToTarget(ProcessSnapshot snapshot)
 	{
 		if (snapshot.HasExited)
-			throw new CliException(CliErrorCodes.TargetExited, $"Target process {snapshot.ProcessId} exited during resolution.");
+			throw new AutomationException(AutomationErrorCodes.TargetExited, $"Target process {snapshot.ProcessId} exited during resolution.");
 
 		return TargetInfo.FromSnapshot(snapshot);
 	}

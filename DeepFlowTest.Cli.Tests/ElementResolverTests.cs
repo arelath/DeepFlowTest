@@ -2,6 +2,7 @@ namespace DeepFlowTest.Cli.Tests;
 
 using System.Collections.Generic;
 using DeepFlowTest.Contracts;
+using ElementSelector = DeepFlowTest.Automation.ElementSelector;
 using NUnit.Framework;
 
 [TestFixture]
@@ -51,13 +52,13 @@ public sealed class ElementResolverTests
 
 		Assert.That(
 			() => resolver.Resolve(snapshot, new ElementSelector { Name = "Missing" }),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.NoMatch));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.NoMatch));
 		Assert.That(
 			() => resolver.Resolve(CliReadServiceTests.Snapshot(CliReadServiceTests.Node("a", isRoot: true, type: "Button"), CliReadServiceTests.Node("b", isRoot: true, type: "Button")), new ElementSelector { TypeName = "Button" }),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.AmbiguousTarget));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.AmbiguousTarget));
 		Assert.That(
 			() => resolver.Resolve(snapshot, new ElementSelector { PropertyRegex = new KeyValuePair<string, string>(KnownProperties.Text, "[") }),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.InvalidArguments));
 	}
 
 	private static DeepFlowTest.Interop.VisualTreeSnapshot Snapshot() =>

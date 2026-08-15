@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Mcp.Activity;
@@ -64,7 +64,7 @@ internal sealed class McpToolRunner
 			});
 			return response;
 		}
-		catch (CliException ex)
+		catch (AutomationException ex)
 		{
 			resources.AddLog("warning", ex.ErrorCode, ex.Message, GetContextId(parameters));
 			PublishFailure(toolName, stopwatch.Elapsed, ex.ErrorCode, ex.Message, parameters, ex.Details);
@@ -92,13 +92,13 @@ internal sealed class McpToolRunner
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
 			logger.LogError(ex, "MCP tool failed.");
-			resources.AddLog("error", CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", GetContextId(parameters));
-			PublishFailure(toolName, stopwatch.Elapsed, CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", parameters, new
+			resources.AddLog("error", AutomationErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", GetContextId(parameters));
+			PublishFailure(toolName, stopwatch.Elapsed, AutomationErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", parameters, new
 			{
 				exceptionType = ex.GetType().FullName,
 				exceptionMessage = ex.Message,
 			});
-			return McpToolResponse.Fail(CliErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", recovery: "Check the MCP server stderr log for details.", target: sessionHost.Status);
+			return McpToolResponse.Fail(AutomationErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", recovery: "Check the MCP server stderr log for details.", target: sessionHost.Status);
 		}
 	}
 
@@ -137,17 +137,17 @@ internal sealed class McpToolRunner
 	private static string? RecoveryFor(string errorCode) =>
 		errorCode switch
 		{
-			CliErrorCodes.InvalidArguments => "Check the tool arguments and retry.",
-			CliErrorCodes.TargetNotFound => "Call deepflow_list_processes, then attach to a live PID or exact process name.",
-			CliErrorCodes.AmbiguousTarget => "Use a PID or a more specific process/window selector.",
-			CliErrorCodes.TargetExited => "Launch or attach to a live target before retrying.",
-			CliErrorCodes.PipeFailed => "Retry ping. If the target is alive, detach and attach again.",
-			CliErrorCodes.ProtocolError => "Refresh the target status. If the failure repeats, detach and attach again.",
-			CliErrorCodes.CommandTimeout => "Increase timeoutMs or wait for the target UI thread to become responsive.",
-			CliErrorCodes.StaleTarget => "Refresh the visual tree and resolve the element again.",
-			CliErrorCodes.UnsupportedTarget => "Inspect the visual tree and choose a target that supports the requested operation.",
-			CliErrorCodes.ActionDenied => "Start the MCP server with allowActions or allowLaunch when that operation is intended.",
-			CliErrorCodes.ArbitraryInvokeDenied => "Use a known operation, or explicitly enable arbitrary invoke policy only in a trusted session.",
+			AutomationErrorCodes.InvalidArguments => "Check the tool arguments and retry.",
+			AutomationErrorCodes.TargetNotFound => "Call deepflow_list_processes, then attach to a live PID or exact process name.",
+			AutomationErrorCodes.AmbiguousTarget => "Use a PID or a more specific process/window selector.",
+			AutomationErrorCodes.TargetExited => "Launch or attach to a live target before retrying.",
+			AutomationErrorCodes.PipeFailed => "Retry ping. If the target is alive, detach and attach again.",
+			AutomationErrorCodes.ProtocolError => "Refresh the target status. If the failure repeats, detach and attach again.",
+			AutomationErrorCodes.CommandTimeout => "Increase timeoutMs or wait for the target UI thread to become responsive.",
+			AutomationErrorCodes.StaleTarget => "Refresh the visual tree and resolve the element again.",
+			AutomationErrorCodes.UnsupportedTarget => "Inspect the visual tree and choose a target that supports the requested operation.",
+			AutomationErrorCodes.ActionDenied => "Start the MCP server with allowActions or allowLaunch when that operation is intended.",
+			AutomationErrorCodes.ArbitraryInvokeDenied => "Use a known operation, or explicitly enable arbitrary invoke policy only in a trusted session.",
 			_ => null,
 		};
 }

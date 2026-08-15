@@ -24,7 +24,7 @@ internal static class CliArgumentReader
 			if (string.Equals(arg, name, StringComparison.Ordinal))
 			{
 				if (i + 1 >= args.Count || args[i + 1].StartsWith("-", StringComparison.Ordinal))
-					throw new CliException(CliErrorCodes.InvalidArguments, $"Missing value for '{name}'.");
+					throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Missing value for '{name}'.");
 
 				return args[i + 1];
 			}
@@ -53,7 +53,7 @@ internal static class CliArgumentReader
 			return defaultValue;
 
 		if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid integer value for '{name}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid integer value for '{name}'.");
 
 		return parsed;
 	}
@@ -66,7 +66,7 @@ internal static class CliArgumentReader
 			return defaultValue;
 
 		if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid number value for '{name}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid number value for '{name}'.");
 
 		return parsed;
 	}
@@ -83,7 +83,7 @@ internal static class CliArgumentReader
 				continue;
 
 			if (i + 1 >= args.Count || args[i + 1].StartsWith("-", StringComparison.Ordinal) && !isNumber(args[i + 1]))
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Missing value for '{name}'.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Missing value for '{name}'.");
 
 			return args[i + 1];
 		}
@@ -140,7 +140,7 @@ internal static class CliArgumentReader
 
 			var separator = value.IndexOf('=');
 			if (separator <= 0)
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Option '{name}' must use name=value.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Option '{name}' must use name=value.");
 
 			return new KeyValuePair<string, string>(value[..separator], value[(separator + 1)..]);
 		}
@@ -153,6 +153,6 @@ internal static class CliArgumentReader
 		if (bool.TryParse(value, out var parsed))
 			return parsed;
 
-		throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid boolean value for '{name}'.");
+		throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid boolean value for '{name}'.");
 	}
 }

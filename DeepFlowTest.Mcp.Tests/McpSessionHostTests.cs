@@ -1,7 +1,7 @@
 namespace DeepFlowTest.Mcp.Tests;
 
 using System.Threading;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Mcp.Contracts;
 using NUnit.Framework;
 
@@ -17,9 +17,9 @@ public sealed class McpSessionHostTests
 		var status = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 });
 
 		Thread.Sleep(20);
-		var error = Assert.Throws<CliException>(() => fixture.Host.RequireContext(status.ContextId!));
+		var error = Assert.Throws<AutomationException>(() => fixture.Host.RequireContext(status.ContextId!));
 
-		Assert.That(error!.ErrorCode, Is.EqualTo(CliErrorCodes.StaleTarget));
+		Assert.That(error!.ErrorCode, Is.EqualTo(AutomationErrorCodes.StaleTarget));
 	}
 
 	[Test]
@@ -56,9 +56,9 @@ public sealed class McpSessionHostTests
 	{
 		var fixture = McpTestHost.CreateHost();
 
-		var ex = Assert.Throws<CliException>(() => fixture.Host.Attach(new McpTargetSelector()));
+		var ex = Assert.Throws<AutomationException>(() => fixture.Host.Attach(new McpTargetSelector()));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.InvalidArguments));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.InvalidArguments));
 	}
 
 	[Test]
@@ -92,7 +92,7 @@ public sealed class McpSessionHostTests
 		Assert.That(fixture.Host.Status.ExitReason, Is.EqualTo("exited:12"));
 		Assert.That(
 			() => fixture.Host.RequireSession(),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.TargetExited));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.TargetExited));
 	}
 
 	[Test]
@@ -101,9 +101,9 @@ public sealed class McpSessionHostTests
 		var launcher = new FakeProcessLauncher();
 		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowLaunch: false), launcher: launcher);
 
-		var ex = Assert.Throws<CliException>(() => fixture.Host.Launch(new McpLaunchOptions { FileName = "Harness.exe" }));
+		var ex = Assert.Throws<AutomationException>(() => fixture.Host.Launch(new McpLaunchOptions { FileName = "Harness.exe" }));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.ActionDenied));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.ActionDenied));
 		Assert.That(launcher.StartCount, Is.EqualTo(0));
 	}
 
@@ -138,13 +138,13 @@ public sealed class McpSessionHostTests
 		};
 		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowLaunch: true), launcher: launcher);
 
-		var ex = Assert.Throws<CliException>(() => fixture.Host.Launch(new McpLaunchOptions
+		var ex = Assert.Throws<AutomationException>(() => fixture.Host.Launch(new McpLaunchOptions
 		{
 			FileName = "Harness.exe",
 			TerminateOnDetach = true,
 		}));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.TargetExited));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.TargetExited));
 		Assert.That(launcher.Process.Killed, Is.False);
 		Assert.That(launcher.Process.Disposed, Is.True);
 	}
@@ -155,20 +155,20 @@ public sealed class McpSessionHostTests
 		var launcher = new FakeProcessLauncher();
 		var sessionService = new FakeAppSessionService
 		{
-			OpenException = new CliException(CliErrorCodes.AttachFailed, "attach failed"),
+			OpenException = new AutomationException(AutomationErrorCodes.AttachFailed, "attach failed"),
 		};
 		var fixture = McpTestHost.CreateHost(
 			options: McpTestHost.Options(allowLaunch: true),
 			sessionService: sessionService,
 			launcher: launcher);
 
-		var ex = Assert.Throws<CliException>(() => fixture.Host.Launch(new McpLaunchOptions
+		var ex = Assert.Throws<AutomationException>(() => fixture.Host.Launch(new McpLaunchOptions
 		{
 			FileName = "Harness.exe",
 			TerminateOnDetach = true,
 		}));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.AttachFailed));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.AttachFailed));
 		Assert.That(sessionService.OpenCount, Is.EqualTo(1));
 		Assert.That(launcher.Process.Killed, Is.True);
 		Assert.That(launcher.Process.Disposed, Is.True);
@@ -180,14 +180,14 @@ public sealed class McpSessionHostTests
 		var launcher = new FakeProcessLauncher();
 		var sessionService = new FakeAppSessionService
 		{
-			OpenException = new CliException(CliErrorCodes.AttachFailed, "attach failed"),
+			OpenException = new AutomationException(AutomationErrorCodes.AttachFailed, "attach failed"),
 		};
 		var fixture = McpTestHost.CreateHost(
 			options: McpTestHost.Options(allowLaunch: true),
 			sessionService: sessionService,
 			launcher: launcher);
 
-		Assert.Throws<CliException>(() => fixture.Host.Launch(new McpLaunchOptions
+		Assert.Throws<AutomationException>(() => fixture.Host.Launch(new McpLaunchOptions
 		{
 			FileName = "Harness.exe",
 			TerminateOnDetach = false,

@@ -16,9 +16,9 @@ public sealed class CliAppSessionTests
 	{
 		var connector = new FakeConnector { SucceedOnAttempt = 1 };
 		var injector = new FakeInjector();
-		var service = new CliAppSessionService(connector, _ => injector);
+		var service = new AutomationSessionService(connector, _ => injector);
 
-		using var session = service.Open(Target(), new CliAttachOptions());
+		using var session = service.Open(Target(), new AutomationAttachOptions());
 
 		Assert.That(session, Is.Not.Null);
 		Assert.That(connector.Attempts, Is.EqualTo(1));
@@ -29,11 +29,11 @@ public sealed class CliAppSessionTests
 	public void MissingPipeWithNoInjectReturnsPipeFailed()
 	{
 		var connector = new FakeConnector { SucceedOnAttempt = int.MaxValue };
-		var service = new CliAppSessionService(connector, _ => new FakeInjector());
+		var service = new AutomationSessionService(connector, _ => new FakeInjector());
 
-		var ex = Assert.Throws<CliException>(() => service.Open(Target(), new CliAttachOptions { NoInject = true }));
+		var ex = Assert.Throws<AutomationException>(() => service.Open(Target(), new AutomationAttachOptions { NoInject = true }));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.PipeFailed));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.PipeFailed));
 	}
 
 	[Test]
@@ -41,9 +41,9 @@ public sealed class CliAppSessionTests
 	{
 		var connector = new FakeConnector { SucceedOnAttempt = 2 };
 		var injector = new FakeInjector();
-		var service = new CliAppSessionService(connector, _ => injector);
+		var service = new AutomationSessionService(connector, _ => injector);
 
-		using var session = service.Open(Target(), new CliAttachOptions());
+		using var session = service.Open(Target(), new AutomationAttachOptions());
 
 		Assert.That(session, Is.Not.Null);
 		Assert.That(connector.Attempts, Is.EqualTo(2));
@@ -55,9 +55,9 @@ public sealed class CliAppSessionTests
 	{
 		var connector = new FakeConnector { SucceedOnAttempt = 4 };
 		var injector = new FakeInjector();
-		var service = new CliAppSessionService(connector, _ => injector);
+		var service = new AutomationSessionService(connector, _ => injector);
 
-		using var session = service.Open(Target(), new CliAttachOptions { TimeoutMs = 500 });
+		using var session = service.Open(Target(), new AutomationAttachOptions { TimeoutMs = 500 });
 
 		Assert.That(session, Is.Not.Null);
 		Assert.That(connector.Attempts, Is.EqualTo(4));
@@ -69,11 +69,11 @@ public sealed class CliAppSessionTests
 	{
 		var connector = new FakeConnector { ProtocolMismatch = true };
 		var injector = new FakeInjector();
-		var service = new CliAppSessionService(connector, _ => injector);
+		var service = new AutomationSessionService(connector, _ => injector);
 
-		var ex = Assert.Throws<CliException>(() => service.Open(Target(), new CliAttachOptions()));
+		var ex = Assert.Throws<AutomationException>(() => service.Open(Target(), new AutomationAttachOptions()));
 
-		Assert.That(ex!.ErrorCode, Is.EqualTo(CliErrorCodes.ProtocolError));
+		Assert.That(ex!.ErrorCode, Is.EqualTo(AutomationErrorCodes.ProtocolError));
 		Assert.That(injector.InjectCount, Is.EqualTo(0));
 	}
 
@@ -82,9 +82,9 @@ public sealed class CliAppSessionTests
 	{
 		var process = new FakeTargetProcess { Id = 55 };
 		var connector = new FakeConnector { SucceedOnAttempt = 1 };
-		var service = new CliAppSessionService(connector, _ => new FakeInjector());
+		var service = new AutomationSessionService(connector, _ => new FakeInjector());
 
-		service.Open(Target(process), new CliAttachOptions()).Dispose();
+		service.Open(Target(process), new AutomationAttachOptions()).Dispose();
 
 		Assert.That(process.Killed, Is.False);
 	}
@@ -111,7 +111,7 @@ public sealed class CliAppSessionTests
 		});
 
 		using var connection = AppConnection.ForAttach(new FakeTargetProcess { Id = 42 }, pipeName, "dotnet");
-		var connector = new NamedPipeCliAppSessionConnector();
+		var connector = new NamedPipeAutomationSessionConnector();
 		Assert.That(connector.TryConnect(connection, 2000, out var session, out var error), Is.True, error?.Message);
 		using (session)
 		{
@@ -148,7 +148,7 @@ public sealed class CliAppSessionTests
 		});
 
 		using var connection = AppConnection.ForAttach(new FakeTargetProcess { Id = 42 }, pipeName, "dotnet");
-		var connector = new NamedPipeCliAppSessionConnector();
+		var connector = new NamedPipeAutomationSessionConnector();
 		Assert.That(connector.TryConnect(connection, 2000, out var session, out var error), Is.True, error?.Message);
 		using (session)
 		{
@@ -167,7 +167,7 @@ public sealed class CliAppSessionTests
 			TargetProcess = process ?? new FakeTargetProcess { Id = 42 },
 		};
 
-	private sealed class FakeConnector : ICliAppSessionConnector
+	private sealed class FakeConnector : IAutomationSessionConnector
 	{
 		public int Attempts { get; private set; }
 
@@ -175,20 +175,20 @@ public sealed class CliAppSessionTests
 
 		public bool ProtocolMismatch { get; set; }
 
-		public bool TryConnect(AppConnection connection, int timeoutMs, out ICliAppSession? session, out CliException? error)
+		public bool TryConnect(AppConnection connection, int timeoutMs, out IAutomationSession? session, out AutomationException? error)
 		{
 			Attempts++;
 			session = null;
 			error = null;
 			if (ProtocolMismatch)
 			{
-				error = new CliException(CliErrorCodes.ProtocolError, "protocol mismatch");
+				error = new AutomationException(AutomationErrorCodes.ProtocolError, "protocol mismatch");
 				return false;
 			}
 
 			if (Attempts < SucceedOnAttempt)
 			{
-				error = new CliException(CliErrorCodes.PipeFailed, "missing pipe");
+				error = new AutomationException(AutomationErrorCodes.PipeFailed, "missing pipe");
 				return false;
 			}
 

@@ -1,4 +1,4 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 using System.Collections.Generic;
@@ -31,9 +31,9 @@ public sealed class TreeSnapshotOptions
 	public bool SuppressProperties { get; set; }
 }
 
-public sealed class TreeSnapshotService(CliTargetIdService? targetIds = null)
+public sealed class TreeSnapshotService(TargetIdService? targetIds = null)
 {
-	private readonly CliTargetIdService targetIds = targetIds ?? new CliTargetIdService();
+	private readonly TargetIdService targetIds = targetIds ?? new TargetIdService();
 
 	public TreeSnapshotData Shape(VisualTreeSnapshot snapshot, TreeSnapshotOptions options)
 	{

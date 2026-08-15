@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Contracts;
@@ -38,7 +38,7 @@ internal sealed class McpElementHandleRegistry
 		lock (gate)
 		{
 			if (!entries.TryGetValue(handle, out entry!) || !string.Equals(entry.ContextId, contextId, StringComparison.Ordinal))
-				throw new CliException(CliErrorCodes.TargetNotFound, $"Element handle '{handle}' does not belong to context '{contextId}'.");
+				throw new AutomationException(AutomationErrorCodes.TargetNotFound, $"Element handle '{handle}' does not belong to context '{contextId}'.");
 		}
 
 		if (snapshot.Nodes.Any(node => string.Equals(node.TargetId, entry.TargetId, StringComparison.Ordinal)))
@@ -46,8 +46,8 @@ internal sealed class McpElementHandleRegistry
 
 		var found = Find(snapshot, entry.Selector);
 		if (found.MatchCount == 0)
-			throw new CliException(
-				CliErrorCodes.StaleTarget,
+			throw new AutomationException(
+				AutomationErrorCodes.StaleTarget,
 				$"Element '{handle}' is stale and no replacement matched its selector.",
 				new McpStaleElementDetails
 				{
@@ -162,7 +162,7 @@ internal sealed class McpElementHandleRegistry
 			UseShortIds = true,
 		});
 
-	private CliException CreateAmbiguousRepair(string contextId, string handle, HandleEntry entry, IReadOnlyList<RankedMatch> matches, long revision)
+	private AutomationException CreateAmbiguousRepair(string contextId, string handle, HandleEntry entry, IReadOnlyList<RankedMatch> matches, long revision)
 	{
 		var candidates = matches.Take(20).Select(match =>
 		{
@@ -179,8 +179,8 @@ internal sealed class McpElementHandleRegistry
 				Path = match.Node.Path,
 			};
 		}).ToArray();
-		return new CliException(
-			CliErrorCodes.AmbiguousTarget,
+		return new AutomationException(
+			AutomationErrorCodes.AmbiguousTarget,
 			$"Element '{handle}' is stale and repair matched {matches.Count} equally ranked replacements.",
 			new McpAmbiguousElementDetails { MatchCount = matches.Count, Candidates = candidates });
 	}

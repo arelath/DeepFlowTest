@@ -1,4 +1,4 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 using System.IO;
@@ -10,9 +10,9 @@ using DeepFlowTest.AppDriverPayload;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
-public sealed class CliAttachOptions
+public sealed class AutomationAttachOptions
 {
-	public int TimeoutMs { get; set; } = TimeoutDefaults.CliAttachTimeoutMs;
+	public int TimeoutMs { get; set; } = AutomationTimeoutDefaults.AttachTimeoutMs;
 
 	public bool Debug { get; set; }
 
@@ -21,54 +21,54 @@ public sealed class CliAttachOptions
 	public string? PipeId { get; set; }
 }
 
-public interface ICliAppSession : IDisposable
+public interface IAutomationSession : IDisposable
 {
 	HelloCommandResponse Hello { get; }
 
 	TResponse Send<TResponse>(IpcCommand command, int timeoutMs);
 
-	ICliStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs);
+	IAutomationStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs);
 }
 
-public interface ICliStreamSession : IDisposable
+public interface IAutomationStreamSession : IDisposable
 {
 	StartSendingCommandResponse Start { get; }
 
 	StreamMessage? ReadFrame(int timeoutMs, CancellationToken cancellationToken = default);
 }
 
-public interface ICliAppSessionService
+public interface IAutomationSessionService
 {
-	ICliAppSession Open(TargetInfo target, CliAttachOptions options);
+	IAutomationSession Open(TargetInfo target, AutomationAttachOptions options);
 }
 
-public interface ICliAppSessionConnector
+public interface IAutomationSessionConnector
 {
-	bool TryConnect(AppConnection connection, int timeoutMs, out ICliAppSession? session, out CliException? error);
+	bool TryConnect(AppConnection connection, int timeoutMs, out IAutomationSession? session, out AutomationException? error);
 }
 
-public sealed class CliAppSessionService : ICliAppSessionService
+public sealed class AutomationSessionService : IAutomationSessionService
 {
-	private readonly ICliAppSessionConnector connector;
+	private readonly IAutomationSessionConnector connector;
 	private readonly Func<AppDriverOptions, IAppConnectionInjector> injectorFactory;
 
-	public CliAppSessionService()
-		: this(new NamedPipeCliAppSessionConnector(), options => new ExternalInjectorAppConnectionInjector(options, PayloadStartupModes.ReusableCli))
+	public AutomationSessionService()
+		: this(new NamedPipeAutomationSessionConnector(), options => new ExternalInjectorAppConnectionInjector(options, PayloadStartupModes.ReusableCli))
 	{
 	}
 
-	public CliAppSessionService(ICliAppSessionConnector connector, Func<AppDriverOptions, IAppConnectionInjector>? injectorFactory = null)
+	public AutomationSessionService(IAutomationSessionConnector connector, Func<AppDriverOptions, IAppConnectionInjector>? injectorFactory = null)
 	{
 		this.connector = connector ?? throw new ArgumentNullException(nameof(connector));
 		this.injectorFactory = injectorFactory ?? CreateDefaultInjector;
 	}
 
-	public ICliAppSession Open(TargetInfo target, CliAttachOptions options)
+	public IAutomationSession Open(TargetInfo target, AutomationAttachOptions options)
 	{
 		_ = target ?? throw new ArgumentNullException(nameof(target));
 		_ = options ?? throw new ArgumentNullException(nameof(options));
 
-		var pipeName = CliPipeName.ForTarget(target.ProcessId, options.PipeId);
+		var pipeName = AutomationPipeName.ForTarget(target.ProcessId, options.PipeId);
 		var process = target.OpenProcess();
 		var connection = AppConnection.ForAttach(process, pipeName, target.FrameworkFamily ?? string.Empty);
 		var deadline = DateTimeOffset.UtcNow.AddMilliseconds(Math.Max(1, options.TimeoutMs));
@@ -76,7 +76,7 @@ public sealed class CliAppSessionService : ICliAppSessionService
 		if (connector.TryConnect(connection, options.TimeoutMs, out var session, out var error))
 			return session!;
 
-		if (error is not null && error.ErrorCode == CliErrorCodes.ProtocolError)
+		if (error is not null && error.ErrorCode == AutomationErrorCodes.ProtocolError)
 		{
 			connection.Dispose();
 			throw error;
@@ -85,7 +85,7 @@ public sealed class CliAppSessionService : ICliAppSessionService
 		if (options.NoInject)
 		{
 			connection.Dispose();
-			throw new CliException(CliErrorCodes.PipeFailed, error?.Message ?? $"Could not connect to pipe '{pipeName}'.");
+			throw new AutomationException(AutomationErrorCodes.PipeFailed, error?.Message ?? $"Could not connect to pipe '{pipeName}'.");
 		}
 
 		try
@@ -98,7 +98,7 @@ public sealed class CliAppSessionService : ICliAppSessionService
 			var injector = injectorFactory(driverOptions);
 			injector.Inject(connection);
 		}
-		catch (CliException)
+		catch (AutomationException)
 		{
 			connection.Dispose();
 			throw;
@@ -106,7 +106,7 @@ public sealed class CliAppSessionService : ICliAppSessionService
 		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
 		{
 			connection.Dispose();
-			throw new CliException(CliErrorCodes.AttachFailed, $"Failed to inject reusable CLI listener: {ex.Message}");
+			throw new AutomationException(AutomationErrorCodes.AttachFailed, $"Failed to inject reusable automation listener: {ex.Message}");
 		}
 
 		do
@@ -114,30 +114,30 @@ public sealed class CliAppSessionService : ICliAppSessionService
 			if (connector.TryConnect(connection, options.TimeoutMs, out session, out error))
 				return session!;
 
-			if (error is not null && error.ErrorCode == CliErrorCodes.ProtocolError)
+			if (error is not null && error.ErrorCode == AutomationErrorCodes.ProtocolError)
 				break;
 
-			Thread.Sleep(Math.Min(TimeoutDefaults.CliAttachRetrySleepMs, Math.Max(1, options.TimeoutMs)));
+			Thread.Sleep(Math.Min(AutomationTimeoutDefaults.AttachRetrySleepMs, Math.Max(1, options.TimeoutMs)));
 		}
 		while (DateTimeOffset.UtcNow < deadline);
 
 		connection.Dispose();
-		throw error ?? new CliException(CliErrorCodes.PipeFailed, $"Could not connect to pipe '{pipeName}' after injection.");
+		throw error ?? new AutomationException(AutomationErrorCodes.PipeFailed, $"Could not connect to pipe '{pipeName}' after injection.");
 	}
 
 	private static IAppConnectionInjector CreateDefaultInjector(AppDriverOptions options) =>
 		new ExternalInjectorAppConnectionInjector(options, PayloadStartupModes.ReusableCli);
 }
 
-public sealed class NamedPipeCliAppSessionConnector : ICliAppSessionConnector
+public sealed class NamedPipeAutomationSessionConnector : IAutomationSessionConnector
 {
-	public bool TryConnect(AppConnection connection, int timeoutMs, out ICliAppSession? session, out CliException? error)
+	public bool TryConnect(AppConnection connection, int timeoutMs, out IAutomationSession? session, out AutomationException? error)
 	{
 		session = null;
 		error = null;
 		try
 		{
-			var created = new NamedPipeCliAppSession(connection, null, timeoutMs);
+			var created = new NamedPipeAutomationSession(connection, null, timeoutMs);
 			var hello = created.Send<HelloCommandResponse>(
 				new HelloCommandRequest { ProtocolVersion = ProtocolConstants.ProtocolVersion },
 				Math.Max(1, timeoutMs));
@@ -145,7 +145,7 @@ public sealed class NamedPipeCliAppSessionConnector : ICliAppSessionConnector
 			if (!string.Equals(hello.ProtocolVersion, ProtocolConstants.ProtocolVersion, StringComparison.Ordinal))
 			{
 				created.Dispose();
-				error = new CliException(CliErrorCodes.ProtocolError, $"Protocol mismatch. Expected {ProtocolConstants.ProtocolVersion}, received {hello.ProtocolVersion}.");
+				error = new AutomationException(AutomationErrorCodes.ProtocolError, $"Protocol mismatch. Expected {ProtocolConstants.ProtocolVersion}, received {hello.ProtocolVersion}.");
 				return false;
 			}
 
@@ -153,7 +153,7 @@ public sealed class NamedPipeCliAppSessionConnector : ICliAppSessionConnector
 			session = created;
 			return true;
 		}
-		catch (CliException ex)
+		catch (AutomationException ex)
 		{
 			error = ex;
 			return false;
@@ -165,36 +165,36 @@ public sealed class NamedPipeCliAppSessionConnector : ICliAppSessionConnector
 		}
 		catch (Exception ex) when (ex is TimeoutException or System.IO.IOException or ProtocolException)
 		{
-			error = new CliException(CliErrorCodes.PipeFailed, ex.Message);
+			error = new AutomationException(AutomationErrorCodes.PipeFailed, ex.Message);
 			return false;
 		}
 	}
 
-	private static CliException MapNamedPipeException(NamedPipeSessionException exception)
+	private static AutomationException MapNamedPipeException(NamedPipeSessionException exception)
 	{
 		return exception.ErrorCode switch
 		{
-			ProtocolConstants.ErrorCodes.CommandTimeout => new CliException(CliErrorCodes.CommandTimeout, exception.Message),
-			ProtocolConstants.ErrorCodes.TargetExited => new CliException(CliErrorCodes.TargetExited, exception.Message),
-			_ => new CliException(CliErrorCodes.PipeFailed, exception.Message),
+			ProtocolConstants.ErrorCodes.CommandTimeout => new AutomationException(AutomationErrorCodes.CommandTimeout, exception.Message),
+			ProtocolConstants.ErrorCodes.TargetExited => new AutomationException(AutomationErrorCodes.TargetExited, exception.Message),
+			_ => new AutomationException(AutomationErrorCodes.PipeFailed, exception.Message),
 		};
 	}
 }
 
-public sealed class NamedPipeCliAppSession : ICliAppSession
+public sealed class NamedPipeAutomationSession : IAutomationSession
 {
 	private readonly AppConnection connection;
 	private readonly NamedPipeClient controlClient;
 	private bool disposed;
 	private bool reuseControlConnection = true;
 
-	public NamedPipeCliAppSession(AppConnection connection, HelloCommandResponse? hello, int connectTimeoutMs = TimeoutDefaults.CliOneShotConnectTimeoutCapMs)
+	public NamedPipeAutomationSession(AppConnection connection, HelloCommandResponse? hello, int connectTimeoutMs = AutomationTimeoutDefaults.OneShotConnectTimeoutCapMs)
 	{
 		this.connection = connection ?? throw new ArgumentNullException(nameof(connection));
 		controlClient = new NamedPipeClient(
 			connection.PipeName,
 			getTargetExitCode: () => connection.TargetProcess.HasExited ? 0 : null,
-			connectTimeoutMs: Math.Min(TimeoutDefaults.CliOneShotConnectTimeoutCapMs, Math.Max(1, connectTimeoutMs)),
+			connectTimeoutMs: Math.Min(AutomationTimeoutDefaults.OneShotConnectTimeoutCapMs, Math.Max(1, connectTimeoutMs)),
 			connectRetryCount: 1);
 		Hello = hello ?? new HelloCommandResponse();
 	}
@@ -206,7 +206,7 @@ public sealed class NamedPipeCliAppSession : ICliAppSession
 		try
 		{
 			if (disposed)
-				throw new ObjectDisposedException(nameof(NamedPipeCliAppSession));
+				throw new ObjectDisposedException(nameof(NamedPipeAutomationSession));
 			var effectiveTimeoutMs = Math.Max(1, timeoutMs);
 			var response = reuseControlConnection
 				? controlClient.Send(command, effectiveTimeoutMs)
@@ -219,11 +219,11 @@ public sealed class NamedPipeCliAppSession : ICliAppSession
 		}
 		catch (ProtocolException ex)
 		{
-			throw new CliException(CliErrorCodes.ProtocolError, ex.Message);
+			throw new AutomationException(AutomationErrorCodes.ProtocolError, ex.Message);
 		}
 		catch (IOException ex)
 		{
-			throw new CliException(CliErrorCodes.PipeFailed, ex.Message);
+			throw new AutomationException(AutomationErrorCodes.PipeFailed, ex.Message);
 		}
 	}
 
@@ -243,13 +243,13 @@ public sealed class NamedPipeCliAppSession : ICliAppSession
 		using var client = new NamedPipeClient(
 			connection.PipeName,
 			getTargetExitCode: () => connection.TargetProcess.HasExited ? 0 : null,
-			connectTimeoutMs: Math.Min(TimeoutDefaults.CliOneShotConnectTimeoutCapMs, timeoutMs),
+			connectTimeoutMs: Math.Min(AutomationTimeoutDefaults.OneShotConnectTimeoutCapMs, timeoutMs),
 			connectRetryCount: 1);
 		return client.Send(command, timeoutMs);
 	}
 
-	public ICliStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs) =>
-		NamedPipeCliStreamSession.Create(
+	public IAutomationStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs) =>
+		NamedPipeAutomationStreamSession.Create(
 			connection.PipeName,
 			command,
 			() => connection.TargetProcess.HasExited ? 0 : null,
@@ -265,24 +265,24 @@ public sealed class NamedPipeCliAppSession : ICliAppSession
 		connection.Dispose();
 	}
 
-	private static CliException MapNamedPipeException(NamedPipeSessionException exception)
+	private static AutomationException MapNamedPipeException(NamedPipeSessionException exception)
 	{
 		return exception.ErrorCode switch
 		{
-			ProtocolConstants.ErrorCodes.CommandTimeout => new CliException(CliErrorCodes.CommandTimeout, exception.Message),
-			ProtocolConstants.ErrorCodes.TargetExited => new CliException(CliErrorCodes.TargetExited, exception.Message),
-			ProtocolConstants.ErrorCodes.MalformedFrame => new CliException(CliErrorCodes.ProtocolError, exception.Message),
-			_ => new CliException(CliErrorCodes.PipeFailed, exception.Message),
+			ProtocolConstants.ErrorCodes.CommandTimeout => new AutomationException(AutomationErrorCodes.CommandTimeout, exception.Message),
+			ProtocolConstants.ErrorCodes.TargetExited => new AutomationException(AutomationErrorCodes.TargetExited, exception.Message),
+			ProtocolConstants.ErrorCodes.MalformedFrame => new AutomationException(AutomationErrorCodes.ProtocolError, exception.Message),
+			_ => new AutomationException(AutomationErrorCodes.PipeFailed, exception.Message),
 		};
 	}
 }
 
-public sealed class NamedPipeCliStreamSession : ICliStreamSession
+public sealed class NamedPipeAutomationStreamSession : IAutomationStreamSession
 {
 	private readonly NamedPipeClientStream pipe;
 	private readonly Func<int?> getTargetExitCode;
 
-	private NamedPipeCliStreamSession(NamedPipeClientStream pipe, Func<int?> getTargetExitCode, StartSendingCommandResponse start)
+	private NamedPipeAutomationStreamSession(NamedPipeClientStream pipe, Func<int?> getTargetExitCode, StartSendingCommandResponse start)
 	{
 		this.pipe = pipe;
 		this.getTargetExitCode = getTargetExitCode;
@@ -291,7 +291,7 @@ public sealed class NamedPipeCliStreamSession : ICliStreamSession
 
 	public StartSendingCommandResponse Start { get; }
 
-	public static NamedPipeCliStreamSession Create(
+	public static NamedPipeAutomationStreamSession Create(
 		string pipeName,
 		StartSendingCommandRequest command,
 		Func<int?> getTargetExitCode,
@@ -308,16 +308,16 @@ public sealed class NamedPipeCliStreamSession : ICliStreamSession
 				.GetAwaiter()
 				.GetResult();
 			if (!response.HasFrame || response.Message is null)
-				throw new CliException(CliErrorCodes.PipeFailed, "The stream pipe closed before the start response was received.");
+				throw new AutomationException(AutomationErrorCodes.PipeFailed, "The stream pipe closed before the start response was received.");
 			if (response.Message is StandardIpcResponse standard && standard.Success == false)
 				throw MapStandardError(standard);
 
-			return new NamedPipeCliStreamSession(
+			return new NamedPipeAutomationStreamSession(
 				pipe,
 				getTargetExitCode,
 				MessagePacker.ConvertTo<StartSendingCommandResponse>(response.Message));
 		}
-		catch (CliException)
+		catch (AutomationException)
 		{
 			pipe.Dispose();
 			throw;
@@ -325,7 +325,7 @@ public sealed class NamedPipeCliStreamSession : ICliStreamSession
 		catch (Exception ex) when (ex is TimeoutException or IOException or ProtocolException)
 		{
 			pipe.Dispose();
-			throw new CliException(CliErrorCodes.PipeFailed, ex.Message);
+			throw new AutomationException(AutomationErrorCodes.PipeFailed, ex.Message);
 		}
 	}
 
@@ -351,11 +351,11 @@ public sealed class NamedPipeCliStreamSession : ICliStreamSession
 		}
 		catch (ProtocolException ex)
 		{
-			throw new CliException(CliErrorCodes.ProtocolError, ex.Message);
+			throw new AutomationException(AutomationErrorCodes.ProtocolError, ex.Message);
 		}
 		catch (IOException ex)
 		{
-			throw new CliException(CliErrorCodes.PipeFailed, ex.Message);
+			throw new AutomationException(AutomationErrorCodes.PipeFailed, ex.Message);
 		}
 	}
 
@@ -368,19 +368,19 @@ public sealed class NamedPipeCliStreamSession : ICliStreamSession
 	{
 		var exitCode = getTargetExitCode();
 		if (exitCode.HasValue)
-			throw new CliException(CliErrorCodes.TargetExited, $"Target process exited with code {exitCode.Value}.");
+			throw new AutomationException(AutomationErrorCodes.TargetExited, $"Target process exited with code {exitCode.Value}.");
 	}
 
-	private static CliException MapStandardError(StandardIpcResponse response)
+	private static AutomationException MapStandardError(StandardIpcResponse response)
 	{
 		return response.ErrorCode switch
 		{
-			ProtocolConstants.ErrorCodes.CommandTimeout => new CliException(CliErrorCodes.CommandTimeout, response.Error ?? "Command timed out.", response),
-			ProtocolConstants.ErrorCodes.StaleTarget => new CliException(CliErrorCodes.StaleTarget, response.Error ?? "Target is stale.", response),
-			ProtocolConstants.ErrorCodes.TargetExited => new CliException(CliErrorCodes.TargetExited, response.Error ?? "Target exited.", response),
-			ProtocolConstants.ErrorCodes.UnsupportedTarget => new CliException(CliErrorCodes.UnsupportedTarget, response.Error ?? "Unsupported target.", response),
-			ProtocolConstants.ErrorCodes.InvalidArguments => new CliException(CliErrorCodes.InvalidArguments, response.Error ?? "Invalid stream request.", response),
-			_ => new CliException(CliErrorCodes.ProtocolError, response.Error ?? "Stream command failed.", response),
+			ProtocolConstants.ErrorCodes.CommandTimeout => new AutomationException(AutomationErrorCodes.CommandTimeout, response.Error ?? "Command timed out.", response),
+			ProtocolConstants.ErrorCodes.StaleTarget => new AutomationException(AutomationErrorCodes.StaleTarget, response.Error ?? "Target is stale.", response),
+			ProtocolConstants.ErrorCodes.TargetExited => new AutomationException(AutomationErrorCodes.TargetExited, response.Error ?? "Target exited.", response),
+			ProtocolConstants.ErrorCodes.UnsupportedTarget => new AutomationException(AutomationErrorCodes.UnsupportedTarget, response.Error ?? "Unsupported target.", response),
+			ProtocolConstants.ErrorCodes.InvalidArguments => new AutomationException(AutomationErrorCodes.InvalidArguments, response.Error ?? "Invalid stream request.", response),
+			_ => new AutomationException(AutomationErrorCodes.ProtocolError, response.Error ?? "Stream command failed.", response),
 		};
 	}
 

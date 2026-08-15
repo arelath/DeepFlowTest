@@ -8,7 +8,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Contracts;
@@ -64,7 +64,7 @@ internal static class AgentTools
 				AttachTimeoutMs = timeoutMs,
 				TerminateOnDetach = launch.TerminateOnClose,
 			}), new { target, timeoutMs }),
-			_ => McpToolResponse.Fail(CliErrorCodes.InvalidArguments, "Unsupported context target."),
+			_ => McpToolResponse.Fail(AutomationErrorCodes.InvalidArguments, "Unsupported context target."),
 		};
 
 		return McpCallToolResults.FromLegacy(response, static data => ToContextResult((McpTargetStatus)data!), result =>
@@ -167,16 +167,16 @@ internal static class AgentTools
 		{
 			var session = host.RequireContext(contextId);
 			if (limit <= 0)
-				throw new CliException(CliErrorCodes.InvalidArguments, "limit must be greater than zero.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, "limit must be greater than zero.");
 
 			var propertyNames = PropertiesOrDefaults(properties, options.Value.DefaultProperties);
 			var snapshot = cache.GetOrRefresh(session, propertyNames, Math.Max(options.Value.TreeLimit, limit), refresh: refresh);
-			var selector = target.ToCliSelector();
+			var selector = target.ToAutomationSelector();
 			if (!string.IsNullOrWhiteSpace(target.Handle))
 			{
 				var resolved = handles.Resolve(contextId, target.Handle!, snapshot);
 				var node = snapshot.Nodes.FirstOrDefault(node => string.Equals(node.TargetId, resolved.TargetId, StringComparison.Ordinal))
-					?? throw new CliException(CliErrorCodes.TargetNotFound, $"Resolved element handle '{target.Handle}' was not present in the current snapshot.");
+					?? throw new AutomationException(AutomationErrorCodes.TargetNotFound, $"Resolved element handle '{target.Handle}' was not present in the current snapshot.");
 				var shaped = new TreeSnapshotService().ShapeOne(node, snapshot, new TreeSnapshotOptions
 				{
 					IncludePath = true,
@@ -214,7 +214,7 @@ internal static class AgentTools
 			});
 			if (found.MatchCount == 0 && target is McpSemanticSelector { Fallback: not null } semantic)
 			{
-				selector = semantic.Fallback.ToCliSelector();
+				selector = semantic.Fallback.ToAutomationSelector();
 				found = FindMatches(snapshot, selector, limit);
 			}
 			var matches = found.Matches.Select(match => ToElementMatch(
@@ -250,7 +250,7 @@ internal static class AgentTools
 		{
 			var contextPolicy = host.GetContextPolicy(contextId);
 			if (!contextPolicy.AllowActions)
-				throw new CliException(CliErrorCodes.ActionDenied, $"Action '{ActionKind(action)}' requires allowActions policy.");
+				throw new AutomationException(AutomationErrorCodes.ActionDenied, $"Action '{ActionKind(action)}' requires allowActions policy.");
 
 			var session = host.RequireContext(contextId);
 			var properties = McpSemanticRecordingFormatter.MergeSemanticProperties(options.Value.DefaultProperties);
@@ -260,7 +260,7 @@ internal static class AgentTools
 			{
 				ExecuteAction(session.AppSession, action, resolution.TargetId, contextId, before, handles, options.Value, contextPolicy);
 			}
-			catch (CliException ex) when (ex.ErrorCode == CliErrorCodes.StaleTarget && !string.IsNullOrWhiteSpace(target.Handle))
+			catch (AutomationException ex) when (ex.ErrorCode == AutomationErrorCodes.StaleTarget && !string.IsNullOrWhiteSpace(target.Handle))
 			{
 				cache.Invalidate(session.SessionId);
 				var repairSnapshot = cache.GetOrRefresh(session, properties, options.Value.TreeLimit, includeHidden: true, refresh: true);
@@ -335,13 +335,13 @@ internal static class AgentTools
 		{
 			var session = host.RequireContext(contextId);
 			if (intervalMs <= 0)
-				throw new CliException(CliErrorCodes.InvalidArguments, "intervalMs must be greater than zero.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, "intervalMs must be greater than zero.");
 			if (count < 0)
-				throw new CliException(CliErrorCodes.InvalidArguments, "count cannot be negative.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, "count cannot be negative.");
 			if (stabilityMs <= 0)
-				throw new CliException(CliErrorCodes.InvalidArguments, "stabilityMs must be greater than zero.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, "stabilityMs must be greater than zero.");
 			if (target is null && condition is not (McpWaitCondition.Stable or McpWaitCondition.Responsive or McpWaitCondition.WindowTitleChanged))
-				throw new CliException(CliErrorCodes.InvalidArguments, "target is required for this wait condition.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, "target is required for this wait condition.");
 
 			var timeout = Math.Max(1, timeoutMs ?? options.Value.DefaultTimeoutMs);
 			var stopwatch = Stopwatch.StartNew();
@@ -365,7 +365,7 @@ internal static class AgentTools
 							Revision = cache.GetLatestRevision(session.SessionId) ?? 0,
 						};
 					}
-					catch (CliException) when (stopwatch.ElapsedMilliseconds < timeout)
+					catch (AutomationException) when (stopwatch.ElapsedMilliseconds < timeout)
 					{
 						Thread.Sleep(Math.Min(intervalMs, Math.Max(1, timeout - (int)stopwatch.ElapsedMilliseconds)));
 						continue;
@@ -424,7 +424,7 @@ internal static class AgentTools
 				var found = FindTargetMatches(contextId, target!, snapshot, handles, options.Value.TreeLimit);
 				if (ConditionSatisfied(condition, found, count, property))
 				{
-					var selector = target!.ToCliSelector();
+					var selector = target!.ToAutomationSelector();
 					var matches = found.Matches.Select(match => ToElementMatch(
 						handles.Register(contextId, match.Node.TargetId, StableSelector(selector, match.Node), match.Node, snapshot.SequenceNumber),
 						match.Node)).ToArray();
@@ -443,7 +443,7 @@ internal static class AgentTools
 				Thread.Sleep(Math.Min(intervalMs, Math.Max(1, timeout - (int)stopwatch.ElapsedMilliseconds)));
 			}
 
-			throw new CliException(CliErrorCodes.CommandTimeout, $"Wait for {condition} timed out after {timeout} ms.");
+			throw new AutomationException(AutomationErrorCodes.CommandTimeout, $"Wait for {condition} timed out after {timeout} ms.");
 		}, new { contextId, target, condition, count, property, timeoutMs, intervalMs, stabilityMs, initialWindowTitle });
 
 		return McpCallToolResults.FromLegacy(response, static data => (McpWaitResult)data!, result =>
@@ -466,7 +466,7 @@ internal static class AgentTools
 		{
 			var session = host.RequireContext(contextId);
 			string? resolvedTargetId = null;
-			if (target is not null && (!string.IsNullOrWhiteSpace(target.Handle) || !target.ToCliSelector().IsEmpty))
+			if (target is not null && (!string.IsNullOrWhiteSpace(target.Handle) || !target.ToAutomationSelector().IsEmpty))
 			{
 				var snapshot = cache.GetOrRefresh(session, options.Value.DefaultProperties, options.Value.TreeLimit, refresh: false);
 				resolvedTargetId = ResolveTarget(contextId, target, snapshot, handles).TargetId;
@@ -539,7 +539,7 @@ internal static class AgentTools
 				_ = host.Send<PingCommandResponse>(contextId, new PingCommandRequest(options.Value.DefaultTimeoutMs), options.Value.DefaultTimeoutMs);
 				responsive = true;
 			}
-			catch (CliException ex)
+			catch (AutomationException ex)
 			{
 				targetErrorCode = ex.ErrorCode;
 				targetErrorMessage = ex.Message;
@@ -562,7 +562,7 @@ internal static class AgentTools
 						new GetBindingFailuresCommandRequest(null, 100, options.Value.DefaultTimeoutMs),
 						options.Value.DefaultTimeoutMs);
 				}
-				catch (CliException ex)
+				catch (AutomationException ex)
 				{
 					diagnosticErrorCode = ex.ErrorCode;
 					diagnosticErrorMessage = ex.Message;
@@ -730,27 +730,27 @@ internal static class AgentTools
 			return new ActionResolution(resolved.TargetId, resolved.Entry.Handle, resolved.Strategy, resolved.Confidence, resolved.Entry.OriginalRevision, resolved.CurrentRevision);
 		}
 
-		var selector = target.ToCliSelector();
+		var selector = target.ToAutomationSelector();
 		var usedFallback = false;
 		ElementResolution resolution;
 		try
 		{
 			resolution = new ElementResolver().Resolve(snapshot, selector);
 		}
-		catch (CliException ex) when (ex.ErrorCode == CliErrorCodes.NoMatch && target is McpSemanticSelector { Fallback: not null } semantic)
+		catch (AutomationException ex) when (ex.ErrorCode == AutomationErrorCodes.NoMatch && target is McpSemanticSelector { Fallback: not null } semantic)
 		{
-			selector = semantic.Fallback.ToCliSelector();
+			selector = semantic.Fallback.ToAutomationSelector();
 			usedFallback = true;
 			try
 			{
 				resolution = new ElementResolver().Resolve(snapshot, selector);
 			}
-			catch (CliException fallbackError) when (fallbackError.ErrorCode == CliErrorCodes.AmbiguousTarget)
+			catch (AutomationException fallbackError) when (fallbackError.ErrorCode == AutomationErrorCodes.AmbiguousTarget)
 			{
 				throw CreateAmbiguousElementError(contextId, selector, snapshot, handles);
 			}
 		}
-		catch (CliException ex) when (ex.ErrorCode == CliErrorCodes.AmbiguousTarget)
+		catch (AutomationException ex) when (ex.ErrorCode == AutomationErrorCodes.AmbiguousTarget)
 		{
 			throw CreateAmbiguousElementError(contextId, selector, snapshot, handles);
 		}
@@ -760,7 +760,7 @@ internal static class AgentTools
 		return new ActionResolution(resolution.TargetId, entry.Handle, strategy, 1.0, snapshot.SequenceNumber, snapshot.SequenceNumber);
 	}
 
-	private static CliException CreateAmbiguousElementError(
+	private static AutomationException CreateAmbiguousElementError(
 		string contextId,
 		ElementSelector selector,
 		VisualTreeSnapshot snapshot,
@@ -781,14 +781,14 @@ internal static class AgentTools
 				Path = match.Node.Path,
 			};
 		}).ToArray();
-		return new CliException(
-			CliErrorCodes.AmbiguousTarget,
+		return new AutomationException(
+			AutomationErrorCodes.AmbiguousTarget,
 			$"{found.MatchCount} elements matched the selector. Use a candidate handle, target.index, or a more specific selector.",
 			new McpAmbiguousElementDetails { MatchCount = found.MatchCount, Candidates = candidates });
 	}
 
 	private static void ExecuteAction(
-		ICliAppSession session,
+		IAutomationSession session,
 		McpAgentAction action,
 		string targetId,
 		string contextId,
@@ -798,28 +798,24 @@ internal static class AgentTools
 		McpPolicyOptions policy)
 	{
 		if (action is McpClickAction { Count: <= 0 })
-			throw new CliException(CliErrorCodes.InvalidArguments, "action.count must be greater than zero.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "action.count must be greater than zero.");
 		if (action is McpMouseWheelAction { Delta: 0 })
-			throw new CliException(CliErrorCodes.InvalidArguments, "action.delta must not be zero.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "action.delta must not be zero.");
 
-		var common = new CliCommonOptions
-		{
-			TimeoutMs = options.DefaultTimeoutMs,
-			UseShortIds = true,
-			AllowActions = true,
-			AllowArbitraryInvoke = policy.AllowArbitraryInvoke,
-			After = "none",
-		};
-		var defaults = new CliDefaults { TreeLimit = options.TreeLimit, PropertyNames = [.. options.DefaultProperties] };
-		var support = new ActionCommandSupport();
+		var executionOptions = new AutomationExecutionOptions(
+			options.DefaultTimeoutMs,
+			options.TreeLimit,
+			[.. options.DefaultProperties],
+			ObservationMode.None,
+			UseShortIds: true);
+		var executor = new ActionExecutor();
 		if (action is McpDragAction drag)
 		{
 			var destination = ResolveTarget(contextId, drag.Destination, snapshot, handles);
-			support.ExecuteTwoTarget(
+			executor.ExecuteTwoTarget(
 				"drag",
 				session,
-				common,
-				defaults,
+				executionOptions,
 				new ElementSelector { TargetId = targetId },
 				new ElementSelector { TargetId = destination.TargetId },
 				(source, destinationTarget) => new DragAndDropCommandRequest
@@ -833,11 +829,10 @@ internal static class AgentTools
 			return;
 		}
 
-		support.Execute(
+		executor.Execute(
 			ActionKind(action).ToString().ToLowerInvariant(),
 			session,
-			common,
-			defaults,
+			executionOptions,
 			new ElementSelector { TargetId = targetId },
 			resolvedTargetId => CreateCommand(action, resolvedTargetId ?? targetId, options),
 			requireElementTarget: true);
@@ -868,8 +863,8 @@ internal static class AgentTools
 			},
 			McpFocusAction => new FocusCommandRequest { TargetId = targetId },
 			McpInvokeAction invoke when KnownOperations.Contains(invoke.Operation) => new KnownOperationCommandRequest { TargetId = targetId, Operation = invoke.Operation },
-			McpInvokeAction invoke => throw new CliException(CliErrorCodes.InvalidArguments, $"Known operation '{invoke.Operation}' is not allow-listed."),
-			_ => throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported action type '{action.GetType().Name}'."),
+			McpInvokeAction invoke => throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Known operation '{invoke.Operation}' is not allow-listed."),
+			_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported action type '{action.GetType().Name}'."),
 		};
 
 	private static McpActionKind ActionKind(McpAgentAction action) =>
@@ -883,11 +878,11 @@ internal static class AgentTools
 			McpFocusAction => McpActionKind.Focus,
 			McpInvokeAction => McpActionKind.Invoke,
 			McpDragAction => McpActionKind.Drag,
-			_ => throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported action type '{action.GetType().Name}'."),
+			_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported action type '{action.GetType().Name}'."),
 		};
 
 	private static string Require(string? value, string name) =>
-		string.IsNullOrWhiteSpace(value) ? throw new CliException(CliErrorCodes.InvalidArguments, $"{name} is required.") : value;
+		string.IsNullOrWhiteSpace(value) ? throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"{name} is required.") : value;
 
 	private static McpVerificationResult Verify(
 		McpSession session,
@@ -911,7 +906,7 @@ internal static class AgentTools
 			Thread.Sleep(Math.Min(100, Math.Max(1, timeout - (int)stopwatch.ElapsedMilliseconds)));
 		}
 
-		throw new CliException(CliErrorCodes.CommandTimeout, $"Action completed, but verification of property '{expectation.PropertyEquals.Name}' timed out after {timeout} ms.");
+		throw new AutomationException(AutomationErrorCodes.CommandTimeout, $"Action completed, but verification of property '{expectation.PropertyEquals.Name}' timed out after {timeout} ms.");
 	}
 
 	private static string? CreateObservation(McpObserveMode mode, VisualTreeSnapshot before, VisualTreeSnapshot after, string targetId) =>
@@ -1055,15 +1050,15 @@ internal static class AgentTools
 				});
 				return new FindResultData { MatchCount = 1, MaxMatches = 1, Matches = [new FindMatchData { Node = shaped }] };
 			}
-			catch (CliException ex) when (ex.ErrorCode is CliErrorCodes.NoMatch or CliErrorCodes.TargetNotFound)
+			catch (AutomationException ex) when (ex.ErrorCode is AutomationErrorCodes.NoMatch or AutomationErrorCodes.TargetNotFound)
 			{
 				return new FindResultData { MatchCount = 0, MaxMatches = 1 };
 			}
 		}
 
-		var found = FindMatches(snapshot, target.ToCliSelector(), limit);
+		var found = FindMatches(snapshot, target.ToAutomationSelector(), limit);
 		if (found.MatchCount == 0 && target is McpSemanticSelector { Fallback: not null } semantic)
-			return FindMatches(snapshot, semantic.Fallback.ToCliSelector(), limit);
+			return FindMatches(snapshot, semantic.Fallback.ToAutomationSelector(), limit);
 		return found;
 	}
 
@@ -1096,7 +1091,7 @@ internal static class AgentTools
 	}
 
 	private static McpPropertyMatch RequireProperty(McpPropertyMatch? property) =>
-		property ?? throw new CliException(CliErrorCodes.InvalidArguments, "property is required for this wait condition.");
+		property ?? throw new AutomationException(AutomationErrorCodes.InvalidArguments, "property is required for this wait condition.");
 
 	private static bool AnyProperty(FindResultData result, McpPropertyMatch property, bool equal) =>
 		result.Matches.Any(match =>

@@ -3,18 +3,18 @@ namespace DeepFlowTest.Mcp.Hosting;
 using System;
 using System.IO;
 using DeepFlowTest;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Contracts;
 using Microsoft.Extensions.Options;
 
 internal sealed class McpTargetSessionFactory
 {
-	private readonly CliServices services;
+	private readonly AutomationServices services;
 	private readonly IMcpProcessLauncher launcher;
 	private readonly IOptions<McpServerOptions> options;
 
-	public McpTargetSessionFactory(CliServices services, IMcpProcessLauncher launcher, IOptions<McpServerOptions> options)
+	public McpTargetSessionFactory(AutomationServices services, IMcpProcessLauncher launcher, IOptions<McpServerOptions> options)
 	{
 		this.services = services ?? throw new ArgumentNullException(nameof(services));
 		this.launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
@@ -25,10 +25,10 @@ internal sealed class McpTargetSessionFactory
 	{
 		ArgumentNullException.ThrowIfNull(selector);
 		if (selector.IsEmpty)
-			throw new CliException(CliErrorCodes.InvalidArguments, "A target selector is required.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "A target selector is required.");
 
-		var target = services.TargetResolver.Resolve(selector.ToCliSelector());
-		var session = services.AppSessionService.Open(target, CreateAttachOptions(timeoutMs, noInject, pipeId));
+		var target = services.TargetResolver.Resolve(selector.ToAutomationSelector());
+		var session = services.SessionService.Open(target, CreateAttachOptions(timeoutMs, noInject, pipeId));
 		return new McpSession(target, session, "attach");
 	}
 
@@ -36,9 +36,9 @@ internal sealed class McpTargetSessionFactory
 	{
 		ArgumentNullException.ThrowIfNull(launchOptions);
 		if (!options.Value.Policy.AllowLaunch)
-			throw new CliException(CliErrorCodes.ActionDenied, "Launching applications requires allowLaunch policy.");
+			throw new AutomationException(AutomationErrorCodes.ActionDenied, "Launching applications requires allowLaunch policy.");
 		if (string.IsNullOrWhiteSpace(launchOptions.FileName))
-			throw new CliException(CliErrorCodes.InvalidArguments, "Launch fileName is required.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Launch fileName is required.");
 
 		McpArgumentParsing.ValidateExecutableAllowed(launchOptions.FileName, options.Value.Policy.AllowedExecutableRoots);
 		var process = launcher.Start(launchOptions);
@@ -46,7 +46,7 @@ internal sealed class McpTargetSessionFactory
 		{
 			process.Refresh();
 			if (process.HasExited)
-				throw new CliException(CliErrorCodes.TargetExited, $"Launched process {process.Id} exited before attach.");
+				throw new AutomationException(AutomationErrorCodes.TargetExited, $"Launched process {process.Id} exited before attach.");
 
 			var target = new TargetInfo
 			{
@@ -55,7 +55,7 @@ internal sealed class McpTargetSessionFactory
 				MainWindowTitle = SafeMainWindowTitle(process),
 				TargetProcess = process,
 			};
-			var session = services.AppSessionService.Open(
+			var session = services.SessionService.Open(
 				target,
 				CreateAttachOptions(launchOptions.AttachTimeoutMs, noInject: false, pipeId: null));
 			return new McpSession(target, session, "launch", process, launchOptions.TerminateOnDetach);
@@ -70,7 +70,7 @@ internal sealed class McpTargetSessionFactory
 		}
 	}
 
-	private CliAttachOptions CreateAttachOptions(int? timeoutMs, bool noInject, string? pipeId) =>
+	private AutomationAttachOptions CreateAttachOptions(int? timeoutMs, bool noInject, string? pipeId) =>
 		new()
 		{
 			TimeoutMs = Math.Max(1, timeoutMs ?? options.Value.AttachTimeoutMs),

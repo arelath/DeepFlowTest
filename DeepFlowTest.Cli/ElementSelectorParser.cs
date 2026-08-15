@@ -2,52 +2,11 @@ namespace DeepFlowTest.Cli;
 
 using System.Collections.Generic;
 
-public sealed class ElementSelector
+internal static class ElementSelectorParser
 {
-	public string? TargetId { get; set; }
+	public static DeepFlowTest.Automation.ElementSelector FromArgs(string[] args) => FromArgs(args, prefix: null);
 
-	public string? TypeName { get; set; }
-
-	public string? TypeContains { get; set; }
-
-	public string? Name { get; set; }
-
-	public string? AutomationId { get; set; }
-
-	public string? Text { get; set; }
-
-	public KeyValuePair<string, string>? PropertyEquals { get; set; }
-
-	public KeyValuePair<string, string>? PropertyContains { get; set; }
-
-	public KeyValuePair<string, string>? PropertyRegex { get; set; }
-
-	public bool? Visible { get; set; }
-
-	public bool? Enabled { get; set; }
-
-	public bool CaseSensitive { get; set; }
-
-	public bool First { get; set; }
-
-	public int? Index { get; set; }
-
-	public bool IsEmpty =>
-		string.IsNullOrWhiteSpace(TargetId)
-		&& string.IsNullOrWhiteSpace(TypeName)
-		&& string.IsNullOrWhiteSpace(TypeContains)
-		&& string.IsNullOrWhiteSpace(Name)
-		&& string.IsNullOrWhiteSpace(AutomationId)
-		&& string.IsNullOrWhiteSpace(Text)
-		&& PropertyEquals is null
-		&& PropertyContains is null
-		&& PropertyRegex is null
-		&& !Visible.HasValue
-		&& !Enabled.HasValue;
-
-	public static ElementSelector FromArgs(string[] args) => FromArgs(args, prefix: null);
-
-	public static ElementSelector FromArgs(string[] args, string? prefix)
+	public static DeepFlowTest.Automation.ElementSelector FromArgs(string[] args, string? prefix)
 	{
 		var target = Option(prefix, "target");
 		var targetId = Option(prefix, "target-id");
@@ -73,9 +32,9 @@ public sealed class ElementSelector
 
 		int? index = CliArgumentReader.GetOption(args, indexName) is null ? null : CliArgumentReader.GetInt(args, indexName, 0);
 		if (index.HasValue && index.Value < 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, $"{indexName} must be a non-negative zero-based index.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"{indexName} must be a non-negative zero-based index.");
 
-		return new ElementSelector
+		return new DeepFlowTest.Automation.ElementSelector
 		{
 			TargetId = CliArgumentReader.GetOption(args, target, targetId),
 			TypeName = CliArgumentReader.GetOption(args, type),
@@ -95,19 +54,14 @@ public sealed class ElementSelector
 	}
 
 	private static string Option(string? prefix, string name) =>
-		string.IsNullOrWhiteSpace(prefix)
-			? "--" + name
-			: "--" + prefix + "-" + name;
+		string.IsNullOrWhiteSpace(prefix) ? "--" + name : "--" + prefix + "-" + name;
 
 	private static KeyValuePair<string, string>? GetPropertyEquals(
 		IReadOnlyList<string> args,
 		string? prefix,
 		string matchProperty,
-		string prop)
-	{
-		if (string.IsNullOrWhiteSpace(prefix))
-			return CliArgumentReader.GetKeyValue(args, matchProperty, prop);
-
-		return CliArgumentReader.GetKeyValue(args, matchProperty, Option(prefix, "property"), prop);
-	}
+		string prop) =>
+		string.IsNullOrWhiteSpace(prefix)
+			? CliArgumentReader.GetKeyValue(args, matchProperty, prop)
+			: CliArgumentReader.GetKeyValue(args, matchProperty, Option(prefix, "property"), prop);
 }

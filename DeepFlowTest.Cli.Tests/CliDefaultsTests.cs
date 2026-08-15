@@ -112,13 +112,13 @@ public sealed class CliDefaultsTests
 	}
 
 	[Test]
-	public void StringListConfigJsonParsingErrorsMapToCliExceptionsAndNullClears()
+	public void StringListConfigJsonParsingErrorsMapToAutomationExceptionsAndNullClears()
 	{
 		var store = new CliDefaultsStore(CliTestHost.CreateTempConfigPath());
 
 		Assert.That(
 			() => store.Set("propertyNames", "[1]", json: true),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidArguments));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.InvalidArguments));
 
 		store.Set("common.process", "DeepFlowTestHarness");
 		store.Set("common.process", "null");
@@ -186,7 +186,7 @@ public sealed class CliDefaultsTests
 	{
 		var store = new CliDefaultsStore(CliTestHost.CreateTempConfigPath());
 
-		Assert.That(() => store.Set("outputFormat", "yaml"), Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidConfig));
-		Assert.That(() => store.Set("commands.tree.shape", "tree"), Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.InvalidConfig));
+		Assert.That(() => store.Set("outputFormat", "yaml"), Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.InvalidConfig));
+		Assert.That(() => store.Set("commands.tree.shape", "tree"), Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.InvalidConfig));
 	}
 }

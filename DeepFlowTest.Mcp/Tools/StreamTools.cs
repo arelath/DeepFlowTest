@@ -3,7 +3,7 @@ namespace DeepFlowTest.Mcp.Tools;
 using System;
 using System.ComponentModel;
 using DeepFlowTest;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Contracts;
@@ -32,9 +32,9 @@ internal static class StreamTools
 		return runner.Run(() =>
 		{
 			if (!IsKnownStreamKind(kind))
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported stream kind '{kind}'.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported stream kind '{kind}'.");
 			if (intervalMs < TimeoutDefaults.StreamMinimumIntervalMs)
-				throw new CliException(CliErrorCodes.InvalidArguments, $"intervalMs must be at least {TimeoutDefaults.StreamMinimumIntervalMs}.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"intervalMs must be at least {TimeoutDefaults.StreamMinimumIntervalMs}.");
 
 			var timeout = Math.Max(1, timeoutMs ?? options.Value.DefaultTimeoutMs);
 			var propertyNames = McpArgumentParsing.ParseProperties(properties, options.Value.DefaultProperties);

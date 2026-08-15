@@ -68,10 +68,10 @@ public sealed class ScreenshotCommandHandlerTests
 				ErrorCode = DeepFlowTest.Contracts.ProtocolConstants.ErrorCodes.StaleTarget,
 				Error = "stale",
 			}, new ScreenshotFileOptions()),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.StaleTarget));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.StaleTarget));
 		Assert.That(
 			() => service.Process(new DeepFlowTest.Contracts.ScreenshotCommandResponse { BytesBase64 = "not-base64" }, new ScreenshotFileOptions()),
-			Throws.TypeOf<CliException>().With.Property("ErrorCode").EqualTo(CliErrorCodes.ProtocolError));
+			Throws.TypeOf<AutomationException>().With.Property("ErrorCode").EqualTo(AutomationErrorCodes.ProtocolError));
 	}
 
 	[Test]

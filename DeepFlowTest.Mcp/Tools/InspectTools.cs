@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Contracts;
@@ -213,7 +213,7 @@ internal static class InspectTools
 		return runner.Run(() =>
 		{
 			var snapshot = cache.GetOrRefresh(host, options.Value.DefaultProperties, options.Value.TreeLimit, refresh: refresh);
-			var fullId = new CliTargetIdService().Resolve(targetId, snapshot);
+			var fullId = new TargetIdService().Resolve(targetId, snapshot);
 			var node = snapshot.Nodes.First(node => node.TargetId == fullId);
 			List<McpSelectorSuggestion> suggestions = [];
 			AddSuggestion(suggestions, snapshot, node, KnownProperties.AutomationId, 0.98, "high", static value => new McpSemanticSelector { AutomationId = value }, "Automation ID is usually the most stable selector.");
@@ -231,7 +231,7 @@ internal static class InspectTools
 					Selector = selector,
 					Confidence = 0.75,
 					Stability = "low",
-					Unique = CountMatches(snapshot, selector.ToCliSelector()) == 1,
+					Unique = CountMatches(snapshot, selector.ToAutomationSelector()) == 1,
 					Explanation = $"{propertyName} is a readable fallback when automation properties are absent.",
 				});
 				break;
@@ -270,13 +270,7 @@ internal static class InspectTools
 	{
 		return runner.Run(() =>
 		{
-			if (matchCount <= 0)
-				throw new CliException(CliErrorCodes.InvalidArguments, "matchCount must be greater than zero.");
-			if (intervalMs <= 0)
-				throw new CliException(CliErrorCodes.InvalidArguments, "intervalMs must be greater than zero.");
-
 			var timeout = Math.Max(1, timeoutMs ?? options.Value.DefaultTimeoutMs);
-			var deadline = DateTimeOffset.UtcNow.AddMilliseconds(timeout);
 			var propertyNames = McpArgumentParsing.ParseProperties(properties, options.Value.DefaultProperties);
 			var findOptions = new FindSnapshotOptions
 			{
@@ -295,17 +289,10 @@ internal static class InspectTools
 				UseShortIds = true,
 			};
 
-			while (DateTimeOffset.UtcNow <= deadline)
-			{
-				var snapshot = cache.GetOrRefresh(host, propertyNames, options.Value.TreeLimit, refresh: true);
-				var result = new FindSnapshotService().Find(snapshot, findOptions);
-				if (result.MatchCount >= matchCount)
-					return result;
-
-				Thread.Sleep(Math.Min(intervalMs, Math.Max(1, (int)(deadline - DateTimeOffset.UtcNow).TotalMilliseconds)));
-			}
-
-			throw new CliException(CliErrorCodes.CommandTimeout, $"Wait timed out after {timeout} ms.");
+			return new WaitExecutor().Execute(
+				() => cache.GetOrRefresh(host, propertyNames, options.Value.TreeLimit, refresh: true),
+				findOptions,
+				new WaitExecutionOptions(timeout, intervalMs, matchCount));
 		}, new
 		{
 			typeName,
@@ -359,7 +346,7 @@ internal static class InspectTools
 		{
 			McpSemanticRecordingFormatter.FormatName or "condensed" or "text" => true,
 			"json" or "tree-json" => false,
-			_ => throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported outputFormat '{outputFormat}'."),
+			_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported outputFormat '{outputFormat}'."),
 		};
 	}
 
@@ -382,7 +369,7 @@ internal static class InspectTools
 			Selector = selector,
 			Confidence = confidence,
 			Stability = stability,
-			Unique = CountMatches(snapshot, selector.ToCliSelector()) == 1,
+			Unique = CountMatches(snapshot, selector.ToAutomationSelector()) == 1,
 			Explanation = explanation,
 		});
 	}

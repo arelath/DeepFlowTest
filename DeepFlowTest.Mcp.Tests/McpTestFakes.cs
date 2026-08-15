@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using DeepFlowTest;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Mcp.Activity;
@@ -36,13 +36,12 @@ internal static class McpTestHost
 	public static HostFixture CreateHost(
 		McpServerOptions? options = null,
 		ITargetResolver? resolver = null,
-		ICliAppSessionService? sessionService = null,
+		IAutomationSessionService? sessionService = null,
 		IMcpProcessLauncher? launcher = null,
 		IProcessSnapshotSource? snapshotSource = null)
 	{
 		var optionSource = Microsoft.Extensions.Options.Options.Create(options ?? Options());
-		var services = new CliServices(
-			new CliDefaultsStore(CreateTempConfigPath()),
+		var services = new AutomationServices(
 			snapshotSource ?? new FakeProcessSnapshotSource(),
 			resolver ?? new FakeTargetResolver(),
 			sessionService ?? new FakeAppSessionService());
@@ -100,8 +99,6 @@ internal static class McpTestHost
 			},
 		};
 
-	private static string CreateTempConfigPath() =>
-		System.IO.Path.Combine(System.IO.Path.GetTempPath(), "DeepFlowTest.Mcp.Tests", Guid.NewGuid().ToString("N"), "defaults.json");
 }
 
 internal sealed record class HostFixture(
@@ -111,7 +108,7 @@ internal sealed record class HostFixture(
 	McpStreamRegistry Streams,
 	McpElementHandleRegistry Handles,
 	DeepFlowResourceStore Resources,
-	CliServices Services,
+	AutomationServices Services,
 	IOptions<McpServerOptions> Options,
 	ServiceProvider ServiceProvider) : IDisposable
 {
@@ -143,7 +140,7 @@ internal sealed class FakeTargetResolver : ITargetResolver
 	}
 }
 
-internal sealed class FakeAppSessionService : ICliAppSessionService
+internal sealed class FakeAppSessionService : IAutomationSessionService
 {
 	public FakeAppSession Session { get; } = new();
 
@@ -153,9 +150,9 @@ internal sealed class FakeAppSessionService : ICliAppSessionService
 
 	public TargetInfo? LastTarget { get; private set; }
 
-	public CliException? OpenException { get; set; }
+	public AutomationException? OpenException { get; set; }
 
-	public ICliAppSession Open(TargetInfo target, CliAttachOptions options)
+	public IAutomationSession Open(TargetInfo target, AutomationAttachOptions options)
 	{
 		OpenCount++;
 		LastTarget = target;
@@ -166,7 +163,7 @@ internal sealed class FakeAppSessionService : ICliAppSessionService
 	}
 }
 
-internal sealed class FakeAppSession : ICliAppSession
+internal sealed class FakeAppSession : IAutomationSession
 {
 	public HelloCommandResponse Hello { get; } = new()
 	{
@@ -189,7 +186,7 @@ internal sealed class FakeAppSession : ICliAppSession
 
 	public Func<IpcCommand, object>? SendHandler { get; set; }
 
-	public Func<StartSendingCommandRequest, int, ICliStreamSession>? StartStreamHandler { get; set; }
+	public Func<StartSendingCommandRequest, int, IAutomationStreamSession>? StartStreamHandler { get; set; }
 
 	public FakeCliStreamSession? LastStreamSession { get; private set; }
 
@@ -217,7 +214,7 @@ internal sealed class FakeAppSession : ICliAppSession
 		return (TResponse)response;
 	}
 
-	public ICliStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs)
+	public IAutomationStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs)
 	{
 		Commands.Add(command);
 		if (StartStreamHandler is not null)
@@ -233,7 +230,7 @@ internal sealed class FakeAppSession : ICliAppSession
 	}
 }
 
-internal sealed class FakeCliStreamSession : ICliStreamSession
+internal sealed class FakeCliStreamSession : IAutomationStreamSession
 {
 	private readonly Queue<StreamMessage> frames;
 

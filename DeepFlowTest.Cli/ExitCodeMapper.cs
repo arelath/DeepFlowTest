@@ -11,25 +11,25 @@ public static class ExitCodeMapper
 
 		return errorCode switch
 		{
-			CliErrorCodes.InvalidArguments => 1,
-			CliErrorCodes.InvalidConfig => 1,
-			CliErrorCodes.ActionDenied => 1,
-			CliErrorCodes.ArbitraryInvokeDenied => 1,
-			CliErrorCodes.TargetNotFound => 2,
-			CliErrorCodes.AmbiguousTarget => 2,
-			CliErrorCodes.UnsupportedTarget => 3,
-			CliErrorCodes.UnsupportedFramework => 3,
-			CliErrorCodes.UnsupportedArchitecture => 3,
-			CliErrorCodes.AttachFailed => 4,
-			CliErrorCodes.PipeFailed => 5,
-			CliErrorCodes.ProtocolError => 5,
-			CliErrorCodes.CommandTimeout => 6,
-			CliErrorCodes.TargetExited => 7,
-			CliErrorCodes.NoMatch => 8,
-			CliErrorCodes.StaleTarget => 8,
-			CliErrorCodes.UnexpectedError => 9,
-			CliErrorCodes.PipeBusy => 10,
-			CliErrorCodes.NotImplemented => 1,
+			AutomationErrorCodes.InvalidArguments => 1,
+			AutomationErrorCodes.InvalidConfig => 1,
+			AutomationErrorCodes.ActionDenied => 1,
+			AutomationErrorCodes.ArbitraryInvokeDenied => 1,
+			AutomationErrorCodes.TargetNotFound => 2,
+			AutomationErrorCodes.AmbiguousTarget => 2,
+			AutomationErrorCodes.UnsupportedTarget => 3,
+			AutomationErrorCodes.UnsupportedFramework => 3,
+			AutomationErrorCodes.UnsupportedArchitecture => 3,
+			AutomationErrorCodes.AttachFailed => 4,
+			AutomationErrorCodes.PipeFailed => 5,
+			AutomationErrorCodes.ProtocolError => 5,
+			AutomationErrorCodes.CommandTimeout => 6,
+			AutomationErrorCodes.TargetExited => 7,
+			AutomationErrorCodes.NoMatch => 8,
+			AutomationErrorCodes.StaleTarget => 8,
+			AutomationErrorCodes.UnexpectedError => 9,
+			AutomationErrorCodes.PipeBusy => 10,
+			AutomationErrorCodes.NotImplemented => 1,
 			_ => 9,
 		};
 	}
@@ -38,8 +38,8 @@ public static class ExitCodeMapper
 	{
 		return exception switch
 		{
-			CliException cliException => cliException.ErrorCode,
-			_ => CliErrorCodes.UnexpectedError,
+			AutomationException cliException => cliException.ErrorCode,
+			_ => AutomationErrorCodes.UnexpectedError,
 		};
 	}
 }

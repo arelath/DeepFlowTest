@@ -120,19 +120,19 @@ public sealed class CliCommonOptions
 		Format = Format.ToLowerInvariant();
 		After = After.ToLowerInvariant();
 		if (!new[] { "json", "text" }.Contains(Format, StringComparer.Ordinal))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid --format '{Format}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid --format '{Format}'.");
 
 		if (!new[] { "none", "target", "tree" }.Contains(After, StringComparer.Ordinal))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid --after '{After}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid --after '{After}'.");
 	}
 
 	public void ValidateTargetSelectorRequired()
 	{
 		if (TargetSelectorCount == 0)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Exactly one target selector is required.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Exactly one target selector is required.");
 
 		if (TargetSelectorCount > 1)
-			throw new CliException(CliErrorCodes.InvalidArguments, "Only one target selector can be used at a time.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Only one target selector can be used at a time.");
 	}
 
 	public TargetSelector ToTargetSelector() =>
@@ -143,7 +143,7 @@ public sealed class CliCommonOptions
 			WindowTitle = WindowTitle,
 		};
 
-	public CliAttachOptions ToAttachOptions() =>
+	public AutomationAttachOptions ToAttachOptions() =>
 		new()
 		{
 			TimeoutMs = TimeoutMs,
@@ -171,11 +171,11 @@ public sealed class CliCommonOptions
 			return inlineValue;
 
 		if (index + 1 >= args.Count)
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Missing value for '{option}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Missing value for '{option}'.");
 
 		var value = args[++index];
 		if (value.StartsWith("--", StringComparison.Ordinal))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Missing value for '{option}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Missing value for '{option}'.");
 
 		return value;
 	}
@@ -183,7 +183,7 @@ public sealed class CliCommonOptions
 	private static int ParseInt(string value, string option)
 	{
 		if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid integer value for '{option}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid integer value for '{option}'.");
 
 		return result;
 	}

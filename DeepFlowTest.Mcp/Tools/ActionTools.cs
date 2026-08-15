@@ -3,7 +3,7 @@ namespace DeepFlowTest.Mcp.Tools;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 using DeepFlowTest.Mcp.Configuration;
@@ -69,7 +69,7 @@ internal static class ActionTools
 			action =>
 			{
 				if (clickCount <= 0)
-					throw new CliException(CliErrorCodes.InvalidArguments, "clickCount must be greater than zero.");
+					throw new AutomationException(AutomationErrorCodes.InvalidArguments, "clickCount must be greater than zero.");
 
 				var mouseButton = McpArgumentParsing.ParseMouseButton(button, MouseButtonKind.Left);
 				return action.Execute(
@@ -112,7 +112,7 @@ internal static class ActionTools
 			action =>
 			{
 				if (delta == 0)
-					throw new CliException(CliErrorCodes.InvalidArguments, "delta must not be zero.");
+					throw new AutomationException(AutomationErrorCodes.InvalidArguments, "delta must not be zero.");
 
 				return action.Execute(
 					targetId => new MouseWheelCommandRequest { TargetId = targetId ?? string.Empty, Delta = delta },
@@ -153,20 +153,18 @@ internal static class ActionTools
 		return runner.Run(() =>
 		{
 			if (!options.Value.Policy.AllowActions)
-				throw new CliException(CliErrorCodes.ActionDenied, "Action 'drag' requires allowActions policy.");
+				throw new AutomationException(AutomationErrorCodes.ActionDenied, "Action 'drag' requires allowActions policy.");
 
 			var session = host.RequireSession();
 			var afterMode = NormalizeAfterMode(after);
 			var beforeSnapshot = CaptureDeltaBaseline(host, cache, options.Value, afterMode);
-			var common = CreateCommonOptions(options.Value, afterMode);
-			var defaults = CreateDefaults(options.Value);
-			var sourceSelector = CreateSelector(targetId, typeName, null, name, automationId, text, property).ToCliSelector();
-			var destinationSelector = CreateSelector(destinationTargetId, destinationTypeName, null, destinationName, destinationAutomationId, destinationText, destinationProperty).ToCliSelector();
-			var result = new ActionCommandSupport().ExecuteTwoTarget(
+			var executionOptions = CreateExecutionOptions(options.Value, afterMode);
+			var sourceSelector = CreateSelector(targetId, typeName, null, name, automationId, text, property).ToAutomationSelector();
+			var destinationSelector = CreateSelector(destinationTargetId, destinationTypeName, null, destinationName, destinationAutomationId, destinationText, destinationProperty).ToAutomationSelector();
+			var result = new ActionExecutor().ExecuteTwoTarget(
 				"drag",
 				session.AppSession,
-				common,
-				defaults,
+				executionOptions,
 				sourceSelector,
 				destinationSelector,
 				(sourceTargetId, resolvedDestinationTargetId) => new DragAndDropCommandRequest
@@ -184,7 +182,7 @@ internal static class ActionTools
 					UseInjectedEvents = true,
 					EnsureForeground = ensureForeground,
 					ValidateSameProcess = validateSameProcess,
-					TimeoutMs = common.TimeoutMs,
+					TimeoutMs = executionOptions.TimeoutMs,
 				});
 			cache.Invalidate();
 			return CreateMcpActionResult(
@@ -380,7 +378,7 @@ internal static class ActionTools
 		return ExecuteAction(runner, host, cache, options, "raise", after, CreateSelector(targetId, typeName, null, name, automationId, text, property), new { eventName, targetId, typeName, name, automationId, text, property, after }, action =>
 		{
 			if (!KnownRoutedEvents.Contains(eventName))
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Routed event '{eventName}' is not allow-listed.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Routed event '{eventName}' is not allow-listed.");
 
 			return action.Execute(
 				targetId => new KnownRoutedEventCommandRequest
@@ -410,7 +408,7 @@ internal static class ActionTools
 		return ExecuteAction(runner, host, cache, options, "invoke", after, CreateSelector(targetId, typeName, null, name, automationId, text, property), new { operation, targetId, typeName, name, automationId, text, property, after }, action =>
 		{
 			if (!KnownOperations.Contains(operation))
-				throw new CliException(CliErrorCodes.InvalidArguments, $"Known operation '{operation}' is not allow-listed.");
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Known operation '{operation}' is not allow-listed.");
 
 			return action.Execute(
 				targetId => new KnownOperationCommandRequest
@@ -431,19 +429,18 @@ internal static class ActionTools
 		string? after,
 		McpElementSelector selector,
 		object parameters,
-		Func<ActionInvocation, ActionCommandResult> execute)
+		Func<ActionInvocation, ActionExecutionResult> execute)
 	{
 		return runner.Run(() =>
 		{
 			if (!options.Value.Policy.AllowActions)
-				throw new CliException(CliErrorCodes.ActionDenied, $"Action '{actionName}' requires allowActions policy.");
+				throw new AutomationException(AutomationErrorCodes.ActionDenied, $"Action '{actionName}' requires allowActions policy.");
 
 			var session = host.RequireSession();
 			var afterMode = NormalizeAfterMode(after);
 			var beforeSnapshot = CaptureDeltaBaseline(host, cache, options.Value, afterMode);
-			var common = CreateCommonOptions(options.Value, afterMode);
-			var defaults = CreateDefaults(options.Value);
-			var invocation = new ActionInvocation(actionName, session.AppSession, common, defaults, selector.ToCliSelector());
+			var executionOptions = CreateExecutionOptions(options.Value, afterMode);
+			var invocation = new ActionInvocation(actionName, session.AppSession, executionOptions, selector.ToAutomationSelector());
 			var result = execute(invocation);
 			cache.Invalidate();
 			return CreateMcpActionResult(
@@ -461,30 +458,23 @@ internal static class ActionTools
 	{
 		var afterMode = string.IsNullOrWhiteSpace(after) ? "none" : after.Trim().ToLowerInvariant();
 		if (afterMode is not ("none" or "target" or "tree" or "delta"))
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid after mode '{after}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Invalid after mode '{after}'.");
 
 		return afterMode;
 	}
 
-	private static CliCommonOptions CreateCommonOptions(DeepFlowMcpOptions options, string? afterMode)
-	{
-		var cliAfterMode = string.Equals(afterMode, "delta", StringComparison.Ordinal) ? "none" : afterMode ?? "none";
-		return new CliCommonOptions
-		{
-			TimeoutMs = options.DefaultTimeoutMs,
-			UseShortIds = true,
-			AllowActions = true,
-			AllowArbitraryInvoke = options.Policy.AllowArbitraryInvoke,
-			After = cliAfterMode,
-		};
-	}
-
-	private static CliDefaults CreateDefaults(DeepFlowMcpOptions options) =>
-		new()
-		{
-			TreeLimit = options.TreeLimit,
-			PropertyNames = [.. options.DefaultProperties],
-		};
+	private static AutomationExecutionOptions CreateExecutionOptions(DeepFlowMcpOptions options, string? afterMode) =>
+		new(
+			options.DefaultTimeoutMs,
+			options.TreeLimit,
+			[.. options.DefaultProperties],
+			afterMode switch
+			{
+				"tree" => ObservationMode.Tree,
+				"target" => ObservationMode.Target,
+				_ => ObservationMode.None,
+			},
+			UseShortIds: true);
 
 	private static McpElementSelector CreateSelector(
 		string? targetId,
@@ -540,7 +530,7 @@ internal static class ActionTools
 		return McpSemanticRecordingFormatter.FormatDelta(beforeSnapshot, afterSnapshot);
 	}
 
-	private static McpActionCommandResult CreateMcpActionResult(
+	private static McpActionExecutionResult CreateMcpActionResult(
 		string action,
 		TreeNodeData? source,
 		TreeNodeData? destination,
@@ -549,7 +539,7 @@ internal static class ActionTools
 		object? after,
 		McpCondensedRecordingOutput? delta)
 	{
-		return new McpActionCommandResult
+		return new McpActionExecutionResult
 		{
 			Action = action,
 			Source = source,
@@ -563,34 +553,30 @@ internal static class ActionTools
 	private sealed class ActionInvocation
 	{
 		private readonly string actionName;
-		private readonly ICliAppSession session;
-		private readonly CliCommonOptions commonOptions;
-		private readonly CliDefaults defaults;
+		private readonly IAutomationSession session;
+		private readonly AutomationExecutionOptions executionOptions;
 		private readonly ElementSelector selector;
 
 		public ActionInvocation(
 			string actionName,
-			ICliAppSession session,
-			CliCommonOptions commonOptions,
-			CliDefaults defaults,
+			IAutomationSession session,
+			AutomationExecutionOptions executionOptions,
 			ElementSelector selector)
 		{
 			this.actionName = actionName;
 			this.session = session;
-			this.commonOptions = commonOptions;
-			this.defaults = defaults;
+			this.executionOptions = executionOptions;
 			this.selector = selector;
 		}
 
-		public ActionCommandResult Execute(
+		public ActionExecutionResult Execute(
 			Func<string?, IpcCommand> createCommand,
 			bool requireElementTarget,
 			IReadOnlyList<string>? afterProperties = null) =>
-			new ActionCommandSupport().Execute(
+			new ActionExecutor().Execute(
 				actionName,
 				session,
-				commonOptions,
-				defaults,
+				executionOptions,
 				selector,
 				createCommand,
 				requireElementTarget,

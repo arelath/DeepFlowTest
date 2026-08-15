@@ -1,4 +1,4 @@
-namespace DeepFlowTest.Cli;
+namespace DeepFlowTest.Automation;
 
 using System;
 using System.Collections.Generic;
@@ -6,28 +6,26 @@ using System.Linq;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
 
-public sealed class ActionCommandSupport
+public sealed class ActionExecutor
 {
 	private readonly ElementResolver resolver;
 
-	public ActionCommandSupport(ElementResolver? resolver = null)
+	public ActionExecutor(ElementResolver? resolver = null)
 	{
 		this.resolver = resolver ?? new ElementResolver();
 	}
 
-	public ActionCommandResult Execute(
+	public ActionExecutionResult Execute(
 		string actionName,
-		ICliAppSession session,
-		CliCommonOptions commonOptions,
-		CliDefaults defaults,
+		IAutomationSession session,
+		AutomationExecutionOptions options,
 		ElementSelector selector,
 		Func<string?, IpcCommand> createCommand,
 		bool requireElementTarget,
 		IReadOnlyList<string>? afterProperties = null)
 	{
 		_ = session ?? throw new ArgumentNullException(nameof(session));
-		_ = commonOptions ?? throw new ArgumentNullException(nameof(commonOptions));
-		_ = defaults ?? throw new ArgumentNullException(nameof(defaults));
+		_ = (options ?? throw new ArgumentNullException(nameof(options))).Validate();
 		_ = selector ?? throw new ArgumentNullException(nameof(selector));
 		_ = createCommand ?? throw new ArgumentNullException(nameof(createCommand));
 
@@ -40,41 +38,39 @@ public sealed class ActionCommandSupport
 				Summary = new TreeNodeData
 				{
 					TargetId = selector.TargetId!,
-					ShortId = new CliTargetIdService().GetShortId(selector.TargetId!),
+					ShortId = new TargetIdService().GetShortId(selector.TargetId!),
 				},
 			};
 		}
 		else if (requireElementTarget || !selector.IsEmpty)
 		{
-			var beforeSnapshot = ReadSnapshot(session, commonOptions, defaults);
+			var beforeSnapshot = ReadSnapshot(session, options);
 			resolution = resolver.Resolve(beforeSnapshot, selector);
 		}
 
-		var payload = session.Send<object>(createCommand(resolution?.TargetId), commonOptions.TimeoutMs);
+		var payload = session.Send<object>(createCommand(resolution?.TargetId), options.TimeoutMs);
 		EnsurePayloadSucceeded(payload);
 
-		return new ActionCommandResult
+		return new ActionExecutionResult
 		{
 			Action = actionName,
 			Target = resolution?.Summary,
 			Payload = payload,
-			After = CreateAfterSnapshot(session, commonOptions, defaults, resolution?.TargetId, afterProperties),
+			After = CreateAfterSnapshot(session, options, resolution?.TargetId, afterProperties),
 		};
 	}
 
-	public DragAndDropActionCommandResult ExecuteTwoTarget(
+	public TwoTargetActionExecutionResult ExecuteTwoTarget(
 		string actionName,
-		ICliAppSession session,
-		CliCommonOptions commonOptions,
-		CliDefaults defaults,
+		IAutomationSession session,
+		AutomationExecutionOptions options,
 		ElementSelector sourceSelector,
 		ElementSelector destinationSelector,
 		Func<string, string, IpcCommand> createCommand,
 		IReadOnlyList<string>? afterProperties = null)
 	{
 		_ = session ?? throw new ArgumentNullException(nameof(session));
-		_ = commonOptions ?? throw new ArgumentNullException(nameof(commonOptions));
-		_ = defaults ?? throw new ArgumentNullException(nameof(defaults));
+		_ = (options ?? throw new ArgumentNullException(nameof(options))).Validate();
 		_ = sourceSelector ?? throw new ArgumentNullException(nameof(sourceSelector));
 		_ = destinationSelector ?? throw new ArgumentNullException(nameof(destinationSelector));
 		_ = createCommand ?? throw new ArgumentNullException(nameof(createCommand));
@@ -82,45 +78,44 @@ public sealed class ActionCommandSupport
 		VisualTreeSnapshot? beforeSnapshot = null;
 		VisualTreeSnapshot GetBeforeSnapshot()
 		{
-			beforeSnapshot ??= ReadSnapshot(session, commonOptions, defaults);
+			beforeSnapshot ??= ReadSnapshot(session, options);
 			return beforeSnapshot;
 		}
 
 		var source = ResolveTarget(sourceSelector, GetBeforeSnapshot);
 		var destination = ResolveTarget(destinationSelector, GetBeforeSnapshot);
-		var payload = session.Send<object>(createCommand(source.TargetId, destination.TargetId), commonOptions.TimeoutMs);
+		var payload = session.Send<object>(createCommand(source.TargetId, destination.TargetId), options.TimeoutMs);
 		EnsurePayloadSucceeded(payload);
 
-		return new DragAndDropActionCommandResult
+		return new TwoTargetActionExecutionResult
 		{
 			Action = actionName,
 			Source = source.Summary,
 			Destination = destination.Summary,
 			Payload = payload,
-			After = CreateAfterSnapshot(session, commonOptions, defaults, destination.TargetId, afterProperties),
+			After = CreateAfterSnapshot(session, options, destination.TargetId, afterProperties),
 		};
 	}
 
 	private static object? CreateAfterSnapshot(
-		ICliAppSession session,
-		CliCommonOptions commonOptions,
-		CliDefaults defaults,
+		IAutomationSession session,
+		AutomationExecutionOptions options,
 		string? targetId,
 		IReadOnlyList<string>? afterProperties)
 	{
-		if (string.Equals(commonOptions.After, "none", StringComparison.Ordinal))
+		if (options.After == ObservationMode.None)
 			return null;
 
-		var properties = MergeProperties(defaults.PropertyNames, afterProperties);
-		var snapshot = ReadSnapshot(session, commonOptions, defaults, properties);
-		if (string.Equals(commonOptions.After, "tree", StringComparison.Ordinal))
+		var properties = MergeProperties(options.Properties, afterProperties);
+		var snapshot = ReadSnapshot(session, options, properties);
+		if (options.After == ObservationMode.Tree)
 		{
 			return new TreeSnapshotService().Shape(snapshot, new TreeSnapshotOptions
 			{
-				Shape = defaults.Commands.Tree.Shape,
-				Limit = defaults.TreeLimit,
+				Shape = options.TreeShape,
+				Limit = options.TreeLimit,
 				Properties = properties,
-				UseShortIds = commonOptions.UseShortIds,
+				UseShortIds = options.UseShortIds,
 			});
 		}
 
@@ -130,22 +125,21 @@ public sealed class ActionCommandSupport
 			{
 				TargetId = targetId!,
 				Properties = properties,
-				UseShortIds = commonOptions.UseShortIds,
+				UseShortIds = options.UseShortIds,
 			});
 		}
 
 		return null;
 	}
 
-	private static VisualTreeSnapshot ReadSnapshot(ICliAppSession session, CliCommonOptions commonOptions, CliDefaults defaults)
+	private static VisualTreeSnapshot ReadSnapshot(IAutomationSession session, AutomationExecutionOptions options)
 	{
-		return ReadSnapshot(session, commonOptions, defaults, defaults.PropertyNames);
+		return ReadSnapshot(session, options, options.Properties);
 	}
 
 	private static VisualTreeSnapshot ReadSnapshot(
-		ICliAppSession session,
-		CliCommonOptions commonOptions,
-		CliDefaults defaults,
+		IAutomationSession session,
+		AutomationExecutionOptions options,
 		IReadOnlyList<string> properties)
 	{
 		var response = session.Send<object>(
@@ -154,10 +148,10 @@ public sealed class ActionCommandSupport
 				PropNames = properties,
 				AsSnapshot = true,
 				IncludeHidden = true,
-				MaxNodeCount = defaults.TreeLimit,
-				TimeoutMs = commonOptions.TimeoutMs,
+				MaxNodeCount = options.TreeLimit,
+				TimeoutMs = options.TimeoutMs,
 			},
-			commonOptions.TimeoutMs);
+			options.TimeoutMs);
 		return new VisualTreeResponseReader().Read(response, properties);
 	}
 
@@ -178,7 +172,7 @@ public sealed class ActionCommandSupport
 		if (payload is not StandardIpcResponse standard || standard.Success != false)
 			return;
 
-		throw new CliException(ProtocolErrorMapper.Map(standard.ErrorCode), standard.Error ?? "Payload action failed.", standard);
+		throw new AutomationException(ProtocolErrorMapper.Map(standard.ErrorCode), standard.Error ?? "Payload action failed.", standard);
 	}
 
 	private static bool LooksLikeFullTargetId(string targetId) =>
@@ -194,7 +188,7 @@ public sealed class ActionCommandSupport
 				Summary = new TreeNodeData
 				{
 					TargetId = selector.TargetId!,
-					ShortId = new CliTargetIdService().GetShortId(selector.TargetId!),
+					ShortId = new TargetIdService().GetShortId(selector.TargetId!),
 				},
 			};
 		}
@@ -204,7 +198,7 @@ public sealed class ActionCommandSupport
 
 }
 
-public sealed class ActionCommandResult
+public sealed class ActionExecutionResult
 {
 	public string Action { get; set; } = string.Empty;
 
@@ -215,7 +209,7 @@ public sealed class ActionCommandResult
 	public object? After { get; set; }
 }
 
-public sealed class DragAndDropActionCommandResult
+public sealed class TwoTargetActionExecutionResult
 {
 	public string Action { get; set; } = string.Empty;
 

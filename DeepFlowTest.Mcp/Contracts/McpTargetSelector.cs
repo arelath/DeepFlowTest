@@ -1,7 +1,7 @@
 namespace DeepFlowTest.Mcp.Contracts;
 
 using System.IO;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 
 internal sealed record class McpTargetSelector
 {
@@ -19,7 +19,7 @@ internal sealed record class McpTargetSelector
 		&& string.IsNullOrWhiteSpace(ExecutablePath)
 		&& string.IsNullOrWhiteSpace(WindowTitle);
 
-	public TargetSelector ToCliSelector() =>
+	public TargetSelector ToAutomationSelector() =>
 		new()
 		{
 			ProcessId = ProcessId,

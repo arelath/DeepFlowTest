@@ -3,7 +3,7 @@ namespace DeepFlowTest.Mcp.Tools;
 using System.ComponentModel;
 using System.Linq;
 using DeepFlowTest;
-using DeepFlowTest.Cli;
+using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Configuration;
 using DeepFlowTest.Mcp.Contracts;
@@ -37,7 +37,7 @@ internal static class ScreenshotTools
 		return runner.Run(() =>
 		{
 			if (!string.IsNullOrWhiteSpace(outputPath) && !options.Value.Policy.AllowFileWrites)
-				throw new CliException(CliErrorCodes.ActionDenied, "Writing screenshots to disk requires allowFileWrites policy.");
+				throw new AutomationException(AutomationErrorCodes.ActionDenied, "Writing screenshots to disk requires allowFileWrites policy.");
 
 			var resolvedTargetId = ResolveTargetId(host, cache, options.Value, targetId, typeName, name, automationId, text, property);
 			var response = host.Send<ScreenshotCommandResponse>(
@@ -83,11 +83,11 @@ internal static class ScreenshotTools
 				return targetId;
 
 			var targetSnapshot = cache.GetOrRefresh(host, options.DefaultProperties, options.TreeLimit, refresh: false);
-			return new CliTargetIdService().Resolve(targetId!, targetSnapshot);
+			return new TargetIdService().Resolve(targetId!, targetSnapshot);
 		}
 
 		var snapshot = cache.GetOrRefresh(host, options.DefaultProperties, options.TreeLimit, refresh: false);
-		var resolution = new ElementResolver().Resolve(snapshot, new DeepFlowTest.Cli.ElementSelector
+		var resolution = new ElementResolver().Resolve(snapshot, new DeepFlowTest.Automation.ElementSelector
 		{
 			TypeName = typeName,
 			Name = name,

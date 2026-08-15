@@ -21,7 +21,7 @@ internal static class CliValueParser
 		}
 		catch (FormatException)
 		{
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported image format '{value}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported image format '{value}'.");
 		}
 	}
 
@@ -33,7 +33,7 @@ internal static class CliValueParser
 		}
 		catch (FormatException)
 		{
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported tree shape '{value}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported tree shape '{value}'.");
 		}
 	}
 
@@ -45,7 +45,7 @@ internal static class CliValueParser
 		}
 		catch (FormatException)
 		{
-			throw new CliException(CliErrorCodes.InvalidArguments, $"Unsupported mouse button '{value}'.");
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported mouse button '{value}'.");
 		}
 	}
 
