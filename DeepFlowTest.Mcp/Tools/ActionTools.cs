@@ -1,7 +1,6 @@
 namespace DeepFlowTest.Mcp.Tools;
 
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
@@ -17,29 +16,6 @@ using DeepFlowMcpOptions = DeepFlowTest.Mcp.Configuration.McpServerOptions;
 [McpServerToolType]
 internal static class ActionTools
 {
-	private static readonly HashSet<string> KnownRoutedEvents = new(StringComparer.Ordinal)
-	{
-		"Click",
-		"MouseDoubleClick",
-		"Checked",
-		"Unchecked",
-		"Expanded",
-		"Collapsed",
-	};
-
-	private static readonly HashSet<string> KnownOperations = new(StringComparer.Ordinal)
-	{
-		"Focus",
-		"AcceptDialog",
-		"CancelDialog",
-		"BringIntoView",
-		"Select",
-		"Expand",
-		"Collapse",
-		"Check",
-		"Uncheck",
-	};
-
 	[McpServerTool(Name = "deepflow_click_element"), Description("Click an element resolved by target ID or selector.")]
 	public static McpToolResponse ClickElement(
 		McpToolRunner runner,
@@ -62,27 +38,10 @@ internal static class ActionTools
 			host,
 			cache,
 			options,
-			"click",
 			after,
 			selector: CreateSelector(targetId, typeName, null, name, automationId, text, property),
 			parameters: new { targetId, typeName, name, automationId, text, property, button, clickCount, doubleClick, after },
-			action =>
-			{
-				if (clickCount <= 0)
-					throw new AutomationException(AutomationErrorCodes.InvalidArguments, "clickCount must be greater than zero.");
-
-				var mouseButton = McpArgumentParsing.ParseMouseButton(button, MouseButtonKind.Left);
-				return action.Execute(
-					targetId => doubleClick
-						? new KnownRoutedEventCommandRequest { TargetId = targetId ?? string.Empty, EventName = "MouseDoubleClick" }
-						: new ClickCommandRequest
-						{
-							TargetId = targetId ?? string.Empty,
-							MouseButton = mouseButton,
-							ClickCount = clickCount,
-						},
-					requireElementTarget: true);
-			});
+			createAction: () => new ClickAction(McpArgumentParsing.ParseMouseButton(button, MouseButtonKind.Left), clickCount, doubleClick));
 	}
 
 	[McpServerTool(Name = "deepflow_mouse_wheel"), Description("Send mouse-wheel input to an element resolved by target ID or selector.")]
@@ -105,19 +64,10 @@ internal static class ActionTools
 			host,
 			cache,
 			options,
-			"wheel",
 			after,
 			selector: CreateSelector(targetId, typeName, null, name, automationId, text, property),
 			parameters: new { targetId, typeName, name, automationId, text, property, delta, after },
-			action =>
-			{
-				if (delta == 0)
-					throw new AutomationException(AutomationErrorCodes.InvalidArguments, "delta must not be zero.");
-
-				return action.Execute(
-					targetId => new MouseWheelCommandRequest { TargetId = targetId ?? string.Empty, Delta = delta },
-					requireElementTarget: true);
-			});
+			createAction: () => new MouseWheelAction(delta));
 	}
 
 	[McpServerTool(Name = "deepflow_drag_and_drop"), Description("Drag a source element and drop it on a destination element. Mutates UI and requires allowActions.")]
@@ -150,50 +100,14 @@ internal static class ActionTools
 		bool validateSameProcess = true,
 		string? after = "delta")
 	{
-		return runner.Run(() =>
-		{
-			if (!options.Value.Policy.AllowActions)
-				throw new AutomationException(AutomationErrorCodes.ActionDenied, "Action 'drag' requires allowActions policy.");
-
-			var session = host.RequireSession();
-			var afterMode = NormalizeAfterMode(after);
-			var beforeSnapshot = CaptureDeltaBaseline(host, cache, options.Value, afterMode);
-			var executionOptions = CreateExecutionOptions(options.Value, afterMode);
-			var sourceSelector = CreateSelector(targetId, typeName, null, name, automationId, text, property).ToAutomationSelector();
-			var destinationSelector = CreateSelector(destinationTargetId, destinationTypeName, null, destinationName, destinationAutomationId, destinationText, destinationProperty).ToAutomationSelector();
-			var result = new ActionExecutor().ExecuteTwoTarget(
-				"drag",
-				session.AppSession,
-				executionOptions,
-				sourceSelector,
-				destinationSelector,
-				(sourceTargetId, resolvedDestinationTargetId) => new DragAndDropCommandRequest
-				{
-					TargetId = sourceTargetId,
-					DestinationTargetId = resolvedDestinationTargetId,
-					DurationMs = durationMs,
-					HoldMs = holdMs,
-					StepIntervalMs = stepIntervalMs,
-					PostDropWaitMs = postDropWaitMs,
-					SourceAnchorX = sourceAnchorX,
-					SourceAnchorY = sourceAnchorY,
-					DestinationAnchorX = destinationAnchorX,
-					DestinationAnchorY = destinationAnchorY,
-					UseInjectedEvents = true,
-					EnsureForeground = ensureForeground,
-					ValidateSameProcess = validateSameProcess,
-					TimeoutMs = executionOptions.TimeoutMs,
-				});
-			cache.Invalidate();
-			return CreateMcpActionResult(
-				result.Action,
-				source: result.Source,
-				destination: result.Destination,
-				target: null,
-				payload: result.Payload,
-				after: result.After,
-				delta: CreateDeltaAfter(host, cache, options.Value, afterMode, beforeSnapshot));
-		}, new
+		return ExecuteAction(
+			runner,
+			host,
+			cache,
+			options,
+			after,
+			CreateSelector(targetId, typeName, null, name, automationId, text, property),
+			new
 		{
 			targetId,
 			typeName,
@@ -218,7 +132,11 @@ internal static class ActionTools
 			ensureForeground,
 			validateSameProcess,
 			after,
-		});
+		},
+			() => new DragAction(durationMs, holdMs, stepIntervalMs, postDropWaitMs, sourceAnchorX, sourceAnchorY,
+				destinationAnchorX, destinationAnchorY, UseInjectedEvents: true,
+				EnsureForeground: ensureForeground, ValidateSameProcess: validateSameProcess),
+			CreateSelector(destinationTargetId, destinationTypeName, null, destinationName, destinationAutomationId, destinationText, destinationProperty));
 	}
 
 	[McpServerTool(Name = "deepflow_focus_element"), Description("Move focus to an element resolved by target ID or selector.")]
@@ -240,14 +158,10 @@ internal static class ActionTools
 			host,
 			cache,
 			options,
-			"focus",
 			after,
 			CreateSelector(targetId, typeName, null, name, automationId, text, property),
 			new { targetId, typeName, name, automationId, text, property, after },
-			action => action.Execute(
-				targetId => new FocusCommandRequest { TargetId = targetId ?? string.Empty },
-				requireElementTarget: true,
-				afterProperties: [KnownProperties.IsFocused, KnownProperties.IsKeyboardFocused, KnownProperties.IsKeyboardFocusWithin]));
+			createAction: () => new FocusAction());
 	}
 
 	[McpServerTool(Name = "deepflow_type_text"), Description("Type text into an element or the current focused target.")]
@@ -271,19 +185,10 @@ internal static class ActionTools
 			host,
 			cache,
 			options,
-			"type",
 			after,
 			CreateSelector(targetId, typeName, null, name, automationId, selectorText, property),
 			new { text, targetId, typeName, name, automationId, selectorText, property, clearFirst, after },
-			action => action.Execute(
-				targetId => new TypeTextCommandRequest
-				{
-					TargetId = targetId,
-					Text = text,
-					ClearFirst = clearFirst,
-				},
-				requireElementTarget: false,
-				afterProperties: [KnownProperties.Text, KnownProperties.Content]));
+			createAction: () => new TypeTextAction(text, clearFirst));
 	}
 
 	[McpServerTool(Name = "deepflow_press_keys"), Description("Send a key chord such as Enter, Ctrl+A, or Tab.")]
@@ -308,20 +213,10 @@ internal static class ActionTools
 			host,
 			cache,
 			options,
-			"key",
 			after,
 			CreateSelector(targetId, typeName, null, name, automationId, text, property),
 			new { keys, targetId, typeName, name, automationId, text, property, delayMs, ensureForeground, after },
-			action => action.Execute(
-				targetId => new KeyPressCommandRequest
-				{
-					TargetId = targetId,
-					Keys = keys,
-					DelayMs = delayMs,
-					EnsureForeground = ensureForeground,
-				},
-				requireElementTarget: false,
-				afterProperties: [KnownProperties.Text, KnownProperties.Content, KnownProperties.IsKeyboardFocused, KnownProperties.IsKeyboardFocusWithin]));
+			createAction: () => new KeyPressAction(keys, delayMs, ensureForeground));
 	}
 
 	[McpServerTool(Name = "deepflow_set_property"), Description("Set a supported property on an element.")]
@@ -345,19 +240,10 @@ internal static class ActionTools
 			host,
 			cache,
 			options,
-			"set",
 			after,
 			CreateSelector(targetId, typeName, null, name, automationId, text, property),
 			new { propertyName, value, targetId, typeName, name, automationId, text, property, after },
-			action => action.Execute(
-				targetId => new SetPropertyCommandRequest
-				{
-					TargetId = targetId ?? string.Empty,
-					PropertyName = propertyName,
-					PropertyValue = McpArgumentParsing.ParseJsonScalar(value),
-				},
-				requireElementTarget: true,
-				afterProperties: [propertyName]));
+			createAction: () => new SetPropertyAction(propertyName, McpArgumentParsing.ParseJsonScalar(value)));
 	}
 
 	[McpServerTool(Name = "deepflow_raise_event"), Description("Raise an allow-listed routed event on an element.")]
@@ -375,19 +261,10 @@ internal static class ActionTools
 		string? property = null,
 		string? after = "delta")
 	{
-		return ExecuteAction(runner, host, cache, options, "raise", after, CreateSelector(targetId, typeName, null, name, automationId, text, property), new { eventName, targetId, typeName, name, automationId, text, property, after }, action =>
-		{
-			if (!KnownRoutedEvents.Contains(eventName))
-				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Routed event '{eventName}' is not allow-listed.");
-
-			return action.Execute(
-				targetId => new KnownRoutedEventCommandRequest
-				{
-					TargetId = targetId ?? string.Empty,
-					EventName = eventName,
-				},
-				requireElementTarget: true);
-		});
+		return ExecuteAction(runner, host, cache, options, after,
+			CreateSelector(targetId, typeName, null, name, automationId, text, property),
+			new { eventName, targetId, typeName, name, automationId, text, property, after },
+			() => new RoutedEventAction(eventName));
 	}
 
 	[McpServerTool(Name = "deepflow_invoke_operation"), Description("Invoke an allow-listed known operation on an element.")]
@@ -405,19 +282,10 @@ internal static class ActionTools
 		string? property = null,
 		string? after = "delta")
 	{
-		return ExecuteAction(runner, host, cache, options, "invoke", after, CreateSelector(targetId, typeName, null, name, automationId, text, property), new { operation, targetId, typeName, name, automationId, text, property, after }, action =>
-		{
-			if (!KnownOperations.Contains(operation))
-				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Known operation '{operation}' is not allow-listed.");
-
-			return action.Execute(
-				targetId => new KnownOperationCommandRequest
-				{
-					TargetId = targetId ?? string.Empty,
-					Operation = operation,
-				},
-				requireElementTarget: true);
-		});
+		return ExecuteAction(runner, host, cache, options, after,
+			CreateSelector(targetId, typeName, null, name, automationId, text, property),
+			new { operation, targetId, typeName, name, automationId, text, property, after },
+			() => new KnownOperationAction(operation));
 	}
 
 	private static McpToolResponse ExecuteAction(
@@ -425,31 +293,48 @@ internal static class ActionTools
 		McpSessionHost host,
 		McpSnapshotCache cache,
 		IOptions<DeepFlowMcpOptions> options,
-		string actionName,
 		string? after,
 		McpElementSelector selector,
 		object parameters,
-		Func<ActionInvocation, ActionExecutionResult> execute)
+		Func<AutomationAction> createAction,
+		McpElementSelector? destination = null)
 	{
 		return runner.Run(() =>
 		{
-			if (!options.Value.Policy.AllowActions)
-				throw new AutomationException(AutomationErrorCodes.ActionDenied, $"Action '{actionName}' requires allowActions policy.");
-
+			var action = createAction();
+			var pipeline = new AutomationActionPipeline();
+			var descriptor = pipeline.Prepare(
+				action,
+				new AutomationActionPipelineHooks
+				{
+					DemandPolicy = actionDescriptor =>
+					{
+						if (!options.Value.Policy.AllowActions)
+							throw new AutomationException(AutomationErrorCodes.ActionDenied, $"Action '{actionDescriptor.Name}' requires allowActions policy.");
+					},
+				});
 			var session = host.RequireSession();
 			var afterMode = NormalizeAfterMode(after);
 			var beforeSnapshot = CaptureDeltaBaseline(host, cache, options.Value, afterMode);
 			var executionOptions = CreateExecutionOptions(options.Value, afterMode);
-			var invocation = new ActionInvocation(actionName, session.AppSession, executionOptions, selector.ToAutomationSelector());
-			var result = execute(invocation);
-			cache.Invalidate();
+			var result = pipeline.ExecutePrepared(
+				session.AppSession,
+				executionOptions,
+				new AutomationActionRequest(action, selector.ToAutomationSelector(), destination?.ToAutomationSelector()),
+				descriptor,
+				new AutomationActionPipelineHooks
+				{
+					InvalidateCache = cache.Invalidate,
+				});
+			var single = result.SingleTarget;
+			var two = result.TwoTarget;
 			return CreateMcpActionResult(
 				result.Action,
-				source: null,
-				destination: null,
-				target: result.Target,
-				payload: result.Payload,
-				after: result.After,
+				source: two?.Source,
+				destination: two?.Destination,
+				target: single?.Target,
+				payload: single?.Payload ?? two?.Payload,
+				after: single?.After ?? two?.After,
 				delta: CreateDeltaAfter(host, cache, options.Value, afterMode, beforeSnapshot));
 		}, parameters);
 	}
@@ -550,36 +435,4 @@ internal static class ActionTools
 		};
 	}
 
-	private sealed class ActionInvocation
-	{
-		private readonly string actionName;
-		private readonly IAutomationSession session;
-		private readonly AutomationExecutionOptions executionOptions;
-		private readonly ElementSelector selector;
-
-		public ActionInvocation(
-			string actionName,
-			IAutomationSession session,
-			AutomationExecutionOptions executionOptions,
-			ElementSelector selector)
-		{
-			this.actionName = actionName;
-			this.session = session;
-			this.executionOptions = executionOptions;
-			this.selector = selector;
-		}
-
-		public ActionExecutionResult Execute(
-			Func<string?, IpcCommand> createCommand,
-			bool requireElementTarget,
-			IReadOnlyList<string>? afterProperties = null) =>
-			new ActionExecutor().Execute(
-				actionName,
-				session,
-				executionOptions,
-				selector,
-				createCommand,
-				requireElementTarget,
-				afterProperties);
-	}
 }

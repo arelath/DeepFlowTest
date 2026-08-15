@@ -213,6 +213,18 @@ use `deepflow_find` when only particular controls are needed. Pass
 Start the server with `--tool-profile full` to additionally expose the granular
 legacy tools and streams.
 
+The CLI, compact `deepflow_act` tool, and granular legacy action tools translate
+their input contracts into the same typed `AutomationAction` pipeline. That
+pipeline owns action validation, policy classification, target cardinality,
+typed IPC command creation, execution, stale-target retry hooks, cache
+invalidation, verification hooks, and post-action observation hooks. The IPC
+wire format remains strongly typed (`ClickCommandRequest`,
+`MouseWheelCommandRequest`, and the other action requests), and the payload's
+self-validating command-handler registry remains the protocol dispatch boundary.
+Known routed events and known operations are defined once by the shared action
+catalog. The full profile is therefore a compatibility surface over the same
+implementation rather than a separate action stack.
+
 Inputs use discriminated objects. For example, open with
 `target: { "mode": "attach", "processId": 1234 }`, find with
 `target: { "kind": "semantic", "automationId": "SaveButton" }`, and act with

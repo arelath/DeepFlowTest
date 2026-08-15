@@ -26,18 +26,6 @@ using DeepFlowMcpOptions = DeepFlowTest.Mcp.Configuration.McpServerOptions;
 internal static class AgentTools
 {
 	private const string PropertyExtractionErrorMarker = "DeepFlowTest.Utility.WpfUtility.Tree.PropertyExtractionError";
-	private static readonly HashSet<string> KnownOperations = new(StringComparer.Ordinal)
-	{
-		"Focus",
-		"AcceptDialog",
-		"CancelDialog",
-		"BringIntoView",
-		"Select",
-		"Expand",
-		"Collapse",
-		"Check",
-		"Uncheck",
-	};
 
 	[McpServerTool(Name = "deepflow_open_context", UseStructuredContent = true, OutputSchemaType = typeof(McpContextResult), ReadOnly = false, OpenWorld = false), Description("Attach to or launch one desktop target and return the explicit context handle required by every other agent tool.")]
 	public static CallToolResult OpenContext(
@@ -249,49 +237,87 @@ internal static class AgentTools
 		var response = runner.Run(() =>
 		{
 			var contextPolicy = host.GetContextPolicy(contextId);
-			if (!contextPolicy.AllowActions)
-				throw new AutomationException(AutomationErrorCodes.ActionDenied, $"Action '{ActionKind(action)}' requires allowActions policy.");
-
+			var typedAction = ToAutomationAction(action);
+			var pipeline = new AutomationActionPipeline();
+			var descriptor = pipeline.Prepare(
+				typedAction,
+				new AutomationActionPipelineHooks
+				{
+					DemandPolicy = actionDescriptor =>
+					{
+						if (!contextPolicy.AllowActions)
+							throw new AutomationException(AutomationErrorCodes.ActionDenied, $"Action '{actionDescriptor.Name}' requires allowActions policy.");
+					},
+				});
 			var session = host.RequireContext(contextId);
 			var properties = McpSemanticRecordingFormatter.MergeSemanticProperties(options.Value.DefaultProperties);
 			var before = cache.GetOrRefresh(session, properties, options.Value.TreeLimit, includeHidden: true, refresh: true);
 			var resolution = ResolveTarget(contextId, target, before, handles);
-			try
-			{
-				ExecuteAction(session.AppSession, action, resolution.TargetId, contextId, before, handles, options.Value, contextPolicy);
-			}
-			catch (AutomationException ex) when (ex.ErrorCode == AutomationErrorCodes.StaleTarget && !string.IsNullOrWhiteSpace(target.Handle))
-			{
-				cache.Invalidate(session.SessionId);
-				var repairSnapshot = cache.GetOrRefresh(session, properties, options.Value.TreeLimit, includeHidden: true, refresh: true);
-				resolution = ResolveTarget(contextId, target, repairSnapshot, handles);
-				ExecuteAction(session.AppSession, action, resolution.TargetId, contextId, repairSnapshot, handles, options.Value, contextPolicy);
-			}
-
-			cache.Invalidate(session.SessionId);
-			var after = cache.GetOrRefresh(session, properties, options.Value.TreeLimit, includeHidden: true, refresh: true);
-			if (expect is not null && !string.IsNullOrWhiteSpace(resolution.Handle))
-			{
-				var verifiedTarget = handles.Resolve(contextId, resolution.Handle!, after);
-				resolution = new ActionResolution(
-					verifiedTarget.TargetId,
-					verifiedTarget.Entry.Handle,
-					verifiedTarget.Strategy,
-					verifiedTarget.Confidence,
-					verifiedTarget.Entry.OriginalRevision,
-					verifiedTarget.CurrentRevision);
-			}
-			var verification = expect is null ? null : Verify(session, cache, options.Value, resolution.TargetId, expect);
-			var structuredDelta = observe == McpObserveMode.Delta ? CreateActionDelta(contextId, before, after, handles) : null;
-			var observedElements = observe switch
-			{
-				McpObserveMode.Target => CreateActionElements(contextId, after, handles, node => node.TargetId == resolution.TargetId),
-				_ => [],
-			};
+			var destination = action is McpDragAction drag ? ResolveTarget(contextId, drag.Destination, before, handles) : null;
+			VisualTreeSnapshot? after = null;
+			McpVerificationResult? verification = null;
+			McpActionDelta? structuredDelta = null;
+			IReadOnlyList<McpElementMatch> observedElements = [];
+			var executionOptions = new AutomationExecutionOptions(
+				options.Value.DefaultTimeoutMs,
+				options.Value.TreeLimit,
+				[.. options.Value.DefaultProperties],
+				ObservationMode.None,
+				UseShortIds: true);
+			_ = pipeline.ExecutePrepared(
+				session.AppSession,
+				executionOptions,
+				new AutomationActionRequest(
+					typedAction,
+					new ElementSelector { TargetId = resolution.TargetId },
+					destination is null ? null : new ElementSelector { TargetId = destination.TargetId }),
+				descriptor,
+				new AutomationActionPipelineHooks
+				{
+					InvalidateCache = () => cache.Invalidate(session.SessionId),
+					RepairStaleTarget = !string.IsNullOrWhiteSpace(target.Handle)
+						? (_, _) =>
+						{
+							var repairSnapshot = cache.GetOrRefresh(session, properties, options.Value.TreeLimit, includeHidden: true, refresh: true);
+							resolution = ResolveTarget(contextId, target, repairSnapshot, handles);
+							destination = action is McpDragAction retryDrag
+								? ResolveTarget(contextId, retryDrag.Destination, repairSnapshot, handles)
+								: null;
+							return new AutomationActionRetry(
+								new ElementSelector { TargetId = resolution.TargetId },
+								destination is null ? null : new ElementSelector { TargetId = destination.TargetId });
+						}
+						: null,
+					Verify = _ =>
+					{
+						after = cache.GetOrRefresh(session, properties, options.Value.TreeLimit, includeHidden: true, refresh: true);
+						if (expect is not null && !string.IsNullOrWhiteSpace(resolution.Handle))
+						{
+							var verifiedTarget = handles.Resolve(contextId, resolution.Handle!, after);
+							resolution = new ActionResolution(
+								verifiedTarget.TargetId,
+								verifiedTarget.Entry.Handle,
+								verifiedTarget.Strategy,
+								verifiedTarget.Confidence,
+								verifiedTarget.Entry.OriginalRevision,
+								verifiedTarget.CurrentRevision);
+						}
+						verification = expect is null ? null : Verify(session, cache, options.Value, resolution.TargetId, expect);
+					},
+					Observe = _ =>
+					{
+						after ??= cache.GetOrRefresh(session, properties, options.Value.TreeLimit, includeHidden: true, refresh: true);
+						structuredDelta = observe == McpObserveMode.Delta ? CreateActionDelta(contextId, before, after, handles) : null;
+						observedElements = observe == McpObserveMode.Target
+							? CreateActionElements(contextId, after, handles, node => node.TargetId == resolution.TargetId)
+							: [];
+					},
+				});
+			after ??= cache.GetOrRefresh(session, properties, options.Value.TreeLimit, includeHidden: true, refresh: true);
 			return new McpActionResult
 			{
 				ContextId = contextId,
-				Action = ActionKind(action),
+				Action = ActionKind(typedAction),
 				RevisionBefore = before.SequenceNumber,
 				RevisionAfter = after.SequenceNumber,
 				Resolved = new McpResolvedElement
@@ -787,98 +813,39 @@ internal static class AgentTools
 			new McpAmbiguousElementDetails { MatchCount = found.MatchCount, Candidates = candidates });
 	}
 
-	private static void ExecuteAction(
-		IAutomationSession session,
-		McpAgentAction action,
-		string targetId,
-		string contextId,
-		VisualTreeSnapshot snapshot,
-		McpElementHandleRegistry handles,
-		DeepFlowMcpOptions options,
-		McpPolicyOptions policy)
-	{
-		if (action is McpClickAction { Count: <= 0 })
-			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "action.count must be greater than zero.");
-		if (action is McpMouseWheelAction { Delta: 0 })
-			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "action.delta must not be zero.");
-
-		var executionOptions = new AutomationExecutionOptions(
-			options.DefaultTimeoutMs,
-			options.TreeLimit,
-			[.. options.DefaultProperties],
-			ObservationMode.None,
-			UseShortIds: true);
-		var executor = new ActionExecutor();
-		if (action is McpDragAction drag)
-		{
-			var destination = ResolveTarget(contextId, drag.Destination, snapshot, handles);
-			executor.ExecuteTwoTarget(
-				"drag",
-				session,
-				executionOptions,
-				new ElementSelector { TargetId = targetId },
-				new ElementSelector { TargetId = destination.TargetId },
-				(source, destinationTarget) => new DragAndDropCommandRequest
-				{
-					TargetId = source,
-					DestinationTargetId = destinationTarget,
-					DurationMs = drag.DurationMs,
-					TimeoutMs = options.DefaultTimeoutMs,
-					UseInjectedEvents = true,
-				});
-			return;
-		}
-
-		executor.Execute(
-			ActionKind(action).ToString().ToLowerInvariant(),
-			session,
-			executionOptions,
-			new ElementSelector { TargetId = targetId },
-			resolvedTargetId => CreateCommand(action, resolvedTargetId ?? targetId, options),
-			requireElementTarget: true);
-	}
-
-	private static IpcCommand CreateCommand(McpAgentAction action, string targetId, DeepFlowMcpOptions options) =>
+	private static AutomationAction ToAutomationAction(McpAgentAction action) =>
 		action switch
 		{
-			McpClickAction click => new ClickCommandRequest
-			{
-				TargetId = targetId,
-				MouseButton = click.Button switch
+			McpClickAction click => new ClickAction(
+				click.Button switch
 				{
 					McpMouseButton.Right => MouseButtonKind.Right,
 					McpMouseButton.Middle => MouseButtonKind.Middle,
 					_ => MouseButtonKind.Left,
 				},
-				ClickCount = click.Count,
-			},
-			McpMouseWheelAction wheel => new MouseWheelCommandRequest { TargetId = targetId, Delta = wheel.Delta },
-			McpTypeAction type => new TypeTextCommandRequest { TargetId = targetId, Text = Require(type.Text, "action.text"), ClearFirst = type.ClearFirst },
-			McpKeyAction key => new KeyPressCommandRequest { TargetId = targetId, Keys = Require(key.Keys, "action.keys"), EnsureForeground = true },
-			McpSetAction set => new SetPropertyCommandRequest
-			{
-				TargetId = targetId,
-				PropertyName = Require(set.Property.Name, "action.property.name"),
-				PropertyValue = McpValueConversion.ToProtocolValue(set.Property.Value),
-			},
-			McpFocusAction => new FocusCommandRequest { TargetId = targetId },
-			McpInvokeAction invoke when KnownOperations.Contains(invoke.Operation) => new KnownOperationCommandRequest { TargetId = targetId, Operation = invoke.Operation },
-			McpInvokeAction invoke => throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Known operation '{invoke.Operation}' is not allow-listed."),
+				click.Count),
+			McpMouseWheelAction wheel => new MouseWheelAction(wheel.Delta),
+			McpTypeAction type => new TypeTextAction(Require(type.Text, "action.text"), type.ClearFirst),
+			McpKeyAction key => new KeyPressAction(Require(key.Keys, "action.keys"), TimeoutDefaults.KeyboardDelayMs, EnsureForeground: true),
+			McpSetAction set => new SetPropertyAction(set.Property.Name, McpValueConversion.ToProtocolValue(set.Property.Value)),
+			McpFocusAction => new FocusAction(),
+			McpInvokeAction invoke => new KnownOperationAction(invoke.Operation),
+			McpDragAction drag => new DragAction(DurationMs: drag.DurationMs, UseInjectedEvents: true),
 			_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported action type '{action.GetType().Name}'."),
 		};
 
-	private static McpActionKind ActionKind(McpAgentAction action) =>
-		action switch
+	private static McpActionKind ActionKind(AutomationAction action) =>
+		AutomationActionRegistry.Describe(action).Name switch
 		{
-			McpClickAction => McpActionKind.Click,
-			McpMouseWheelAction => McpActionKind.Wheel,
-			McpTypeAction => McpActionKind.Type,
-			McpKeyAction => McpActionKind.Key,
-			McpSetAction => McpActionKind.Set,
-			McpFocusAction => McpActionKind.Focus,
-			McpInvokeAction => McpActionKind.Invoke,
-			McpDragAction => McpActionKind.Drag,
-			_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported action type '{action.GetType().Name}'."),
+			"click" => McpActionKind.Click,
+			"wheel" => McpActionKind.Wheel,
+			"type" => McpActionKind.Type,
+			"key" => McpActionKind.Key,
+			"set" => McpActionKind.Set,
+			"focus" => McpActionKind.Focus,
+			"invoke" => McpActionKind.Invoke,
+			"drag" => McpActionKind.Drag,
+			var name => throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported action '{name}'."),
 		};
 
 	private static string Require(string? value, string name) =>

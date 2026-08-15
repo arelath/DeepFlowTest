@@ -755,64 +755,23 @@ public static class Program
 
 	private static ActionExecutionResult ExecuteClick(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		new ActionGate().Demand("click", commonOptions);
 		var button = GetClickButtonOption(args, defaults.Commands.Click.Button);
 		var count = CliArgumentReader.GetInt(args, "--count", 1);
 		var isDouble = CliArgumentReader.HasOption(args, "--double") || defaults.Commands.Click.Double;
-		if (count <= 0)
-			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Click count must be greater than zero.");
-
-		using var session = OpenSession(services, commonOptions);
-		return new ActionExecutor().Execute(
-			"click",
-			session,
-			CreateAutomationOptions(commonOptions, defaults),
-			ElementSelectorParser.FromArgs(args),
-			targetId =>
-			{
-				if (isDouble || button == CliClickButton.Double)
-				{
-					return new KnownRoutedEventCommandRequest
-					{
-						TargetId = targetId ?? string.Empty,
-						EventName = "MouseDoubleClick",
-					};
-				}
-
-				return new ClickCommandRequest
-				{
-					TargetId = targetId ?? string.Empty,
-					MouseButton = CliValueParser.ToMouseButton(button),
-					ClickCount = count,
-				};
-			},
-			requireElementTarget: true);
+		return ExecuteAutomationAction(
+			new ClickAction(CliValueParser.ToMouseButton(button), count, isDouble || button == CliClickButton.Double),
+			ElementSelectorParser.FromArgs(args), services, defaults, commonOptions).SingleTarget!;
 	}
 
 	private static ActionExecutionResult ExecuteMouseWheel(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		new ActionGate().Demand("wheel", commonOptions);
 		var delta = CliArgumentReader.GetInt(args, "--delta", defaults.Commands.Wheel.Delta);
-		if (delta == 0)
-			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Mouse wheel delta must not be zero.");
-
-		using var session = OpenSession(services, commonOptions);
-		return new ActionExecutor().Execute(
-			"wheel",
-			session,
-			CreateAutomationOptions(commonOptions, defaults),
-			ElementSelectorParser.FromArgs(args),
-			targetId => new MouseWheelCommandRequest
-			{
-				TargetId = targetId ?? string.Empty,
-				Delta = delta,
-			},
-			requireElementTarget: true);
+		return ExecuteAutomationAction(
+			new MouseWheelAction(delta), ElementSelectorParser.FromArgs(args), services, defaults, commonOptions).SingleTarget!;
 	}
 
 	private static TwoTargetActionExecutionResult ExecuteDrag(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		new ActionGate().Demand("drag", commonOptions);
 		var sourceSelector = ElementSelectorParser.FromArgs(args);
 		var destinationSelector = ElementSelectorParser.FromArgs(args, "to");
 		if (sourceSelector.IsEmpty)
@@ -833,177 +792,104 @@ public static class Program
 		var foreground = CliArgumentReader.GetBool(args, "--foreground", dragDefaults.Foreground);
 		var validateSameProcess = CliArgumentReader.GetBool(args, "--validate-same-process", dragDefaults.ValidateSameProcess);
 
-		using var session = OpenSession(services, commonOptions);
-		return new ActionExecutor().ExecuteTwoTarget(
-			"drag",
-			session,
-			CreateAutomationOptions(commonOptions, defaults),
-			sourceSelector,
-			destinationSelector,
-			(sourceTargetId, destinationTargetId) => new DragAndDropCommandRequest
-			{
-				TargetId = sourceTargetId,
-				DestinationTargetId = destinationTargetId,
-				DurationMs = durationMs,
-				HoldMs = holdMs,
-				StepIntervalMs = stepIntervalMs,
-				PostDropWaitMs = postDropWaitMs,
-				SourceAnchorX = sourceAnchorX,
-				SourceAnchorY = sourceAnchorY,
-				DestinationAnchorX = destinationAnchorX,
-				DestinationAnchorY = destinationAnchorY,
-				UseInjectedEvents = useInjectedEvents,
-				EnsureForeground = foreground,
-				ValidateSameProcess = validateSameProcess,
-				TimeoutMs = commonOptions.TimeoutMs,
-			});
+		return ExecuteAutomationAction(
+			new DragAction(durationMs, holdMs, stepIntervalMs, postDropWaitMs, sourceAnchorX, sourceAnchorY,
+				destinationAnchorX, destinationAnchorY, useInjectedEvents, foreground, validateSameProcess),
+			sourceSelector, services, defaults, commonOptions, destinationSelector).TwoTarget!;
 	}
 
 	private static ActionExecutionResult ExecuteFocus(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		new ActionGate().Demand("focus", commonOptions);
-		using var session = OpenSession(services, commonOptions);
-		return new ActionExecutor().Execute(
-			"focus",
-			session,
-			CreateAutomationOptions(commonOptions, defaults),
-			ElementSelectorParser.FromArgs(args),
-			targetId => new FocusCommandRequest { TargetId = targetId ?? string.Empty },
-			requireElementTarget: true,
-			afterProperties: new[] { KnownProperties.IsFocused, KnownProperties.IsKeyboardFocused, KnownProperties.IsKeyboardFocusWithin });
+		return ExecuteAutomationAction(
+			new FocusAction(), ElementSelectorParser.FromArgs(args), services, defaults, commonOptions).SingleTarget!;
 	}
 
 	private static ActionExecutionResult ExecuteType(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		new ActionGate().Demand("type", commonOptions);
 		var text = CliArgumentReader.GetOption(args, "--value", "--text") ?? defaults.Commands.Type.Text;
-		if (text is null)
-			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The type command requires --value or --text.");
 
 		var selector = ElementSelectorParser.FromArgs(args);
 		selector.Text = CliArgumentReader.GetOption(args, "--selector-text");
 
-		using var session = OpenSession(services, commonOptions);
-		return new ActionExecutor().Execute(
-			"type",
-			session,
-			CreateAutomationOptions(commonOptions, defaults),
-			selector,
-			targetId => new TypeTextCommandRequest
-			{
-				Text = text,
-				TargetId = targetId,
-				ClearFirst = CliArgumentReader.HasOption(args, "--clear-first") || defaults.Commands.Type.ClearFirst,
-			},
-			requireElementTarget: false,
-			afterProperties: new[] { KnownProperties.Text, KnownProperties.Content });
+		return ExecuteAutomationAction(
+			new TypeTextAction(text!, CliArgumentReader.HasOption(args, "--clear-first") || defaults.Commands.Type.ClearFirst),
+			selector, services, defaults, commonOptions).SingleTarget!;
 	}
 
 	private static ActionExecutionResult ExecuteKey(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		new ActionGate().Demand("key", commonOptions);
 		var keys = CliArgumentReader.GetOption(args, "--keys") ?? defaults.Commands.Key.Keys;
-		if (string.IsNullOrWhiteSpace(keys))
-			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The key command requires --keys.");
-		ValidateKeys(keys!);
 
 		var selector = ElementSelectorParser.FromArgs(args);
 
-		using var session = OpenSession(services, commonOptions);
-		return new ActionExecutor().Execute(
-			"key",
-			session,
-			CreateAutomationOptions(commonOptions, defaults),
-			selector,
-			targetId => new KeyPressCommandRequest
-			{
-				Keys = keys,
-				TargetId = targetId,
-				DelayMs = CliArgumentReader.GetInt(args, "--delay-ms", defaults.KeyDelayMs),
-				EnsureForeground = CliArgumentReader.GetBool(args, "--foreground", defaults.Commands.Key.Foreground),
-			},
-			requireElementTarget: false,
-			afterProperties: new[] { KnownProperties.Text, KnownProperties.Content, KnownProperties.IsKeyboardFocused, KnownProperties.IsKeyboardFocusWithin });
+		return ExecuteAutomationAction(
+			new KeyPressAction(keys, CliArgumentReader.GetInt(args, "--delay-ms", defaults.KeyDelayMs),
+				CliArgumentReader.GetBool(args, "--foreground", defaults.Commands.Key.Foreground), ValidateKnownKeys: true),
+			selector, services, defaults, commonOptions).SingleTarget!;
 	}
 
 	private static ActionExecutionResult ExecuteSet(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		new ActionGate().Demand("set", commonOptions);
 		var property = CliArgumentReader.GetOption(args, "--property") ?? defaults.Commands.Set.Property;
-		if (string.IsNullOrWhiteSpace(property))
-			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The set command requires --property.");
-
 		var rawValue = CliArgumentReader.GetOption(args, "--value") ?? defaults.Commands.Set.Value;
 		if (rawValue is null)
 			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The set command requires --value.");
-
-		using var session = OpenSession(services, commonOptions);
-		return new ActionExecutor().Execute(
-			"set",
-			session,
-			CreateAutomationOptions(commonOptions, defaults),
-			ElementSelectorParser.FromArgs(args),
-			targetId => new SetPropertyCommandRequest
-			{
-				TargetId = targetId ?? string.Empty,
-				PropertyName = property!,
-				PropertyValue = ParseJsonScalar(rawValue),
-			},
-			requireElementTarget: true,
-			afterProperties: new[] { property! });
+		return ExecuteAutomationAction(
+			new SetPropertyAction(property!, ParseJsonScalar(rawValue)), ElementSelectorParser.FromArgs(args),
+			services, defaults, commonOptions).SingleTarget!;
 	}
 
 	private static ActionExecutionResult ExecuteRaise(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
-		new ActionGate().Demand("raise", commonOptions);
 		var eventName = CliArgumentReader.GetOption(args, "--event") ?? defaults.Commands.Raise.Event;
-		if (string.IsNullOrWhiteSpace(eventName))
-			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The raise command requires --event.");
-		if (!KnownRoutedEvents.Contains(eventName!))
-			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Routed event '{eventName}' is not allow-listed.");
-
-		using var session = OpenSession(services, commonOptions);
-		return new ActionExecutor().Execute(
-			"raise",
-			session,
-			CreateAutomationOptions(commonOptions, defaults),
-			ElementSelectorParser.FromArgs(args),
-			targetId => new KnownRoutedEventCommandRequest
-			{
-				TargetId = targetId ?? string.Empty,
-				EventName = eventName!,
-			},
-			requireElementTarget: true);
+		return ExecuteAutomationAction(
+			new RoutedEventAction(eventName!), ElementSelectorParser.FromArgs(args), services, defaults, commonOptions).SingleTarget!;
 	}
 
 	private static ActionExecutionResult ExecuteInvoke(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
 	{
 		var code = CliArgumentReader.GetOption(args, "--code") ?? defaults.Commands.Invoke.Code;
 		var operation = CliArgumentReader.GetOption(args, "--operation") ?? defaults.Commands.Invoke.Operation;
-		var arbitrary = !string.IsNullOrWhiteSpace(code);
-		new ActionGate().Demand("invoke", commonOptions, arbitraryInvoke: arbitrary);
 		if (string.IsNullOrWhiteSpace(operation) && string.IsNullOrWhiteSpace(code))
 			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The invoke command requires --operation or --code.");
 		if (!string.IsNullOrWhiteSpace(operation) && !string.IsNullOrWhiteSpace(code))
 			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "The invoke command accepts either --operation or --code, not both.");
 
-		if (!string.IsNullOrWhiteSpace(operation) && !KnownOperations.Contains(operation!))
-			throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Known operation '{operation}' is not allow-listed.");
-
 		object? parsedCode = null;
 		if (!string.IsNullOrWhiteSpace(code))
 			parsedCode = ParseJsonScalarStrict(code!);
 
+		AutomationAction action = !string.IsNullOrWhiteSpace(operation)
+			? new KnownOperationAction(operation!)
+			: new InvokeCodeAction(parsedCode, commonOptions.AllowArbitraryInvoke);
+		return ExecuteAutomationAction(
+			action, ElementSelectorParser.FromArgs(args), services, defaults, commonOptions).SingleTarget!;
+	}
+
+	private static AutomationActionPipelineResult ExecuteAutomationAction(
+		AutomationAction action,
+		DeepFlowTest.Automation.ElementSelector selector,
+		CliServices services,
+		CliDefaults defaults,
+		CliCommonOptions commonOptions,
+		DeepFlowTest.Automation.ElementSelector? destination = null)
+	{
+		var pipeline = new AutomationActionPipeline();
+		var hooks = new AutomationActionPipelineHooks
+		{
+			DemandPolicy = descriptor => new ActionGate().Demand(
+				descriptor.Name,
+				commonOptions,
+				arbitraryInvoke: descriptor.Policy == AutomationActionPolicyClass.ArbitraryInvoke),
+		};
+		var descriptor = pipeline.Prepare(action, hooks);
 		using var session = OpenSession(services, commonOptions);
-		return new ActionExecutor().Execute(
-			"invoke",
+		return pipeline.ExecutePrepared(
 			session,
 			CreateAutomationOptions(commonOptions, defaults),
-			ElementSelectorParser.FromArgs(args),
-			targetId => !string.IsNullOrWhiteSpace(operation)
-				? new KnownOperationCommandRequest { TargetId = targetId ?? string.Empty, Operation = operation! }
-				: new InvokeCommandRequest { TargetId = targetId ?? string.Empty, Code = parsedCode, AllowUnsafeCode = commonOptions.AllowArbitraryInvoke },
-			requireElementTarget: true);
+			new AutomationActionRequest(action, selector, destination),
+			descriptor,
+			hooks);
 	}
 
 	private static object? ParseJsonScalar(string value)
@@ -1045,47 +931,6 @@ public static class Program
 			_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Only JSON scalar values are supported."),
 		};
 	}
-
-	private static void ValidateKeys(string keys)
-	{
-		var known = new[]
-		{
-			"Enter", "Return", "Tab", "Escape", "Esc", "Space", "Backspace", "Delete", "Del",
-			"Insert", "Ins", "Home", "End", "PageUp", "PageDown", "Up", "Down", "Left", "Right",
-			"Ctrl", "Control", "Shift", "Alt", "A", "C", "V", "X", "Y", "Z",
-			"F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
-		};
-		foreach (var token in keys.Split(new[] { '+', ',', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-		{
-			if (token.Length == 1 && char.IsLetterOrDigit(token[0]))
-				continue;
-			if (!known.Contains(token, StringComparer.OrdinalIgnoreCase))
-				throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unknown key name '{token}'.");
-		}
-	}
-
-	private static readonly HashSet<string> KnownRoutedEvents = new(StringComparer.Ordinal)
-	{
-		"Click",
-		"MouseDoubleClick",
-		"Checked",
-		"Unchecked",
-		"Expanded",
-		"Collapsed",
-	};
-
-	private static readonly HashSet<string> KnownOperations = new(StringComparer.Ordinal)
-	{
-		"Focus",
-		"AcceptDialog",
-		"CancelDialog",
-		"BringIntoView",
-		"Select",
-		"Expand",
-		"Collapse",
-		"Check",
-		"Uncheck",
-	};
 
 	private static ProcessListData GetProcesses(CliServices services, bool candidatesOnly)
 	{
