@@ -86,6 +86,7 @@ loginBtn.Click();
 loginBtn.DoubleClick();
 loginBtn.RightClick();
 loginBtn.MiddleClick();
+loginBtn.MouseWheel(-120); // one notch down; use +120 for up
 
 // Focus
 loginBtn.Focus();

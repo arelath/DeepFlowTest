@@ -65,6 +65,7 @@ Common action flow:
 
 ```powershell
 DeepFlowTest.Cli.exe click --pid <pid> --target <target-id> --after target --pretty
+DeepFlowTest.Cli.exe wheel --pid <pid> --target <target-id> --delta -120 --after target --pretty
 DeepFlowTest.Cli.exe type --pid <pid> --automation-id SearchBox --value "hello" --clear-first --after target --pretty
 DeepFlowTest.Cli.exe key --pid <pid> --keys Ctrl+A --foreground false --pretty
 DeepFlowTest.Cli.exe wait --pid <pid> --automation-id SubmitButton --require-enabled --timeout-ms 5000 --pretty
@@ -73,7 +74,7 @@ DeepFlowTest.Cli.exe screenshot --pid <pid> --target <target-id> --out capture.p
 
 Read commands include `processes`, `ping`, `pipe status`, `tree`, `find`,
 `node`, `props`, `selectors`, `screenshot`, and `wait`. Action commands include
-`click`, `drag`, `focus`, `type`, `key`, `set`, `raise`, and `invoke`.
+`click`, `wheel`, `drag`, `focus`, `type`, `key`, `set`, `raise`, and `invoke`.
 Streaming commands include `visual-tree`, `visual-tree-delta`, `screenshot`,
 `event-log`, `binding-failures`, and `semantic-recording`.
 

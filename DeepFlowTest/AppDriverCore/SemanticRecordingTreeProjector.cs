@@ -335,6 +335,8 @@ public sealed class SemanticRecordingTreeProjector
 		var parts = new List<string> { kind };
 		if (!string.IsNullOrWhiteSpace(target))
 			parts.Add(target);
+		if (action.WheelDelta.HasValue)
+			parts.Add($"delta={action.WheelDelta.Value.ToString(CultureInfo.InvariantCulture)}");
 		if (!string.IsNullOrWhiteSpace(action.Keys))
 			parts.Add($"keys={FormatValue(action.Keys)}");
 		else if (!string.IsNullOrWhiteSpace(action.Text))

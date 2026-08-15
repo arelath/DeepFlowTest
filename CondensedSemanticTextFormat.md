@@ -109,8 +109,9 @@ Optional detail lines can follow:
 
 - `> target`: target type, short ID, identity/state tokens, and optional
   `summary`.
-- `> input`: action-specific input such as `mouseButton`, `clickCount`, `text`,
-  or `keys`.
+- `> input`: action-specific input such as `mouseButton`, `clickCount`,
+  `wheelDelta`, `text`, or `keys`. Wheel deltas are signed; `120` is one
+  standard notch up and `-120` is one notch down.
 - `> selector`: selector hints. Common fields are selector kind, `property`,
   `value`, `confidence`, and `cli`.
 

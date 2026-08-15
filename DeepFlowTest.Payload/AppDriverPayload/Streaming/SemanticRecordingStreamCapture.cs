@@ -218,6 +218,27 @@ internal sealed class SemanticRecordingStreamCapture : IDisposable
 		});
 	}
 
+	private void RecordMouseWheelAction(object? rawTarget, object? rawSource, int delta)
+	{
+		if (disposed || AppHooks.IsSyntheticInputActive || rawTarget is null || delta == 0)
+			return;
+
+		var target = treeService.DescribeTargetForRecording(rawTarget, rawSource, requestedProperties);
+		lock (textGate)
+			FlushTextBufferLocked(DateTimeOffset.UtcNow);
+
+		EnqueueFrame(new SemanticRecordingFrame
+		{
+			FrameKind = "action",
+			Action = new RecordedInputAction
+			{
+				ActionKind = "wheel",
+				Target = target,
+				WheelDelta = delta,
+			},
+		});
+	}
+
 	private void RecordText(object? rawTarget, object? rawSource, string text)
 	{
 		if (disposed || AppHooks.IsSyntheticInputActive || rawTarget is null || string.IsNullOrEmpty(text))
@@ -496,6 +517,12 @@ internal sealed class SemanticRecordingStreamCapture : IDisposable
 
 		private void OnPostProcessInput(object sender, ProcessInputEventArgs e)
 		{
+			if (e.StagingItem.Input is MouseWheelEventArgs wheelArgs && IsWpfMouseWheelEvent(wheelArgs.RoutedEvent))
+			{
+				owner.RecordMouseWheelAction(owner.NormalizeWpfTarget(wheelArgs.OriginalSource), wheelArgs.OriginalSource, wheelArgs.Delta);
+				return;
+			}
+
 			if (e.StagingItem.Input is MouseButtonEventArgs mouseArgs)
 			{
 				var shouldRecord = ShouldRecordMouse(mouseArgs);
@@ -553,6 +580,12 @@ internal sealed class SemanticRecordingStreamCapture : IDisposable
 			|| string.Equals(routedEvent.Name, "MouseUp", StringComparison.Ordinal)
 			|| string.Equals(routedEvent.Name, "PreviewMouseUp", StringComparison.Ordinal)
 			|| routedEvent.Name.EndsWith("ButtonUp", StringComparison.Ordinal);
+
+		private static bool IsWpfMouseWheelEvent(RoutedEvent routedEvent) =>
+			routedEvent == Mouse.MouseWheelEvent
+			|| routedEvent == UIElement.MouseWheelEvent
+			|| routedEvent == ContentElement.MouseWheelEvent
+			|| string.Equals(routedEvent.Name, "MouseWheel", StringComparison.Ordinal);
 	}
 
 	private sealed class WinFormsSemanticInputListener : Forms.IMessageFilter
@@ -563,6 +596,7 @@ internal sealed class SemanticRecordingStreamCapture : IDisposable
 		private const int WM_LBUTTONUP = 0x0202;
 		private const int WM_LBUTTONDBLCLK = 0x0203;
 		private const int WM_RBUTTONUP = 0x0205;
+		private const int WM_MOUSEWHEEL = 0x020A;
 		private readonly SemanticRecordingStreamCapture owner;
 		private bool suppressNextLeftUp;
 
@@ -604,6 +638,10 @@ internal sealed class SemanticRecordingStreamCapture : IDisposable
 					break;
 				case WM_RBUTTONUP:
 					owner.RecordMouseAction(control, control, "right-click", "right", 1);
+					break;
+				case WM_MOUSEWHEEL:
+					var delta = unchecked((short)((m.WParam.ToInt64() >> 16) & 0xffff));
+					owner.RecordMouseWheelAction(control, control, delta);
 					break;
 				case WM_CHAR:
 					var character = (char)m.WParam.ToInt32();

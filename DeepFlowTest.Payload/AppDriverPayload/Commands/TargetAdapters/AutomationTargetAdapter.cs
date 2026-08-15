@@ -16,6 +16,24 @@ internal sealed class AutomationTargetAdapter : UiTargetAdapterBase
 			? ActionResult.Ok()
 			: base.Click(target, button, clickCount);
 
+	public override ActionResult MouseWheel(object target, int delta)
+	{
+		if (target is not AutomationElement automationElement)
+			return base.MouseWheel(target, delta);
+
+		try
+		{
+			var hwnd = new IntPtr(automationElement.Current.NativeWindowHandle);
+			return NativeHwndTargetAdapter.TryMouseWheelNativeWindow(hwnd, delta)
+				? ActionResult.Ok()
+				: base.MouseWheel(target, delta);
+		}
+		catch (ElementNotAvailableException)
+		{
+			return ActionResult.Unsupported("Automation target is no longer available.");
+		}
+	}
+
 	public override ActionResult Focus(object target)
 	{
 		if (target is not AutomationElement automationElement)

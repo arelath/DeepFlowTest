@@ -319,7 +319,7 @@ internal sealed class CondensedSemanticRecordingFrameWriter : ISemanticRecording
 	private void WriteActionInput(IReadOnlyDictionary<string, object?> action)
 	{
 		var wroteAny = false;
-		foreach (var key in new[] { "mouseButton", "clickCount", "text", "keys" })
+		foreach (var key in new[] { "mouseButton", "clickCount", "wheelDelta", "text", "keys" })
 		{
 			if (!TryGetValue(action, key, out var value))
 				continue;

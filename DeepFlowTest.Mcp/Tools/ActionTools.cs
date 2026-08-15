@@ -85,6 +85,41 @@ internal static class ActionTools
 			});
 	}
 
+	[McpServerTool(Name = "deepflow_mouse_wheel"), Description("Send mouse-wheel input to an element resolved by target ID or selector.")]
+	public static McpToolResponse MouseWheel(
+		McpToolRunner runner,
+		McpSessionHost host,
+		McpSnapshotCache cache,
+		IOptions<DeepFlowMcpOptions> options,
+		string? targetId = null,
+		string? typeName = null,
+		string? name = null,
+		string? automationId = null,
+		string? text = null,
+		string? property = null,
+		int delta = 120,
+		string? after = "delta")
+	{
+		return ExecuteAction(
+			runner,
+			host,
+			cache,
+			options,
+			"wheel",
+			after,
+			selector: CreateSelector(targetId, typeName, null, name, automationId, text, property),
+			parameters: new { targetId, typeName, name, automationId, text, property, delta, after },
+			action =>
+			{
+				if (delta == 0)
+					throw new CliException(CliErrorCodes.InvalidArguments, "delta must not be zero.");
+
+				return action.Execute(
+					targetId => new MouseWheelCommandRequest { TargetId = targetId ?? string.Empty, Delta = delta },
+					requireElementTarget: true);
+			});
+	}
+
 	[McpServerTool(Name = "deepflow_drag_and_drop"), Description("Drag a source element and drop it on a destination element. Mutates UI and requires allowActions.")]
 	public static McpToolResponse DragAndDrop(
 		McpToolRunner runner,

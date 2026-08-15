@@ -386,6 +386,41 @@ public sealed class WinFormsSupportTests
 	}
 
 	[Test]
+	public void NativeHwndMouseWheelPostsSignedDelta()
+	{
+		using var form = CreateForm();
+		var control = new RecordingWheelControl { Name = "nativeWheelControl", Width = 100, Height = 60 };
+		form.Controls.Add(control);
+
+		try
+		{
+			form.Show();
+			Forms.Application.DoEvents();
+			var snapshot = (VisualTreeSnapshot)CaptureResponse(new GetVisualTreeCommandRequest
+			{
+				AsSnapshot = true,
+				PropNames = ["Name", "Title"],
+				MaxNodeCount = 300,
+			})!;
+			var hwndNode = snapshot.Nodes.FirstOrDefault(node => node.TypeName == "HWND" && node.Hwnd == control.Handle.ToInt64());
+			Assert.That(hwndNode, Is.Not.Null);
+
+			AssertOk(CaptureResponse(new MouseWheelCommandRequest { TargetId = hwndNode!.TargetId, Delta = -240 }));
+			for (var i = 0; i < 5 && control.WheelDeltas.Count == 0; i++)
+			{
+				Forms.Application.DoEvents();
+				Thread.Sleep(10);
+			}
+
+			Assert.That(control.WheelDeltas, Is.EqualTo(new[] { -240 }));
+		}
+		finally
+		{
+			form.Close();
+		}
+	}
+
+	[Test]
 	public void NativeWindowFileNamePropertySetsWindowText()
 	{
 		using var form = CreateForm();
@@ -806,6 +841,19 @@ public sealed class WinFormsSupportTests
 					unchecked((short)((long)m.LParam & 0xffff)),
 					unchecked((short)(((long)m.LParam >> 16) & 0xffff))));
 			}
+
+			base.WndProc(ref m);
+		}
+	}
+
+	private sealed class RecordingWheelControl : Forms.Control
+	{
+		public List<int> WheelDeltas { get; } = [];
+
+		protected override void WndProc(ref Forms.Message m)
+		{
+			if (m.Msg == NativeMethods.WM_MOUSEWHEEL)
+				WheelDeltas.Add(unchecked((short)(((long)m.WParam >> 16) & 0xffff)));
 
 			base.WndProc(ref m);
 		}

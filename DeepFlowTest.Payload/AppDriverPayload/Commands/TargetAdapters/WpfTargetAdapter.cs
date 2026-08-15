@@ -38,6 +38,11 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 			_ => base.Click(target, button, clickCount),
 		};
 
+	public override ActionResult MouseWheel(object target, int delta) =>
+		target is UIElement uiElement
+			? PerformMouseWheel(uiElement, delta)
+			: base.MouseWheel(target, delta);
+
 	private static ActionResult PerformToggleButtonClick(ToggleButton target, int clickCount)
 	{
 		for (var i = 0; i < Math.Max(1, clickCount); i++)
@@ -501,6 +506,24 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		return ActionResult.Ok();
 	}
 
+	private static ActionResult PerformMouseWheel(UIElement target, int delta)
+	{
+		if (!target.IsEnabled)
+			return ActionResult.Ok();
+
+		UIHighlight.Select(target);
+		TryEnsureAppHooks();
+		using var syntheticMouseInput = AppHooks.BeginSyntheticMouseInput();
+		if (TryGetScreenPoint(target, new PointerAnchor(0.5, 0.5), out var wheelScreen, out _))
+		{
+			AppHooks.SetSyntheticMouseScreenPosition(wheelScreen);
+			VirtualPointerService.MoveTo(wheelScreen, GetOwnerHwnd(target));
+		}
+
+		RaiseMouseWheelEvent(target, delta, GetAscendingVisualTree(target));
+		return ActionResult.Ok();
+	}
+
 	private static bool TryHandleMenuHeaderClick(UIElement target)
 	{
 		if (target is not MenuItem menuItem || menuItem.Items.Count == 0)
@@ -564,6 +587,23 @@ internal sealed class WpfTargetAdapter : UiTargetAdapterBase
 		SetMouseButtonClickCount(args, clickCount);
 		if (routedEvent == Control.MouseDoubleClickEvent)
 			InvokeMouseGestureBindings(target, button, clickCount);
+
+		AppHooks.MouseOverElement?.SetValue(Mouse.PrimaryDevice, target);
+		foreach (var hoveredTarget in targets)
+			AppHooks.WriteElementOverElement?.Invoke(hoveredTarget, new object[] { AppHooks.CoreFlags.IsMouseOverCache, true });
+
+		AppHooks.SetSyntheticMouseHitTarget(target);
+		InputManager.Current.ProcessInput(args);
+		return args.Handled;
+	}
+
+	private static bool RaiseMouseWheelEvent(UIElement target, int delta, IReadOnlyList<UIElement> targets)
+	{
+		var args = new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, delta)
+		{
+			RoutedEvent = UIElement.PreviewMouseWheelEvent,
+			Source = target,
+		};
 
 		AppHooks.MouseOverElement?.SetValue(Mouse.PrimaryDevice, target);
 		foreach (var hoveredTarget in targets)

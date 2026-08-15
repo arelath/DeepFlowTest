@@ -19,6 +19,11 @@ internal sealed class NativeHwndTargetAdapter : UiTargetAdapterBase
 			? ActionResult.Ok()
 			: base.Click(target, button, clickCount);
 
+	public override ActionResult MouseWheel(object target, int delta) =>
+		target is IntPtr hwnd && TryMouseWheelNativeWindow(hwnd, delta)
+			? ActionResult.Ok()
+			: base.MouseWheel(target, delta);
+
 	public override ActionResult Focus(object target) =>
 		target is IntPtr hwnd && hwnd != IntPtr.Zero && NativeMethods.SetForegroundWindow(hwnd)
 			? ActionResult.Ok()
@@ -126,6 +131,40 @@ internal sealed class NativeHwndTargetAdapter : UiTargetAdapterBase
 			{
 				return false;
 			}
+		}
+
+		return true;
+	}
+
+	internal static bool TryMouseWheelNativeWindow(IntPtr hwnd, int delta)
+	{
+		if (hwnd == IntPtr.Zero || delta == 0 || !NativeMethods.GetClientRect(hwnd, out var rect))
+			return false;
+
+		var point = new NativeMethods.NativePoint
+		{
+			X = Math.Max(0, (rect.Right - rect.Left) / 2),
+			Y = Math.Max(0, (rect.Bottom - rect.Top) / 2),
+		};
+		if (!NativeMethods.ClientToScreen(hwnd, ref point))
+			return false;
+
+		var packedPoint = unchecked((uint)(ushort)point.X | ((uint)(ushort)point.Y << 16));
+		var remaining = delta;
+		while (remaining != 0)
+		{
+			var wheelDelta = Math.Max(short.MinValue, Math.Min(short.MaxValue, remaining));
+			var wheelData = (uint)(ushort)(short)wheelDelta << 16;
+			if (!NativeMethods.PostMessage(
+				hwnd,
+				NativeMethods.WM_MOUSEWHEEL,
+				new IntPtr(unchecked((int)wheelData)),
+				new IntPtr(unchecked((int)packedPoint))))
+			{
+				return false;
+			}
+
+			remaining -= wheelDelta;
 		}
 
 		return true;

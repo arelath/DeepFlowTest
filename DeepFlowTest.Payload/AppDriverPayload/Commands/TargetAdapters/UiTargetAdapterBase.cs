@@ -14,6 +14,9 @@ internal abstract class UiTargetAdapterBase : IUiTargetAdapter
 	public virtual ActionResult Click(object target, MouseButtonKind button, int clickCount) =>
 		UnsupportedAdapterAction(target, $"{ProtocolValueMapper.FormatMouseButton(button)} click");
 
+	public virtual ActionResult MouseWheel(object target, int delta) =>
+		UnsupportedAdapterAction(target, "mouse wheel");
+
 	public virtual ActionResult Focus(object target) =>
 		UnsupportedAdapterAction(target, "focus");
 

@@ -63,6 +63,20 @@ public sealed class ActionCommandHandlerTests
 	}
 
 	[Test]
+	public void MouseWheelSendsPayloadRequestWithSignedDelta()
+	{
+		var session = new FakeAppSessionService();
+		var services = CliTestHost.CreateServices(targetResolver: new FakeTargetResolver(), appSessionService: session);
+
+		var result = CliTestHost.Run(new[] { "wheel", "--pid", "1234", "--target", "0002", "--delta", "-240" }, services);
+
+		Assert.That(result.ExitCode, Is.EqualTo(0), result.Stdout);
+		var command = session.Session.Commands.OfType<MouseWheelCommandRequest>().Single();
+		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
+		Assert.That(command.Delta, Is.EqualTo(-240));
+	}
+
+	[Test]
 	public void DragSendsPayloadRequestWithSourceAndDestination()
 	{
 		var session = new FakeAppSessionService();

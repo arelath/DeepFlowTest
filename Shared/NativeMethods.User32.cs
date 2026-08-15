@@ -38,6 +38,7 @@ internal static partial class NativeMethods
 	public const int WM_RBUTTONUP = 0x0205;
 	public const int WM_MBUTTONDOWN = 0x0207;
 	public const int WM_MBUTTONUP = 0x0208;
+	public const int WM_MOUSEWHEEL = 0x020A;
 	public const int WM_CLOSE = 0x0010;
 	public const int MK_LBUTTON = 0x0001;
 	public const int MK_RBUTTON = 0x0002;

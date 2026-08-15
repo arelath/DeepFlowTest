@@ -47,7 +47,8 @@ internal static class CliArgumentReader
 
 	public static int GetInt(IReadOnlyList<string> args, string name, int defaultValue)
 	{
-		var value = GetOption(args, name);
+		var value = GetNumericOption(args, name, static candidate =>
+			int.TryParse(candidate, NumberStyles.Integer, CultureInfo.InvariantCulture, out _));
 		if (value is null)
 			return defaultValue;
 
@@ -59,7 +60,8 @@ internal static class CliArgumentReader
 
 	public static double GetDouble(IReadOnlyList<string> args, string name, double defaultValue)
 	{
-		var value = GetOption(args, name);
+		var value = GetNumericOption(args, name, static candidate =>
+			double.TryParse(candidate, NumberStyles.Float, CultureInfo.InvariantCulture, out _));
 		if (value is null)
 			return defaultValue;
 
@@ -67,6 +69,26 @@ internal static class CliArgumentReader
 			throw new CliException(CliErrorCodes.InvalidArguments, $"Invalid number value for '{name}'.");
 
 		return parsed;
+	}
+
+	private static string? GetNumericOption(IReadOnlyList<string> args, string name, Func<string, bool> isNumber)
+	{
+		for (var i = 0; i < args.Count; i++)
+		{
+			var arg = args[i];
+			if (arg.StartsWith(name + "=", StringComparison.Ordinal))
+				return arg[(name.Length + 1)..];
+
+			if (!string.Equals(arg, name, StringComparison.Ordinal))
+				continue;
+
+			if (i + 1 >= args.Count || args[i + 1].StartsWith("-", StringComparison.Ordinal) && !isNumber(args[i + 1]))
+				throw new CliException(CliErrorCodes.InvalidArguments, $"Missing value for '{name}'.");
+
+			return args[i + 1];
+		}
+
+		return null;
 	}
 
 	public static bool GetBool(IReadOnlyList<string> args, string name, bool defaultValue)

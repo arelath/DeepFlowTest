@@ -93,6 +93,63 @@ public sealed class TargetActionCommandTests
 	}
 
 	[Test]
+	public void MouseWheelRaisesRoutedEventWithDeltaAndScrollsViewer()
+	{
+		var previewDeltas = new List<int>();
+		var bubbleDeltas = new List<int>();
+		var viewer = new ScrollViewer
+		{
+			Name = "wheelViewer",
+			Height = 120,
+			VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+			Content = new Border { Height = 1200, Width = 200 },
+		};
+		viewer.AddHandler(UIElement.PreviewMouseWheelEvent, new MouseWheelEventHandler((_, args) => previewDeltas.Add(args.Delta)), handledEventsToo: true);
+		viewer.AddHandler(UIElement.MouseWheelEvent, new MouseWheelEventHandler((_, args) => bubbleDeltas.Add(args.Delta)), handledEventsToo: true);
+		var window = CreateWindow("Mouse wheel action", viewer);
+
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			DoEvents();
+			var targetId = FindTargetId("wheelViewer");
+			var offsetBefore = viewer.VerticalOffset;
+
+			AssertOk(CaptureResponse(new MouseWheelCommandRequest { TargetId = targetId, Delta = -120 }));
+			DoEvents();
+
+			Assert.That(previewDeltas, Is.EqualTo(new[] { -120 }));
+			Assert.That(bubbleDeltas, Is.EqualTo(new[] { -120 }));
+			Assert.That(viewer.VerticalOffset, Is.GreaterThan(offsetBefore));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
+	public void MouseWheelRejectsZeroDelta()
+	{
+		var target = new Border { Name = "zeroWheelTarget" };
+		var window = CreateWindow("Zero mouse wheel", target);
+
+		try
+		{
+			window.Show();
+			var response = (StandardIpcResponse)CaptureResponse(new MouseWheelCommandRequest { TargetId = FindTargetId("zeroWheelTarget"), Delta = 0 })!;
+
+			Assert.That(response.Success, Is.False);
+			Assert.That(response.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorCodes.InvalidArguments));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[Test]
 	public void SyntheticClickReportsVirtualPointerTelemetryWhenEnabled()
 	{
 		var renderer = new RecordingVirtualPointerRenderer();

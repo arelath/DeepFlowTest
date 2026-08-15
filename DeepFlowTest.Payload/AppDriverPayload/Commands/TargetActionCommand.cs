@@ -26,6 +26,15 @@ internal static partial class TargetActionCommand
 			return InvokeTargetAdapter(target, adapter => adapter.Click(target, button, request.ClickCount), $"{buttonName} click");
 		});
 
+	public static object MouseWheel(MouseWheelCommandRequest request, TreeService treeService)
+	{
+		if (request.Delta == 0)
+			return StandardIpcResponse.FromError("Mouse wheel delta must not be zero.", ProtocolConstants.ErrorCodes.InvalidArguments, PayloadLog.CurrentCorrelationId);
+
+		return WithTarget(ProtocolConstants.Commands.MouseWheel, request.TargetId, treeService, target =>
+			InvokeTargetAdapter(target, adapter => adapter.MouseWheel(target, request.Delta), "mouse wheel"));
+	}
+
 	public static object DragAndDrop(DragAndDropCommandRequest request, TreeService treeService)
 	{
 		var validationError = ValidateDragAndDropRequest(request);

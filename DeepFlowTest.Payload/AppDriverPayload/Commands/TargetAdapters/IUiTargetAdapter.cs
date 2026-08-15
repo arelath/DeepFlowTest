@@ -9,6 +9,8 @@ internal interface IUiTargetAdapter
 
 	ActionResult Click(object target, MouseButtonKind button, int clickCount);
 
+	ActionResult MouseWheel(object target, int delta);
+
 	ActionResult Focus(object target);
 
 	ActionResult TypeText(object target, string text, bool clearFirst);

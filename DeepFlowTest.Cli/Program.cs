@@ -182,6 +182,8 @@ public static class Program
 				ExecuteRecordSemantic(context.Args, context.Services, context.Defaults, context.CommonOptions)),
 			Click = () => context.Execute("click", targetBound: true, () =>
 				ExecuteClick(context.Args, context.Services, context.Defaults, context.CommonOptions)),
+			Wheel = () => context.Execute("wheel", targetBound: true, () =>
+				ExecuteMouseWheel(context.Args, context.Services, context.Defaults, context.CommonOptions)),
 			Drag = () => context.Execute("drag", targetBound: true, () =>
 				ExecuteDrag(context.Args, context.Services, context.Defaults, context.CommonOptions)),
 			Focus = () => context.Execute("focus", targetBound: true, () =>
@@ -793,6 +795,28 @@ public static class Program
 					MouseButton = CliValueParser.ToMouseButton(button),
 					ClickCount = count,
 				};
+			},
+			requireElementTarget: true);
+	}
+
+	private static ActionCommandResult ExecuteMouseWheel(string[] args, CliServices services, CliDefaults defaults, CliCommonOptions commonOptions)
+	{
+		new ActionGate().Demand("wheel", commonOptions);
+		var delta = CliArgumentReader.GetInt(args, "--delta", defaults.Commands.Wheel.Delta);
+		if (delta == 0)
+			throw new CliException(CliErrorCodes.InvalidArguments, "Mouse wheel delta must not be zero.");
+
+		using var session = OpenSession(services, commonOptions);
+		return new ActionCommandSupport().Execute(
+			"wheel",
+			session,
+			commonOptions,
+			defaults,
+			ElementSelector.FromArgs(args),
+			targetId => new MouseWheelCommandRequest
+			{
+				TargetId = targetId ?? string.Empty,
+				Delta = delta,
 			},
 			requireElementTarget: true);
 	}

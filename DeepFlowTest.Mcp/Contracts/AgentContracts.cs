@@ -31,6 +31,7 @@ internal enum McpObservationFormat
 internal enum McpActionKind
 {
 	Click,
+	Wheel,
 	Type,
 	Key,
 	Set,
@@ -209,6 +210,7 @@ internal sealed record class McpSemanticSelector : McpAgentSelector
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(McpClickAction), "click")]
+[JsonDerivedType(typeof(McpMouseWheelAction), "wheel")]
 [JsonDerivedType(typeof(McpTypeAction), "type")]
 [JsonDerivedType(typeof(McpKeyAction), "key")]
 [JsonDerivedType(typeof(McpSetAction), "set")]
@@ -224,6 +226,12 @@ internal sealed record class McpClickAction : McpAgentAction
 
 	[Description("Number of clicks; use 2 for a double-click.")]
 	public int Count { get; init; } = 1;
+}
+
+internal sealed record class McpMouseWheelAction : McpAgentAction
+{
+	[Description("Signed wheel delta; positive scrolls up and negative scrolls down. A standard notch is 120.")]
+	public int Delta { get; init; } = 120;
 }
 
 internal sealed record class McpTypeAction : McpAgentAction

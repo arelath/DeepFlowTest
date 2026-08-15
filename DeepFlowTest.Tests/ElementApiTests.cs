@@ -385,6 +385,21 @@ public sealed class ElementApiTests
 	}
 
 	[Test]
+	public void MouseWheelIsFluentAndSendsSignedDelta()
+	{
+		var session = new FakeSession(FindMatch("scroller", "items"), StandardIpcResponse.Ok());
+		var driver = CreateDriver(session);
+		var element = driver.GetElement(ElementSelector.ByName("items"));
+
+		var returned = element.MouseWheel(-240);
+
+		Assert.That(returned, Is.SameAs(element));
+		var command = session.SentCommands.OfType<MouseWheelCommandRequest>().Single();
+		Assert.That(command.TargetId, Is.EqualTo("scroller"));
+		Assert.That(command.Delta, Is.EqualTo(-240));
+	}
+
+	[Test]
 	public void DragAndDropToSelectorSendsDestinationAndOptions()
 	{
 		var session = new FakeSession(

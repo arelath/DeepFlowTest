@@ -97,6 +97,7 @@ public sealed class CliCommandDefaults
 	public CliWaitDefaults Wait { get; set; } = new();
 	public CliStreamDefaults Stream { get; set; } = new();
 	public CliClickDefaults Click { get; set; } = new();
+	public CliMouseWheelDefaults Wheel { get; set; } = new();
 	public CliDragDefaults Drag { get; set; } = new();
 	public CliFocusDefaults Focus { get; set; } = new();
 	public CliTypeDefaults Type { get; set; } = new();
@@ -239,6 +240,12 @@ public sealed class CliClickDefaults
 	public CliElementSelectorDefaults Selector { get; set; } = new();
 	public MouseButtonKind Button { get; set; } = MouseButtonKind.Left;
 	public bool Double { get; set; }
+}
+
+public sealed class CliMouseWheelDefaults
+{
+	public CliElementSelectorDefaults Selector { get; set; } = new();
+	public int Delta { get; set; } = 120;
 }
 
 public sealed class CliDragDefaults

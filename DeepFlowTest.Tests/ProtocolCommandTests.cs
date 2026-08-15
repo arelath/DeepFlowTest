@@ -155,6 +155,24 @@ public sealed class ProtocolCommandTests
 	}
 
 	[Test]
+	public void MouseWheelCommandRoundTripsSignedDelta()
+	{
+		var wheel = MessagePacker.ConvertTo<MouseWheelCommandRequest>(new Dictionary<string, object?>
+		{
+			["Kind"] = ProtocolConstants.Commands.MouseWheel,
+			["TargetId"] = "scroller",
+			["Delta"] = -240,
+			["TimeoutMs"] = 321,
+		});
+
+		Assert.That(wheel.TargetId, Is.EqualTo("scroller"));
+		Assert.That(wheel.Delta, Is.EqualTo(-240));
+		Assert.That(wheel.TimeoutMs, Is.EqualTo(321));
+		Assert.That(wheel.ToDictionary()["Kind"], Is.EqualTo(ProtocolConstants.Commands.MouseWheel));
+		Assert.That(wheel.ToDictionary()["Delta"], Is.EqualTo(-240));
+	}
+
+	[Test]
 	public void BindingFailureDtosRoundTripWithProtocolSeverityStrings()
 	{
 		var failure = new BindingFailureDto

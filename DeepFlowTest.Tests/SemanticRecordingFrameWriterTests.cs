@@ -184,6 +184,29 @@ public sealed class SemanticRecordingFrameWriterTests
 	}
 
 	[Test]
+	public void CondensedDiagnosticWritesMouseWheelDelta()
+	{
+		var output = new StringWriter();
+		using (var writer = SemanticRecordingFrameWriter.Create(output, SemanticRecordingOutputFormat.CondensedDiagnostic))
+		{
+			writer.WriteFrame(new SemanticRecordingFrame
+			{
+				FrameKind = "action",
+				SequenceNumber = 4,
+				Action = new RecordedInputAction
+				{
+					ActionKind = "wheel",
+					WheelDelta = -120,
+					Target = new RecordedTarget { TargetId = "dft-target-271a", TypeName = "ScrollViewer" },
+				},
+			});
+		}
+
+		Assert.That(output.ToString(), Does.Contain("kind=wheel"));
+		Assert.That(output.ToString(), Does.Contain("> input wheelDelta=-120"));
+	}
+
+	[Test]
 	public void CondensedAgentDoesNotPruneStructuralLayoutNodesByDefault()
 	{
 		var output = new StringWriter();

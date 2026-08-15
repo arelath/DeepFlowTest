@@ -17,6 +17,10 @@ public partial class Element
 
 	public virtual Element MiddleClick() => SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, MouseButton = MouseButtonKind.Middle });
 
+	/// <summary>Sends a mouse-wheel input to this element. Positive deltas scroll up; negative deltas scroll down.</summary>
+	public virtual Element MouseWheel(int delta = 120) =>
+		SendTargetedWithRepair(() => new MouseWheelCommandRequest { TargetId = TargetId, Delta = delta });
+
 	public virtual Element DoubleClick() =>
 		UsesNativeClickPayload()
 			? SendTargetedWithRepair(() => new ClickCommandRequest { TargetId = TargetId, ClickCount = 2 })

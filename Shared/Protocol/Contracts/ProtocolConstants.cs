@@ -26,6 +26,7 @@ public static class ProtocolConstants
 		public const string KeyPress = "KeyPressCommand";
 		public const string KnownOperation = "KnownOperationCommand";
 		public const string KnownRoutedEvent = "KnownRoutedEventCommand";
+		public const string MouseWheel = "MouseWheelCommand";
 		public const string Ping = "PingCommand";
 		public const string PipeStatus = "PipeStatusCommand";
 		public const string RaiseEvent = "RaiseEventCommand";
@@ -43,6 +44,7 @@ public static class ProtocolConstants
 		public const string ClearFirst = "ClearFirst";
 		public const string Code = "Code";
 		public const string DelayMs = "DelayMs";
+		public const string Delta = "Delta";
 		public const string DestinationAnchorX = "DestinationAnchorX";
 		public const string DestinationAnchorY = "DestinationAnchorY";
 		public const string DestinationTargetId = "DestinationTargetId";

@@ -24,6 +24,7 @@ public static class CliRootCommand
 		"stream",
 		"record",
 		"click",
+		"wheel",
 		"drag",
 		"focus",
 		"type",
@@ -56,6 +57,7 @@ public static class CliRootCommand
 		root.Add(CreateStreamCommand(actions));
 		root.Add(CreateRecordCommand(actions));
 		root.Add(CreateTargetCommand("click", "Click a target node.", actions, static actionSet => actionSet.Click, AddClickOptions));
+		root.Add(CreateTargetCommand("wheel", "Send mouse-wheel input to a target node.", actions, static actionSet => actionSet.Wheel, AddMouseWheelOptions));
 		root.Add(CreateTargetCommand("drag", "Drag a source node and drop it on a destination node.", actions, static actionSet => actionSet.Drag, AddDragOptions));
 		root.Add(CreateTargetCommand("focus", "Focus a target node.", actions, static actionSet => actionSet.Focus, AddActionTargetOptions));
 		root.Add(CreateTargetCommand("type", "Type text into a target node.", actions, static actionSet => actionSet.Type, AddTypeOptions));
@@ -70,7 +72,7 @@ public static class CliRootCommand
 
 	public static string HelpText =>
 		$"{DeepFlowTest.ProductInfo.Name} CLI{Environment.NewLine}"
-		+ "Commands: config, processes, ping, pipe status, tree, find, node, props, selectors, screenshot, wait, stream, record, click, drag, focus, type, key, set, raise, invoke, version";
+		+ "Commands: config, processes, ping, pipe status, tree, find, node, props, selectors, screenshot, wait, stream, record, click, wheel, drag, focus, type, key, set, raise, invoke, version";
 
 	public static string GetCommandPath(IReadOnlyList<string> args)
 	{
@@ -329,6 +331,12 @@ public static class CliRootCommand
 		command.Add(CreateOption<bool>("--double", "Send a double-click routed event."));
 	}
 
+	private static void AddMouseWheelOptions(Command command)
+	{
+		AddActionTargetOptions(command);
+		command.Add(CreateOption<int>("--delta", "Signed wheel delta; positive scrolls up and negative scrolls down."));
+	}
+
 	private static void AddDragOptions(Command command)
 	{
 		AddActionTargetOptions(command);
@@ -512,6 +520,7 @@ public static class CliRootCommand
 			or "--subtree-depth"
 			or "--button"
 			or "--count"
+			or "--delta"
 			or "--hold-ms"
 			or "--step-interval-ms"
 			or "--post-drop-wait-ms"

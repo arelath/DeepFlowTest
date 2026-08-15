@@ -351,6 +351,27 @@ public sealed class McpToolTests
 	}
 
 	[Test]
+	public void MouseWheelSendsPayloadCommandWhenActionsAreAllowed()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		fixture.Host.Attach(new DeepFlowTest.Mcp.Contracts.McpTargetSelector { ProcessId = 1234 });
+
+		var response = ActionTools.MouseWheel(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			fixture.Options,
+			targetId: "0002",
+			delta: -240);
+
+		Assert.That(response.Success, Is.True);
+		var command = sessionService.Session.Commands.OfType<MouseWheelCommandRequest>().Single();
+		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
+		Assert.That(command.Delta, Is.EqualTo(-240));
+	}
+
+	[Test]
 	public void ClickRejectsAmbiguousSelectorsInsteadOfChoosingFirstMatch()
 	{
 		var sessionService = new FakeAppSessionService();
@@ -412,6 +433,31 @@ public sealed class McpToolTests
 		Assert.That(handle, Does.StartWith("e"));
 		Assert.That(acted.IsError, Is.False);
 		Assert.That(sessionService.Session.Commands.OfType<ClickCommandRequest>().Single().TargetId, Is.EqualTo("button-0002"));
+	}
+
+	[Test]
+	public void AgentActSupportsMouseWheelAction()
+	{
+		var sessionService = new FakeAppSessionService();
+		var fixture = McpTestHost.CreateHost(options: McpTestHost.Options(allowActions: true), sessionService: sessionService);
+		fixture.Host.Attach(new McpTargetSelector { ProcessId = 1234 });
+		var contextId = fixture.Host.Status.ContextId!;
+
+		var acted = AgentTools.Act(
+			fixture.Runner,
+			fixture.Host,
+			fixture.Cache,
+			new McpElementHandleRegistry(),
+			fixture.Options,
+			contextId,
+			new McpSemanticSelector { AutomationId = "SubmitButton" },
+			new McpMouseWheelAction { Delta = -120 },
+			observe: McpObserveMode.None);
+
+		Assert.That(acted.IsError, Is.False);
+		var command = sessionService.Session.Commands.OfType<MouseWheelCommandRequest>().Single();
+		Assert.That(command.TargetId, Is.EqualTo("button-0002"));
+		Assert.That(command.Delta, Is.EqualTo(-120));
 	}
 
 	[Test]

@@ -86,6 +86,7 @@ internal static class CompactSemanticRecordingFrame
 		};
 		AddIfNotEmpty(output, "mouseButton", action.MouseButton);
 		AddIfNotNull(output, "clickCount", action.ClickCount);
+		AddIfNotNull(output, "wheelDelta", action.WheelDelta);
 		AddIfNotEmpty(output, "text", action.Text);
 		AddIfNotEmpty(output, "keys", action.Keys);
 		if (!string.IsNullOrWhiteSpace(action.Target.TargetId) || !string.IsNullOrWhiteSpace(action.Target.TypeName))

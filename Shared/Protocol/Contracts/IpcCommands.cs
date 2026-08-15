@@ -264,6 +264,22 @@ public sealed record class ClickCommandRequest : TargetedIpcCommand
 	public int ClickCount { get; set; } = 1;
 }
 
+public sealed record class MouseWheelCommandRequest : TargetedIpcCommand
+{
+	public MouseWheelCommandRequest()
+		: base(ProtocolConstants.Commands.MouseWheel)
+	{
+	}
+
+	public MouseWheelCommandRequest(string targetId, int delta = 120, int? timeoutMs = null)
+		: base(ProtocolConstants.Commands.MouseWheel, targetId, timeoutMs)
+	{
+		Delta = delta;
+	}
+
+	public int Delta { get; set; } = 120;
+}
+
 public sealed record class DragAndDropCommandRequest : TargetedIpcCommand
 {
 	public DragAndDropCommandRequest()

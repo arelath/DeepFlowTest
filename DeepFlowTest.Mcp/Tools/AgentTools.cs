@@ -242,7 +242,7 @@ internal static class AgentTools
 		IOptions<DeepFlowMcpOptions> options,
 		[Description("Context handle returned by deepflow_open_context.")] string contextId,
 		[Description("Handle, current target ID, or semantic selector for the action target.")] McpAgentSelector target,
-		[Description("Discriminated click, type, key, set, focus, invoke, or drag action.")] McpAgentAction action,
+		[Description("Discriminated click, wheel, type, key, set, focus, invoke, or drag action.")] McpAgentAction action,
 		[Description("Optional property expectation verified after the action.")] McpActionExpectation? expect = null,
 		[Description("Observation returned after the action; delta is the compact default.")] McpObserveMode observe = McpObserveMode.Delta)
 	{
@@ -799,6 +799,8 @@ internal static class AgentTools
 	{
 		if (action is McpClickAction { Count: <= 0 })
 			throw new CliException(CliErrorCodes.InvalidArguments, "action.count must be greater than zero.");
+		if (action is McpMouseWheelAction { Delta: 0 })
+			throw new CliException(CliErrorCodes.InvalidArguments, "action.delta must not be zero.");
 
 		var common = new CliCommonOptions
 		{
@@ -855,6 +857,7 @@ internal static class AgentTools
 				},
 				ClickCount = click.Count,
 			},
+			McpMouseWheelAction wheel => new MouseWheelCommandRequest { TargetId = targetId, Delta = wheel.Delta },
 			McpTypeAction type => new TypeTextCommandRequest { TargetId = targetId, Text = Require(type.Text, "action.text"), ClearFirst = type.ClearFirst },
 			McpKeyAction key => new KeyPressCommandRequest { TargetId = targetId, Keys = Require(key.Keys, "action.keys"), EnsureForeground = true },
 			McpSetAction set => new SetPropertyCommandRequest
@@ -873,6 +876,7 @@ internal static class AgentTools
 		action switch
 		{
 			McpClickAction => McpActionKind.Click,
+			McpMouseWheelAction => McpActionKind.Wheel,
 			McpTypeAction => McpActionKind.Type,
 			McpKeyAction => McpActionKind.Key,
 			McpSetAction => McpActionKind.Set,

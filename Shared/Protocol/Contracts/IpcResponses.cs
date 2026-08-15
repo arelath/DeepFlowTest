@@ -539,6 +539,8 @@ public sealed record class RecordedInputAction
 
 	public int? ClickCount { get; set; }
 
+	public int? WheelDelta { get; set; }
+
 	public string? Text { get; set; }
 
 	public string? Keys { get; set; }

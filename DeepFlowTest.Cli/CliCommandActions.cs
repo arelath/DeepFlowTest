@@ -58,6 +58,8 @@ internal sealed class CliCommandActions
 
 	public Func<int> Click { get; init; } = NoAction;
 
+	public Func<int> Wheel { get; init; } = NoAction;
+
 	public Func<int> Drag { get; init; } = NoAction;
 
 	public Func<int> Focus { get; init; } = NoAction;

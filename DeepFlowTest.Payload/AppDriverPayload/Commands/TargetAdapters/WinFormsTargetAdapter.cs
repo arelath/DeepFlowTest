@@ -25,6 +25,11 @@ internal sealed class WinFormsTargetAdapter : UiTargetAdapterBase
 			: base.Click(target, button, clickCount);
 	}
 
+	public override ActionResult MouseWheel(object target, int delta) =>
+		target is Forms.Control control && NativeHwndTargetAdapter.TryMouseWheelNativeWindow(control.Handle, delta)
+			? ActionResult.Ok()
+			: base.MouseWheel(target, delta);
+
 	public override ActionResult Focus(object target) =>
 		target is Forms.Control control && control.Focus()
 			? ActionResult.Ok()
