@@ -139,7 +139,32 @@ public sealed class RepositoryConfigurationTests
 		Assert.That(testFast, Does.Contain("RunDotNetTest(PayloadTestsProject"));
 		Assert.That(testFast, Does.Contain("RunDotNetTest(CliTestsProject"));
 		Assert.That(testFast, Does.Contain("RunDotNetTest(McpTestsProject"));
+		Assert.That(testFast, Does.Contain("\"--no-build\""));
+		Assert.That(testFast, Does.Contain("\"--blame-hang\""));
+		Assert.That(testFast, Does.Contain("\"--blame-crash\""));
+		Assert.That(buildScript, Does.Contain("process.Kill(entireProcessTree: true)"));
+		Assert.That(buildScript, Does.Contain("timed out after"));
 		Assert.That(buildScript, Does.Contain("private string McpTestsProject => Path.Combine(rootDirectory, \"DeepFlowTest.Mcp.Tests\", \"DeepFlowTest.Mcp.Tests.csproj\")"));
+	}
+
+	[Test]
+	public void SupportedBuildScriptsSerializeSharedWorkspaceArtifacts()
+	{
+		var root = FindRepositoryRoot();
+		var helperPath = Path.Combine(root, "Tools", "WorkspaceBuildLock.ps1");
+		Assert.That(File.Exists(helperPath), Is.True);
+		var helper = File.ReadAllText(helperPath);
+		Assert.That(helper, Does.Contain("FileShare]::None"));
+		Assert.That(helper, Does.Contain(".workspace-build-owner.json"));
+
+		foreach (var scriptName in new[] { "build.ps1", "fastbuild.ps1", "fasttest.ps1" })
+		{
+			var script = File.ReadAllText(Path.Combine(root, scriptName));
+			Assert.That(script, Does.Contain("WorkspaceBuildLock.ps1"), scriptName);
+			Assert.That(script, Does.Contain("Enter-WorkspaceBuildLock"), scriptName);
+			Assert.That(script, Does.Contain("Exit-WorkspaceBuildLock"), scriptName);
+			Assert.That(script, Does.Contain("finally"), scriptName);
+		}
 	}
 
 	[Test]

@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -63,6 +65,92 @@ internal sealed class McpToolRunner
 				},
 			});
 			return response;
+		}
+		catch (AutomationException ex)
+		{
+			resources.AddLog("warning", ex.ErrorCode, ex.Message, GetContextId(parameters));
+			PublishFailure(toolName, stopwatch.Elapsed, ex.ErrorCode, ex.Message, parameters, ex.Details);
+			return McpToolResponse.Fail(ex.ErrorCode, ex.Message, ex.Details, RecoveryFor(ex.ErrorCode), sessionHost.Status);
+		}
+		catch (NamedPipeSessionException ex)
+		{
+			var errorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
+			resources.AddLog("warning", errorCode, ex.Message, GetContextId(parameters));
+			PublishFailure(toolName, stopwatch.Elapsed, errorCode, ex.Message, parameters, new { protocolErrorCode = ex.ErrorCode, ex.TargetExitCode, ex.CrashLog });
+			return McpToolResponse.Fail(
+				errorCode,
+				ex.Message,
+				new { protocolErrorCode = ex.ErrorCode, ex.TargetExitCode, ex.CrashLog },
+				RecoveryFor(errorCode),
+				sessionHost.Status);
+		}
+		catch (ProtocolException ex)
+		{
+			var errorCode = ProtocolErrorMapper.Map(ex.ErrorCode);
+			resources.AddLog("warning", errorCode, ex.Message, GetContextId(parameters));
+			PublishFailure(toolName, stopwatch.Elapsed, errorCode, ex.Message, parameters, new { protocolErrorCode = ex.ErrorCode });
+			return McpToolResponse.Fail(errorCode, ex.Message, new { protocolErrorCode = ex.ErrorCode }, RecoveryFor(errorCode), sessionHost.Status);
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+		{
+			logger.LogError(ex, "MCP tool failed.");
+			resources.AddLog("error", AutomationErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", GetContextId(parameters));
+			PublishFailure(toolName, stopwatch.Elapsed, AutomationErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", parameters, new
+			{
+				exceptionType = ex.GetType().FullName,
+				exceptionMessage = ex.Message,
+			});
+			return McpToolResponse.Fail(AutomationErrorCodes.UnexpectedError, "Unexpected MCP tool failure. See stderr logs for details.", recovery: "Check the MCP server stderr log for details.", target: sessionHost.Status);
+		}
+	}
+
+	public async Task<McpToolResponse> RunAsync<T>(
+		Func<CancellationToken, Task<T>> action,
+		object? parameters = null,
+		CancellationToken cancellationToken = default,
+		[CallerMemberName] string toolName = "")
+	{
+		ArgumentNullException.ThrowIfNull(action);
+		var stopwatch = Stopwatch.StartNew();
+		activity?.Publish(new McpActivityEvent
+		{
+			Source = "client",
+			Kind = "tool.start",
+			Name = toolName,
+			Status = "started",
+			Details = new ToolActivityDetails { Parameters = parameters },
+		});
+		try
+		{
+			var result = await action(cancellationToken).ConfigureAwait(false);
+			var response = McpToolResponse.Ok(result, sessionHost.Status);
+			activity?.Publish(new McpActivityEvent
+			{
+				Source = "client",
+				Kind = "tool.success",
+				Name = toolName,
+				Status = "success",
+				Duration = stopwatch.Elapsed,
+				Details = new ToolActivityDetails
+				{
+					Parameters = parameters,
+					Result = result,
+				},
+			});
+			return response;
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			activity?.Publish(new McpActivityEvent
+			{
+				Source = "client",
+				Kind = "tool.canceled",
+				Name = toolName,
+				Status = "canceled",
+				Duration = stopwatch.Elapsed,
+				Details = new ToolActivityDetails { Parameters = parameters },
+			});
+			throw;
 		}
 		catch (AutomationException ex)
 		{

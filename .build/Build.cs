@@ -11,9 +11,13 @@ internal sealed class Build
 	private readonly string configuration;
 	private readonly string dotnet;
 	private readonly bool noTestRecordings;
+	private readonly TimeSpan processTimeout;
 	private readonly IReadOnlyList<string> requestedTargets;
 	private readonly string rootDirectory;
 	private readonly Dictionary<string, BuildTarget> targets;
+	private readonly TimeSpan testTimeout;
+	private readonly TimeSpan integrationTimeout;
+	private readonly string testResultsRoot;
 	private readonly HashSet<string> visitedTargets = new(StringComparer.OrdinalIgnoreCase);
 
 	private Build(string[] args)
@@ -21,9 +25,13 @@ internal sealed class Build
 		var options = Parse(args);
 		configuration = options.Configuration;
 		noTestRecordings = options.NoTestRecordings;
+		processTimeout = options.ProcessTimeout;
+		testTimeout = options.TestTimeout;
+		integrationTimeout = options.IntegrationTimeout;
 		requestedTargets = options.Targets;
 		dotnet = Environment.GetEnvironmentVariable("DOTNET_EXE") ?? "dotnet";
 		rootDirectory = FindRepositoryRoot(AppContext.BaseDirectory);
+		testResultsRoot = Path.Combine(rootDirectory, "artifacts", "test-results", DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Environment.ProcessId);
 		targets = CreateTargets();
 	}
 
@@ -137,11 +145,22 @@ internal sealed class Build
 
 	private void TestFast()
 	{
-		RunDotNetTest(CoreTestsProject, "--configuration", configuration, "--no-restore");
-		RunDotNetTest(PayloadTestsProject, "--configuration", configuration, "--no-restore");
-		RunDotNetTest(CliTestsProject, "--configuration", configuration, "--no-restore");
-		RunDotNetTest(McpTestsProject, "--configuration", configuration, "--no-restore");
+		RunDotNetTest(CoreTestsProject, FastTestArguments());
+		RunDotNetTest(PayloadTestsProject, FastTestArguments());
+		RunDotNetTest(CliTestsProject, FastTestArguments());
+		RunDotNetTest(McpTestsProject, FastTestArguments());
 	}
+
+	private string[] FastTestArguments() =>
+	[
+		"--configuration", configuration,
+		"--no-build",
+		"--no-restore",
+		"--blame-crash",
+		"--blame-crash-dump-type", "mini",
+		"--blame-hang",
+		"--blame-hang-timeout", "2m",
+	];
 
 	private void TestCore()
 	{
@@ -183,6 +202,7 @@ internal sealed class Build
 	{
 		RunProcess(
 			"pwsh",
+			integrationTimeout,
 			"-NoLogo",
 			"-NoProfile",
 			"-NonInteractive",
@@ -226,23 +246,32 @@ internal sealed class Build
 
 	private void RunDotNet(params string[] args)
 	{
-		RunProcess(dotnet, args);
+		RunProcess(dotnet, processTimeout, args);
 	}
 
 	private void RunDotNetTest(string project, params string[] args)
 	{
 		var fullArgs = new List<string> { "test", project };
 		fullArgs.AddRange(args);
+		var resultDirectory = Path.Combine(testResultsRoot, Path.GetFileNameWithoutExtension(project));
+		Directory.CreateDirectory(resultDirectory);
+		fullArgs.Add("--results-directory");
+		fullArgs.Add(resultDirectory);
 		if (noTestRecordings)
 		{
 			fullArgs.Add("--");
 			fullArgs.Add("TestRunParameters.Parameter(name=\"DeepFlowTestTestRecordings\",value=\"off\")");
 		}
 
-		RunDotNet(fullArgs.ToArray());
+		RunProcess(dotnet, testTimeout, fullArgs.ToArray());
 	}
 
 	private void RunProcess(string fileName, params string[] args)
+	{
+		RunProcess(fileName, processTimeout, args);
+	}
+
+	private void RunProcess(string fileName, TimeSpan timeout, params string[] args)
 	{
 		var startInfo = new ProcessStartInfo(fileName)
 		{
@@ -255,7 +284,23 @@ internal sealed class Build
 
 		Console.WriteLine($"> {fileName} {string.Join(" ", args)}");
 		using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start {fileName}.");
-		process.WaitForExit();
+		if (!process.WaitForExit(checked((int)timeout.TotalMilliseconds)))
+		{
+			var processId = process.Id;
+			try
+			{
+				process.Kill(entireProcessTree: true);
+				_ = process.WaitForExit(10_000);
+			}
+			catch (Exception ex)
+			{
+				throw new InvalidOperationException(
+					$"{Path.GetFileName(fileName)} (PID {processId}) timed out after {timeout}; owned process-tree cleanup also failed: {ex.Message}",
+					ex);
+			}
+
+			throw new TimeoutException($"{Path.GetFileName(fileName)} (PID {processId}) timed out after {timeout} and its owned process tree was terminated.");
+		}
 		if (process.ExitCode != 0)
 			throw new InvalidOperationException($"{Path.GetFileName(fileName)} exited with code {process.ExitCode}.");
 	}
@@ -295,8 +340,18 @@ internal sealed class Build
 			startInfo.ArgumentList.Add(arg);
 
 		using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start {fileName}.");
-		var output = process.StandardOutput.ReadToEnd();
-		process.WaitForExit();
+		var outputTask = process.StandardOutput.ReadToEndAsync();
+		var errorTask = process.StandardError.ReadToEndAsync();
+		if (!process.WaitForExit(30_000))
+		{
+			process.Kill(entireProcessTree: true);
+			_ = process.WaitForExit(10_000);
+			throw new TimeoutException($"{Path.GetFileName(fileName)} timed out after 00:00:30.");
+		}
+		var output = outputTask.ConfigureAwait(false).GetAwaiter().GetResult();
+		var error = errorTask.ConfigureAwait(false).GetAwaiter().GetResult();
+		if (process.ExitCode != 0)
+			throw new InvalidOperationException($"{Path.GetFileName(fileName)} exited with code {process.ExitCode}: {error}");
 		return output;
 	}
 
@@ -313,6 +368,9 @@ internal sealed class Build
 	{
 		var configuration = "Debug";
 		var noTestRecordings = false;
+		var processTimeout = TimeSpan.FromMinutes(15);
+		var testTimeout = TimeSpan.FromMinutes(5);
+		var integrationTimeout = TimeSpan.FromMinutes(15);
 		var targets = new List<string>();
 
 		for (var index = 0; index < args.Length; index++)
@@ -338,6 +396,18 @@ internal sealed class Build
 			{
 				noTestRecordings = true;
 			}
+			else if (arg.StartsWith("--process-timeout=", StringComparison.OrdinalIgnoreCase))
+			{
+				processTimeout = ParsePositiveTimeout(arg.Substring("--process-timeout=".Length), "process timeout");
+			}
+			else if (arg.StartsWith("--test-timeout=", StringComparison.OrdinalIgnoreCase))
+			{
+				testTimeout = ParsePositiveTimeout(arg.Substring("--test-timeout=".Length), "test timeout");
+			}
+			else if (arg.StartsWith("--integration-timeout=", StringComparison.OrdinalIgnoreCase))
+			{
+				integrationTimeout = ParsePositiveTimeout(arg.Substring("--integration-timeout=".Length), "integration timeout");
+			}
 			else if (!string.IsNullOrWhiteSpace(arg))
 			{
 				targets.Add(arg);
@@ -347,7 +417,14 @@ internal sealed class Build
 		if (targets.Count == 0)
 			targets.Add("Compile");
 
-		return new BuildOptions(configuration, noTestRecordings, targets);
+		return new BuildOptions(configuration, noTestRecordings, processTimeout, testTimeout, integrationTimeout, targets);
+	}
+
+	private static TimeSpan ParsePositiveTimeout(string value, string optionName)
+	{
+		if (!TimeSpan.TryParse(value, out var timeout) || timeout <= TimeSpan.Zero || timeout.TotalMilliseconds > int.MaxValue)
+			throw new ArgumentException($"Invalid {optionName} '{value}'. Use a positive TimeSpan no greater than {TimeSpan.FromMilliseconds(int.MaxValue)}.");
+		return timeout;
 	}
 
 	private string MainSolution => Path.Combine(rootDirectory, "DeepFlowTest.sln");
@@ -388,6 +465,12 @@ internal sealed class Build
 		public IReadOnlyList<string> Dependencies { get; }
 	}
 
-	private sealed record BuildOptions(string Configuration, bool NoTestRecordings, IReadOnlyList<string> Targets);
+	private sealed record BuildOptions(
+		string Configuration,
+		bool NoTestRecordings,
+		TimeSpan ProcessTimeout,
+		TimeSpan TestTimeout,
+		TimeSpan IntegrationTimeout,
+		IReadOnlyList<string> Targets);
 
 }

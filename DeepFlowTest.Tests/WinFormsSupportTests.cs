@@ -25,6 +25,7 @@ using Forms = System.Windows.Forms;
 
 [TestFixture]
 [Apartment(ApartmentState.STA)]
+[NonParallelizable]
 public sealed class WinFormsSupportTests
 {
 	[Test]
@@ -845,6 +846,22 @@ public sealed class WinFormsSupportTests
 
 			base.WndProc(ref m);
 		}
+	}
+
+	[Test]
+	public void NativeDialogRootOverridesAreNestedAndLogicalContextLocal()
+	{
+		using var outer = NativeDialogService.OverrideRootWindowsForTests([new IntPtr(11)]);
+		Assert.That(NativeDialogService.GetRootWindowsForCurrentProcess(), Is.EqualTo(new[] { new IntPtr(11) }));
+
+		using (NativeDialogService.OverrideRootWindowsForTests([new IntPtr(22)]))
+		{
+			Assert.That(NativeDialogService.GetRootWindowsForCurrentProcess(), Is.EqualTo(new[] { new IntPtr(22) }));
+			var flowed = System.Threading.Tasks.Task.Run(NativeDialogService.GetRootWindowsForCurrentProcess).GetAwaiter().GetResult();
+			Assert.That(flowed, Is.EqualTo(new[] { new IntPtr(22) }));
+		}
+
+		Assert.That(NativeDialogService.GetRootWindowsForCurrentProcess(), Is.EqualTo(new[] { new IntPtr(11) }));
 	}
 
 	private sealed class RecordingWheelControl : Forms.Control

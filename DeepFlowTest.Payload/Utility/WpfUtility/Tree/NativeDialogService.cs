@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using DeepFlowTest.Shared;
 
 internal static class NativeDialogService
@@ -12,7 +13,7 @@ internal static class NativeDialogService
 	private const int GwlStyle = -16;
 	private const int WsCaption = 0x00C00000;
 	private const int WsPopup = unchecked((int)0x80000000);
-	private static IReadOnlyList<IntPtr>? rootWindowsForTests;
+	private static readonly AsyncLocal<RootWindowOverrideScope?> rootWindowOverride = new();
 
 	public static bool HasRootWindowsForCurrentProcess() =>
 		GetRootWindowsForCurrentProcess().Count != 0;
@@ -28,8 +29,8 @@ internal static class NativeDialogService
 
 	public static IReadOnlyList<IntPtr> GetRootWindowsForCurrentProcess()
 	{
-		if (rootWindowsForTests is not null)
-			return rootWindowsForTests;
+		if (rootWindowOverride.Value is { } overrideScope)
+			return overrideScope.Roots;
 
 		var processId = Process.GetCurrentProcess().Id;
 		List<IntPtr> windows = [];
@@ -47,9 +48,31 @@ internal static class NativeDialogService
 
 	internal static IDisposable OverrideRootWindowsForTests(IReadOnlyList<IntPtr> roots)
 	{
-		var previous = rootWindowsForTests;
-		rootWindowsForTests = roots.ToArray();
-		return new RestoreRootWindows(previous);
+		if (roots == null)
+			throw new ArgumentNullException(nameof(roots));
+		var scope = new RootWindowOverrideScope(roots.ToArray(), rootWindowOverride.Value);
+		rootWindowOverride.Value = scope;
+		return scope;
+	}
+
+	private sealed class RootWindowOverrideScope(
+		IReadOnlyList<IntPtr> roots,
+		RootWindowOverrideScope? parent) : IDisposable
+	{
+		private bool disposed;
+
+		public IReadOnlyList<IntPtr> Roots { get; } = roots;
+
+		public void Dispose()
+		{
+			if (disposed)
+				return;
+			if (!ReferenceEquals(rootWindowOverride.Value, this))
+				throw new InvalidOperationException("Native dialog root overrides must be disposed in LIFO order within their logical context.");
+
+			disposed = true;
+			rootWindowOverride.Value = parent;
+		}
 	}
 
 	private static bool IsNativeDialogRoot(IntPtr hwnd)
@@ -94,18 +117,4 @@ internal static class NativeDialogService
 		className.StartsWith("HwndWrapper", StringComparison.Ordinal)
 		|| className.StartsWith("WindowsForms", StringComparison.Ordinal);
 
-	private sealed class RestoreRootWindows : IDisposable
-	{
-		private readonly IReadOnlyList<IntPtr>? previous;
-
-		public RestoreRootWindows(IReadOnlyList<IntPtr>? previous)
-		{
-			this.previous = previous;
-		}
-
-		public void Dispose()
-		{
-			rootWindowsForTests = previous;
-		}
-	}
 }

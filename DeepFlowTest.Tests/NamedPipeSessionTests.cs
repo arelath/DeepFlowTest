@@ -2,7 +2,9 @@ namespace DeepFlowTest.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO.Pipes;
+using System.Threading;
 using System.Threading.Tasks;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -231,6 +233,48 @@ public sealed class NamedPipeSessionTests
 		Assert.That(firstResponse.Status, Is.EqualTo(ProtocolConstants.Commands.Hello));
 		Assert.That(secondResponse.Status, Is.EqualTo(ProtocolConstants.Commands.Ping));
 		await serverTask;
+	}
+
+	[Test]
+	public async Task ClientCancellationInterruptsAQueuedExchange()
+	{
+		var pipeName = UniquePipeName();
+		var firstCommandReceived = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var releaseFirstResponse = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var serverTask = Task.Run(() =>
+		{
+			using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte);
+			pipe.WaitForConnection();
+			_ = MessagePacker.ReadFrame(pipe);
+			firstCommandReceived.SetResult(true);
+			releaseFirstResponse.Task.GetAwaiter().GetResult();
+			MessagePacker.WriteFrame(pipe, StandardIpcResponse.Ok());
+		});
+
+		using var client = new NamedPipeClient(pipeName);
+		var firstSend = client.SendAsync(new HelloCommandRequest(), responseTimeoutMs: 2_000);
+		await firstCommandReceived.Task;
+		using var cancellation = new CancellationTokenSource(50);
+
+		Assert.ThrowsAsync<OperationCanceledException>(async () =>
+			await client.SendAsync(new PingCommandRequest(), responseTimeoutMs: 2_000, cancellation.Token));
+
+		releaseFirstResponse.SetResult(true);
+		_ = await firstSend;
+		await serverTask;
+	}
+
+	[Test]
+	public void ClientCancellationInterruptsConnectionEstablishment()
+	{
+		using var client = new NamedPipeClient(UniquePipeName(), connectTimeoutMs: 5_000, connectRetryCount: 1);
+		using var cancellation = new CancellationTokenSource(50);
+		var stopwatch = Stopwatch.StartNew();
+
+		Assert.ThrowsAsync<OperationCanceledException>(async () =>
+			await client.SendAsync(new HelloCommandRequest(), responseTimeoutMs: 5_000, cancellation.Token));
+
+		Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromSeconds(2)));
 	}
 
 	[Test]

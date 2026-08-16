@@ -11,6 +11,8 @@ param(
 
   [switch]$NoDependencies,
 
+  [TimeSpan]$WorkspaceLockTimeout = [TimeSpan]::FromMinutes(10),
+
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$DotNetArguments
 )
@@ -20,6 +22,9 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path $MyInvocation.MyCommand.Path -Parent
 $dotnet = if ($env:DOTNET_EXE) { $env:DOTNET_EXE } else { "dotnet" }
+$lockHelper = Join-Path $root "Tools\WorkspaceBuildLock.ps1"
+. $lockHelper
+$workspaceLock = $null
 
 function Resolve-Target([string]$name) {
   $targets = @{
@@ -75,9 +80,11 @@ if ($DotNetArguments) {
 
 Push-Location $root
 try {
+  $workspaceLock = Enter-WorkspaceBuildLock -Root $root -Timeout $WorkspaceLockTimeout -CommandDescription "fastbuild.ps1 $Target"
   & $dotnet @arguments
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 finally {
+  Exit-WorkspaceBuildLock $workspaceLock
   Pop-Location
 }

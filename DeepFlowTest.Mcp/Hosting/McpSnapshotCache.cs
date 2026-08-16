@@ -3,6 +3,8 @@ namespace DeepFlowTest.Mcp.Hosting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Interop;
@@ -26,13 +28,15 @@ internal sealed class McpSnapshotCache
 		int maxNodeCount,
 		bool includeHidden = true,
 		bool refresh = false,
-		string? rootTargetId = null)
+		string? rootTargetId = null,
+		int? commandTimeoutMs = null,
+		CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(host);
 		ArgumentNullException.ThrowIfNull(properties);
 
 		var session = host.RequireSession();
-		return GetOrRefresh(session, properties, maxNodeCount, includeHidden, refresh, rootTargetId);
+		return GetOrRefresh(session, properties, maxNodeCount, includeHidden, refresh, rootTargetId, commandTimeoutMs, cancellationToken);
 	}
 
 	public VisualTreeSnapshot GetOrRefresh(
@@ -41,7 +45,9 @@ internal sealed class McpSnapshotCache
 		int maxNodeCount,
 		bool includeHidden = true,
 		bool refresh = false,
-		string? rootTargetId = null)
+		string? rootTargetId = null,
+		int? commandTimeoutMs = null,
+		CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(session);
 		ArgumentNullException.ThrowIfNull(properties);
@@ -61,6 +67,7 @@ internal sealed class McpSnapshotCache
 			}
 		}
 
+		var effectiveTimeout = Math.Max(1, commandTimeoutMs ?? options.Value.DefaultTimeoutMs);
 		var response = session.AppSession.Send<object>(
 			new GetVisualTreeCommandRequest
 			{
@@ -69,9 +76,10 @@ internal sealed class McpSnapshotCache
 				IncludeHidden = includeHidden,
 				RootTargetId = rootTargetId,
 				MaxNodeCount = Math.Max(1, maxNodeCount),
-				TimeoutMs = options.Value.DefaultTimeoutMs,
+				TimeoutMs = effectiveTimeout,
 			},
-			options.Value.DefaultTimeoutMs);
+			effectiveTimeout,
+			cancellationToken);
 		var snapshot = new VisualTreeResponseReader().Read(response, properties);
 		lock (gate)
 			cached[key] = new CacheEntry(snapshot, DateTimeOffset.UtcNow);
@@ -83,6 +91,53 @@ internal sealed class McpSnapshotCache
 	{
 		lock (gate)
 			cached.Clear();
+	}
+
+	public async Task<VisualTreeSnapshot> GetOrRefreshAsync(
+		McpSession session,
+		IReadOnlyList<string> properties,
+		int maxNodeCount,
+		bool includeHidden = true,
+		bool refresh = false,
+		string? rootTargetId = null,
+		int? commandTimeoutMs = null,
+		CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(session);
+		ArgumentNullException.ThrowIfNull(properties);
+
+		var key = new CacheKey(
+			session.SessionId,
+			string.Join("|", properties.Order(StringComparer.Ordinal)),
+			Math.Max(1, maxNodeCount),
+			includeHidden,
+			rootTargetId ?? string.Empty);
+		if (!refresh)
+		{
+			lock (gate)
+			{
+				if (cached.TryGetValue(key, out var entry) && !IsExpired(entry))
+					return entry.Snapshot;
+			}
+		}
+
+		var effectiveTimeout = Math.Max(1, commandTimeoutMs ?? options.Value.DefaultTimeoutMs);
+		var response = await session.AppSession.SendAsync<object>(
+			new GetVisualTreeCommandRequest
+			{
+				PropNames = properties,
+				AsSnapshot = true,
+				IncludeHidden = includeHidden,
+				RootTargetId = rootTargetId,
+				MaxNodeCount = Math.Max(1, maxNodeCount),
+				TimeoutMs = effectiveTimeout,
+			},
+			effectiveTimeout,
+			cancellationToken).ConfigureAwait(false);
+		var snapshot = new VisualTreeResponseReader().Read(response, properties);
+		lock (gate)
+			cached[key] = new CacheEntry(snapshot, DateTimeOffset.UtcNow);
+		return snapshot;
 	}
 
 	public void Invalidate(Guid sessionId)

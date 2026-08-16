@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Configuration;
@@ -341,7 +342,7 @@ internal static class AgentTools
 	}
 
 	[McpServerTool(Name = "deepflow_wait", UseStructuredContent = true, OutputSchemaType = typeof(McpWaitResult), ReadOnly = true, OpenWorld = false), Description("Wait for element, count, property, visibility, UI stability, target responsiveness, or window-title conditions.")]
-	public static CallToolResult Wait(
+	public static async Task<CallToolResult> Wait(
 		McpToolRunner runner,
 		McpSessionHost host,
 		McpSnapshotCache cache,
@@ -355,9 +356,11 @@ internal static class AgentTools
 		[Description("Maximum wait duration in milliseconds.")] int? timeoutMs = null,
 		[Description("Polling interval in milliseconds.")] int intervalMs = TimeoutDefaults.CliWaitIntervalMs,
 		[Description("Required unchanged duration for a stable wait.")] int stabilityMs = 500,
-		[Description("Optional explicit baseline for a window-title-changed wait; defaults to the current title.")] string? initialWindowTitle = null)
+		[Description("Optional explicit baseline for a window-title-changed wait; defaults to the current title.")] string? initialWindowTitle = null,
+		CancellationToken cancellationToken = default)
 	{
-		var response = runner.Run(() =>
+		var parameters = new { contextId, target, condition, count, property, timeoutMs, intervalMs, stabilityMs, initialWindowTitle };
+		var response = await runner.RunAsync(async token =>
 		{
 			var session = host.RequireContext(contextId);
 			if (intervalMs <= 0)
@@ -370,107 +373,37 @@ internal static class AgentTools
 				throw new AutomationException(AutomationErrorCodes.InvalidArguments, "target is required for this wait condition.");
 
 			var timeout = Math.Max(1, timeoutMs ?? options.Value.DefaultTimeoutMs);
-			var stopwatch = Stopwatch.StartNew();
 			var propertyNames = PropertiesOrDefaults(property is null ? null : [property.Name], options.Value.DefaultProperties);
-			var baselineTitle = initialWindowTitle ?? session.GetMainWindowTitle();
-			string? previousFingerprint = null;
-			long stableSinceMs = 0;
-			while (stopwatch.ElapsedMilliseconds <= timeout)
+			var observationSource = new McpWaitObservationSource(session, cache);
+			var targetMatcher = target is null ? null : new McpWaitTargetMatcher(contextId, target, handles, options.Value.TreeLimit);
+			var sharedCondition = ToWaitCondition(condition, targetMatcher, count, property, stabilityMs, initialWindowTitle);
+			var needsSnapshot = sharedCondition is not (ResponsiveWaitCondition or WindowTitleChangedWaitCondition);
+			var result = await new WaitEngine().WaitAsync(
+				session.AppSession,
+				new WaitRequest(
+					sharedCondition,
+					observationSource,
+					timeout,
+					intervalMs,
+					needsSnapshot ? new WaitSnapshotRequest(propertyNames, options.Value.TreeLimit) : null),
+				token).ConfigureAwait(false);
+
+			var selector = target?.ToAutomationSelector();
+			var matches = result.MatchResult?.Matches.Select(match => ToElementMatch(
+				handles.Register(contextId, match.Node.TargetId, StableSelector(selector!, match.Node), match.Node, result.Revision ?? 0),
+				match.Node)).ToArray() ?? [];
+			return new McpWaitResult
 			{
-				if (condition == McpWaitCondition.Responsive)
-				{
-					try
-					{
-						_ = session.AppSession.Send<object>(new PingCommandRequest(Math.Min(intervalMs, timeout)), Math.Min(intervalMs, timeout));
-						return new McpWaitResult
-						{
-							ContextId = contextId,
-							Condition = condition,
-							Satisfied = true,
-							ElapsedMs = stopwatch.ElapsedMilliseconds,
-							Revision = cache.GetLatestRevision(session.SessionId) ?? 0,
-						};
-					}
-					catch (AutomationException) when (stopwatch.ElapsedMilliseconds < timeout)
-					{
-						Thread.Sleep(Math.Min(intervalMs, Math.Max(1, timeout - (int)stopwatch.ElapsedMilliseconds)));
-						continue;
-					}
-				}
-
-				if (condition == McpWaitCondition.WindowTitleChanged)
-				{
-					var currentTitle = session.GetMainWindowTitle();
-					if (!string.Equals(currentTitle, baselineTitle, StringComparison.Ordinal))
-					{
-						return new McpWaitResult
-						{
-							ContextId = contextId,
-							Condition = condition,
-							Satisfied = true,
-							ElapsedMs = stopwatch.ElapsedMilliseconds,
-							Revision = cache.GetLatestRevision(session.SessionId) ?? 0,
-							WindowTitle = currentTitle,
-						};
-					}
-
-					Thread.Sleep(Math.Min(intervalMs, Math.Max(1, timeout - (int)stopwatch.ElapsedMilliseconds)));
-					continue;
-				}
-
-				var snapshot = cache.GetOrRefresh(session, propertyNames, options.Value.TreeLimit, refresh: true);
-				if (condition == McpWaitCondition.Stable)
-				{
-					var fingerprint = SnapshotFingerprint(snapshot);
-					if (string.Equals(fingerprint, previousFingerprint, StringComparison.Ordinal))
-					{
-						if (stopwatch.ElapsedMilliseconds - stableSinceMs >= stabilityMs)
-						{
-							return new McpWaitResult
-							{
-								ContextId = contextId,
-								Condition = condition,
-								Satisfied = true,
-								ElapsedMs = stopwatch.ElapsedMilliseconds,
-								Revision = snapshot.SequenceNumber,
-								MatchCount = snapshot.NodeCount,
-							};
-						}
-					}
-					else
-					{
-						previousFingerprint = fingerprint;
-						stableSinceMs = stopwatch.ElapsedMilliseconds;
-					}
-
-					Thread.Sleep(Math.Min(intervalMs, Math.Max(1, timeout - (int)stopwatch.ElapsedMilliseconds)));
-					continue;
-				}
-
-				var found = FindTargetMatches(contextId, target!, snapshot, handles, options.Value.TreeLimit);
-				if (ConditionSatisfied(condition, found, count, property))
-				{
-					var selector = target!.ToAutomationSelector();
-					var matches = found.Matches.Select(match => ToElementMatch(
-						handles.Register(contextId, match.Node.TargetId, StableSelector(selector, match.Node), match.Node, snapshot.SequenceNumber),
-						match.Node)).ToArray();
-					return new McpWaitResult
-					{
-						ContextId = contextId,
-						Condition = condition,
-						Satisfied = true,
-						ElapsedMs = stopwatch.ElapsedMilliseconds,
-						Revision = snapshot.SequenceNumber,
-						MatchCount = found.MatchCount,
-						Matches = matches,
-					};
-				}
-
-				Thread.Sleep(Math.Min(intervalMs, Math.Max(1, timeout - (int)stopwatch.ElapsedMilliseconds)));
-			}
-
-			throw new AutomationException(AutomationErrorCodes.CommandTimeout, $"Wait for {condition} timed out after {timeout} ms.");
-		}, new { contextId, target, condition, count, property, timeoutMs, intervalMs, stabilityMs, initialWindowTitle });
+				ContextId = contextId,
+				Condition = condition,
+				Satisfied = true,
+				ElapsedMs = result.ElapsedMs,
+				Revision = result.Revision ?? 0,
+				MatchCount = result.MatchCount,
+				Matches = matches,
+				WindowTitle = result.WindowTitle,
+			};
+		}, parameters, cancellationToken).ConfigureAwait(false);
 
 		return McpCallToolResults.FromLegacy(response, static data => (McpWaitResult)data!, result =>
 			[new TextContentBlock { Text = $"Wait {result.Condition}: satisfied after {result.ElapsedMs} ms." }], contextId, LatestRevision(host, contextId));
@@ -990,85 +923,41 @@ internal static class AgentTools
 			UseShortIds = true,
 		});
 
-	private static FindResultData FindTargetMatches(
-		string contextId,
-		McpAgentSelector target,
-		VisualTreeSnapshot snapshot,
-		McpElementHandleRegistry handles,
-		int limit)
+	private static WaitCondition ToWaitCondition(
+		McpWaitCondition condition,
+		IWaitTargetMatcher? target,
+		int count,
+		McpPropertyMatch? property,
+		int stabilityMs,
+		string? initialWindowTitle) => condition switch
 	{
-		if (!string.IsNullOrWhiteSpace(target.Handle))
-		{
-			try
-			{
-				var resolved = handles.Resolve(contextId, target.Handle!, snapshot);
-				var node = snapshot.Nodes.FirstOrDefault(node => string.Equals(node.TargetId, resolved.TargetId, StringComparison.Ordinal));
-				if (node is null)
-					return new FindResultData { MatchCount = 0, MaxMatches = 1 };
-				var shaped = new TreeSnapshotService().ShapeOne(node, snapshot, new TreeSnapshotOptions
-				{
-					IncludePath = true,
-					IncludeTypeNames = true,
-					Properties = snapshot.RequestedPropertyNames,
-					UseShortIds = true,
-				});
-				return new FindResultData { MatchCount = 1, MaxMatches = 1, Matches = [new FindMatchData { Node = shaped }] };
-			}
-			catch (AutomationException ex) when (ex.ErrorCode is AutomationErrorCodes.NoMatch or AutomationErrorCodes.TargetNotFound)
-			{
-				return new FindResultData { MatchCount = 0, MaxMatches = 1 };
-			}
-		}
+		McpWaitCondition.Exists => new ElementExistsWaitCondition(RequireWaitTarget(target)),
+		McpWaitCondition.Absent => new ElementAbsentWaitCondition(RequireWaitTarget(target)),
+		McpWaitCondition.ExactCount => new ElementExactCountWaitCondition(RequireWaitTarget(target), count),
+		McpWaitCondition.MinimumCount => new ElementMinimumCountWaitCondition(RequireWaitTarget(target), count),
+		McpWaitCondition.PropertyEquals => CreatePropertyCondition(target, property, equal: true),
+		McpWaitCondition.PropertyDiffers => CreatePropertyCondition(target, property, equal: false),
+		McpWaitCondition.Enabled => new ElementEnabledWaitCondition(RequireWaitTarget(target)),
+		McpWaitCondition.Disabled => new ElementDisabledWaitCondition(RequireWaitTarget(target)),
+		McpWaitCondition.Visible => new ElementVisibleWaitCondition(RequireWaitTarget(target)),
+		McpWaitCondition.Hidden => new ElementHiddenWaitCondition(RequireWaitTarget(target)),
+		McpWaitCondition.Stable => new StableWaitCondition(stabilityMs, new McpStableSnapshotFingerprint()),
+		McpWaitCondition.Responsive => new ResponsiveWaitCondition(),
+		McpWaitCondition.WindowTitleChanged => new WindowTitleChangedWaitCondition(initialWindowTitle),
+		_ => throw new AutomationException(AutomationErrorCodes.InvalidArguments, $"Unsupported wait condition: {condition}."),
+	};
 
-		var found = FindMatches(snapshot, target.ToAutomationSelector(), limit);
-		if (found.MatchCount == 0 && target is McpSemanticSelector { Fallback: not null } semantic)
-			return FindMatches(snapshot, semantic.Fallback.ToAutomationSelector(), limit);
-		return found;
+	private static WaitCondition CreatePropertyCondition(IWaitTargetMatcher? target, McpPropertyMatch? property, bool equal)
+	{
+		var requiredProperty = property
+			?? throw new AutomationException(AutomationErrorCodes.InvalidArguments, "property is required for this wait condition.");
+		return equal
+			? new ElementPropertyEqualsWaitCondition(RequireWaitTarget(target), requiredProperty.Name, requiredProperty.TextValue)
+			: new ElementPropertyDiffersWaitCondition(RequireWaitTarget(target), requiredProperty.Name, requiredProperty.TextValue);
 	}
 
-	private static string SnapshotFingerprint(VisualTreeSnapshot snapshot)
-	{
-		var semantic = McpSemanticRecordingFormatter.FormatSnapshot(snapshot).Text;
-		return string.Join('\n', semantic
-			.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-			.Where(static line => !line.StartsWith("dft-condensed/", StringComparison.Ordinal)
-				&& !line.StartsWith("@1 snapshot ", StringComparison.Ordinal))
-			.Select(static line => System.Text.RegularExpressions.Regex.Replace(line, @" \[[0-9a-f]+\]", string.Empty)));
-	}
-
-	private static bool ConditionSatisfied(McpWaitCondition condition, FindResultData result, int count, McpPropertyMatch? property)
-	{
-		return condition switch
-		{
-			McpWaitCondition.Exists => result.MatchCount > 0,
-			McpWaitCondition.Absent => result.MatchCount == 0,
-			McpWaitCondition.ExactCount => result.MatchCount == count,
-			McpWaitCondition.MinimumCount => result.MatchCount >= count,
-			McpWaitCondition.PropertyEquals => AnyProperty(result, RequireProperty(property), equal: true),
-			McpWaitCondition.PropertyDiffers => result.MatchCount > 0 && AnyProperty(result, RequireProperty(property), equal: false),
-			McpWaitCondition.Enabled => AnyBoolean(result, KnownProperties.IsEnabled, expected: true),
-			McpWaitCondition.Disabled => AnyBoolean(result, KnownProperties.IsEnabled, expected: false),
-			McpWaitCondition.Visible => AnyBoolean(result, KnownProperties.IsVisible, expected: true),
-			McpWaitCondition.Hidden => result.MatchCount > 0 && AnyBoolean(result, KnownProperties.IsVisible, expected: false),
-			_ => false,
-		};
-	}
-
-	private static McpPropertyMatch RequireProperty(McpPropertyMatch? property) =>
-		property ?? throw new AutomationException(AutomationErrorCodes.InvalidArguments, "property is required for this wait condition.");
-
-	private static bool AnyProperty(FindResultData result, McpPropertyMatch property, bool equal) =>
-		result.Matches.Any(match =>
-		{
-			var matches = match.Node.Properties.TryGetValue(property.Name, out var value)
-				&& string.Equals(Convert.ToString(value, CultureInfo.InvariantCulture), property.TextValue, StringComparison.OrdinalIgnoreCase);
-			return equal ? matches : !matches;
-		});
-
-	private static bool AnyBoolean(FindResultData result, string property, bool expected) =>
-		result.Matches.Any(match => match.Node.Properties.TryGetValue(property, out var value)
-			&& bool.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), out var actual)
-			&& actual == expected);
+	private static IWaitTargetMatcher RequireWaitTarget(IWaitTargetMatcher? target) =>
+		target ?? throw new AutomationException(AutomationErrorCodes.InvalidArguments, "target is required for this wait condition.");
 
 	private sealed record ActionResolution(string TargetId, string? Handle, string Strategy, double Confidence, long OriginalRevision, long CurrentRevision);
 }

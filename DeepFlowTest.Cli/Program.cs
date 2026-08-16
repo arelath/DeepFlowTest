@@ -330,12 +330,26 @@ public static class Program
 
 		var interval = CliArgumentReader.GetInt(args, "--interval-ms", defaults.Commands.Wait.IntervalMs);
 		var requiredMatches = CliArgumentReader.GetInt(args, "--match-count", defaults.Commands.Wait.MatchCount);
+		if (requiredMatches <= 0)
+			throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Wait match count must be greater than zero.");
 		using var cancellation = CreateConsoleCancellationSource();
-		return new WaitExecutor().Execute(
-			() => ReadSnapshot(session, commonOptions, properties, Math.Max(defaults.TreeLimit, options.Limit)),
-			options,
-			new WaitExecutionOptions(commonOptions.TimeoutMs, interval, requiredMatches),
-			cancellation.Token);
+		try
+		{
+			var result = new WaitEngine().WaitAsync(
+				session,
+				new WaitRequest(
+					new ElementMinimumCountWaitCondition(new FindOptionsWaitTargetMatcher(options), requiredMatches),
+					new SessionWaitObservationSource(),
+					commonOptions.TimeoutMs,
+					interval,
+					new WaitSnapshotRequest(properties, Math.Max(defaults.TreeLimit, options.Limit))),
+				cancellation.Token).ConfigureAwait(false).GetAwaiter().GetResult();
+			return result.MatchResult!;
+		}
+		catch (OperationCanceledException)
+		{
+			throw new AutomationException(AutomationErrorCodes.CommandTimeout, "Wait was canceled.");
+		}
 	}
 
 	private static CliResponseSequence ExecuteStream(

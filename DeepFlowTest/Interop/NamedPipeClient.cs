@@ -56,8 +56,11 @@ internal sealed class NamedPipeClient : IDisposable
 
 	public object Send(object command, int responseTimeoutMs = TimeoutDefaults.CommandTimeoutMs)
 	{
-		return SendAsync(command, responseTimeoutMs).ConfigureAwait(false).GetAwaiter().GetResult();
+		return Send(command, responseTimeoutMs, CancellationToken.None);
 	}
+
+	public object Send(object command, int responseTimeoutMs, CancellationToken cancellationToken) =>
+		SendAsync(command, responseTimeoutMs, cancellationToken).ConfigureAwait(false).GetAwaiter().GetResult();
 
 	public async Task<object> SendAsync(object command, int responseTimeoutMs = TimeoutDefaults.CommandTimeoutMs, CancellationToken cancellationToken = default)
 	{
@@ -128,7 +131,7 @@ internal sealed class NamedPipeClient : IDisposable
 		{
 			try
 			{
-				await Task.Run(() => pipe.Connect(connectTimeoutMs), cancellationToken).ConfigureAwait(false);
+				await pipe.ConnectAsync(connectTimeoutMs, cancellationToken).ConfigureAwait(false);
 				return;
 			}
 			catch (TimeoutException ex)

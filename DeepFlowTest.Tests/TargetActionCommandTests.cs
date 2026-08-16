@@ -26,6 +26,7 @@ using static DeepFlowTest.Tests.WpfTestHelpers;
 
 [TestFixture]
 [Apartment(ApartmentState.STA)]
+[NonParallelizable]
 public sealed class TargetActionCommandTests
 {
 	[Test]
@@ -1611,12 +1612,16 @@ public sealed class TargetActionCommandTests
 	[Test]
 	public void ModalDialogWatcherReturnsPendingWhenShowDialogHookFires()
 	{
-		AppHooks.ShowDialogCalled = true;
-
-		var result = AppDriverCommandDispatcher.WaitForShowDialogAsync(1000, CancellationToken.None).GetAwaiter().GetResult();
-
-		Assert.That(result, Is.EqualTo(DeepFlowTest.Utility.UiThreadRunResult.Pending));
-		AppHooks.ShowDialogCalled = false;
+		try
+		{
+			AppHooks.ShowDialogCalled = true;
+			var result = AppDriverCommandDispatcher.WaitForShowDialogAsync(1000, CancellationToken.None).GetAwaiter().GetResult();
+			Assert.That(result, Is.EqualTo(DeepFlowTest.Utility.UiThreadRunResult.Pending));
+		}
+		finally
+		{
+			AppHooks.ShowDialogCalled = false;
+		}
 	}
 
 	[Test]

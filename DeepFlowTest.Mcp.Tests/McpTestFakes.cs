@@ -177,6 +177,8 @@ internal sealed class FakeAppSession : IAutomationSession
 
 	public List<IpcCommand> Commands { get; } = [];
 
+	public List<int> CommandTimeouts { get; } = [];
+
 	public bool Disposed { get; private set; }
 
 	public int DisposeCount { get; private set; }
@@ -197,6 +199,7 @@ internal sealed class FakeAppSession : IAutomationSession
 	public TResponse Send<TResponse>(IpcCommand command, int timeoutMs)
 	{
 		Commands.Add(command);
+		CommandTimeouts.Add(timeoutMs);
 		object response = SendHandler?.Invoke(command) ?? command switch
 		{
 			PingCommandRequest => new PingCommandResponse(1, Snapshot.NodeCount),

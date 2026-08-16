@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Configuration;
@@ -250,7 +251,7 @@ internal static class InspectTools
 	}
 
 	[McpServerTool(Name = "deepflow_wait_for_element"), Description("Poll the visual tree until an element selector matches.")]
-	public static McpToolResponse WaitForElement(
+	public static Task<McpToolResponse> WaitForElement(
 		McpToolRunner runner,
 		McpSessionHost host,
 		McpSnapshotCache cache,
@@ -266,11 +267,14 @@ internal static class InspectTools
 		int matchCount = 1,
 		int? timeoutMs = null,
 		int intervalMs = TimeoutDefaults.CliWaitIntervalMs,
-		string? properties = null)
+		string? properties = null,
+		CancellationToken cancellationToken = default)
 	{
-		return runner.Run(() =>
+		return runner.RunAsync(async token =>
 		{
 			var timeout = Math.Max(1, timeoutMs ?? options.Value.DefaultTimeoutMs);
+			if (matchCount <= 0)
+				throw new AutomationException(AutomationErrorCodes.InvalidArguments, "Wait match count must be greater than zero.");
 			var propertyNames = McpArgumentParsing.ParseProperties(properties, options.Value.DefaultProperties);
 			var findOptions = new FindSnapshotOptions
 			{
@@ -289,10 +293,17 @@ internal static class InspectTools
 				UseShortIds = true,
 			};
 
-			return new WaitExecutor().Execute(
-				() => cache.GetOrRefresh(host, propertyNames, options.Value.TreeLimit, refresh: true),
-				findOptions,
-				new WaitExecutionOptions(timeout, intervalMs, matchCount));
+			var session = host.RequireSession();
+			var result = await new WaitEngine().WaitAsync(
+				session.AppSession,
+				new WaitRequest(
+					new ElementMinimumCountWaitCondition(new FindOptionsWaitTargetMatcher(findOptions), matchCount),
+					new McpWaitObservationSource(session, cache),
+					timeout,
+					intervalMs,
+					new WaitSnapshotRequest(propertyNames, options.Value.TreeLimit)),
+				token).ConfigureAwait(false);
+			return result.MatchResult!;
 		}, new
 		{
 			typeName,
@@ -307,7 +318,7 @@ internal static class InspectTools
 			timeoutMs,
 			intervalMs,
 			properties,
-		});
+		}, cancellationToken);
 	}
 
 	[McpServerTool(Name = "deepflow_get_binding_failures"), Description("Read WPF binding failures captured by the attached target payload.")]

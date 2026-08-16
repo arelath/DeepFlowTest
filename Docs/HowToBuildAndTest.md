@@ -36,6 +36,14 @@ Use `fastbuild.ps1` and `fasttest.ps1` while changing one managed project:
 
 The fast scripts do not replace `Compile` when an integration test needs newly repacked payload assemblies.
 
+## Concurrent runs and timeouts
+
+`build.ps1`, `fastbuild.ps1`, and `fasttest.ps1` serialize access to the checkout's shared `artifacts` and payload-staging trees. A second supported invocation waits for the first and reports its owner from `artifacts/.workspace-build-owner.json`; override the ten-minute acquisition limit with `-WorkspaceLockTimeout`, for example `-WorkspaceLockTimeout 00:02:00`. The operating system releases the lock automatically if an owner exits or crashes.
+
+Raw `dotnet build` and `dotnet test` commands do not participate in this checkout lock. Do not overlap them with a supported build/test script unless their output and intermediate paths are genuinely isolated.
+
+The root build bounds ordinary build processes at fifteen minutes and individual fast test projects at five minutes. Override these with `--process-timeout=hh:mm:ss`, `--test-timeout=hh:mm:ss`, or `--integration-timeout=hh:mm:ss`. Fast aggregate tests emit crash/hang diagnostics under `artifacts/test-results`; on an outer timeout, the build terminates only the child process tree it started.
+
 ## Test recordings
 
 Integration tests produce semantic recordings by default. Pass `--no-test-recordings` to the root build, or `-NoTestRecordings` to `fasttest.ps1`, when recordings are intentionally disabled. The build maps this option to the NUnit run parameter `DeepFlowTestTestRecordings`.

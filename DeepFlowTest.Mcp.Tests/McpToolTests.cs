@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using DeepFlowTest.Automation;
 using DeepFlowTest.Contracts;
 using DeepFlowTest.Mcp.Activity;
@@ -800,19 +801,86 @@ public sealed class McpToolTests
 	[TestCase("Responsive")]
 	[TestCase("Stable")]
 	[TestCase("WindowTitleChanged")]
-	public void AgentWaitSupportsNonElementConditions(string conditionName)
+	public async Task AgentWaitSupportsNonElementConditions(string conditionName)
 	{
 		var condition = Enum.Parse<McpWaitCondition>(conditionName);
 		using var fixture = McpTestHost.CreateHost();
 		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
 
-		var result = AgentTools.Wait(
+		var result = await AgentTools.Wait(
 			fixture.Runner, fixture.Host, fixture.Cache, new McpElementHandleRegistry(), fixture.Options,
 			contextId, condition: condition, timeoutMs: 200, intervalMs: 1, stabilityMs: 1,
 			initialWindowTitle: condition == McpWaitCondition.WindowTitleChanged ? "Old title" : null);
 
 		Assert.That(result.IsError, Is.False);
 		Assert.That(JsonSerializer.Serialize(result.StructuredContent), Does.Contain("\"satisfied\":true"));
+	}
+
+	[TestCase("Exists")]
+	[TestCase("Absent")]
+	[TestCase("ExactCount")]
+	[TestCase("MinimumCount")]
+	[TestCase("PropertyEquals")]
+	[TestCase("PropertyDiffers")]
+	[TestCase("Enabled")]
+	[TestCase("Disabled")]
+	[TestCase("Visible")]
+	[TestCase("Hidden")]
+	public async Task AgentWaitMapsElementConditionsToSharedEngine(string conditionName)
+	{
+		var condition = Enum.Parse<McpWaitCondition>(conditionName);
+		var sessionService = new FakeAppSessionService();
+		var button = sessionService.Session.Snapshot.Nodes.Single(node => node.TypeName == "Button");
+		button.Properties[KnownProperties.IsEnabled] = condition != McpWaitCondition.Disabled;
+		button.Properties[KnownProperties.IsVisible] = condition != McpWaitCondition.Hidden;
+		using var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+		var target = new McpSemanticSelector
+		{
+			AutomationId = condition == McpWaitCondition.Absent ? "Missing" : "SubmitButton",
+		};
+		var property = condition switch
+		{
+			McpWaitCondition.PropertyEquals => new McpPropertyMatch { Name = KnownProperties.Text, Value = "Submit" },
+			McpWaitCondition.PropertyDiffers => new McpPropertyMatch { Name = KnownProperties.Text, Value = "Other" },
+			_ => null,
+		};
+
+		var result = await AgentTools.Wait(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Options,
+			contextId, target, condition, count: 1, property: property, timeoutMs: 100, intervalMs: 1);
+
+		Assert.That(result.IsError, Is.False);
+		Assert.That(JsonSerializer.Serialize(result.StructuredContent), Does.Contain("\"satisfied\":true"));
+		var snapshotRequest = sessionService.Session.Commands.OfType<GetVisualTreeCommandRequest>().Single();
+		Assert.That(snapshotRequest.TimeoutMs, Is.LessThanOrEqualTo(100));
+		Assert.That(sessionService.Session.CommandTimeouts.Last(), Is.LessThanOrEqualTo(100));
+	}
+
+	[Test]
+	public async Task AgentWaitPropagatesRequestCancellation()
+	{
+		var sessionService = new FakeAppSessionService();
+		using var fixture = McpTestHost.CreateHost(sessionService: sessionService);
+		var contextId = fixture.Host.AttachContext(new McpTargetSelector { ProcessId = 1234 }).ContextId!;
+		using var cancellation = new CancellationTokenSource();
+		var wait = AgentTools.Wait(
+			fixture.Runner, fixture.Host, fixture.Cache, fixture.Handles, fixture.Options,
+			contextId,
+			new McpSemanticSelector { AutomationId = "Missing" },
+			McpWaitCondition.Exists,
+			timeoutMs: 5_000,
+			intervalMs: 5_000,
+			cancellationToken: cancellation.Token);
+
+		for (var attempt = 0; attempt < 100 && sessionService.Session.Commands.Count == 0; attempt++)
+			await Task.Delay(1);
+		Assert.That(wait.IsCompleted, Is.False);
+		cancellation.Cancel();
+
+		Assert.ThrowsAsync<OperationCanceledException>(async () => await wait);
+		var activity = fixture.ServiceProvider.GetRequiredService<McpActivityStore>().Snapshot();
+		Assert.That(activity.Any(item => item.Kind == "tool.canceled" && item.Name == "Wait"), Is.True);
 	}
 
 	[Test]

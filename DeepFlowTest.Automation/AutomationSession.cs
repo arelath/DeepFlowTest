@@ -27,6 +27,15 @@ public interface IAutomationSession : IDisposable
 
 	TResponse Send<TResponse>(IpcCommand command, int timeoutMs);
 
+	TResponse Send<TResponse>(IpcCommand command, int timeoutMs, CancellationToken cancellationToken)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		return Send<TResponse>(command, timeoutMs);
+	}
+
+	Task<TResponse> SendAsync<TResponse>(IpcCommand command, int timeoutMs, CancellationToken cancellationToken = default) =>
+		Task.Run(() => Send<TResponse>(command, timeoutMs, cancellationToken), cancellationToken);
+
 	IAutomationStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs);
 }
 
@@ -202,6 +211,12 @@ public sealed class NamedPipeAutomationSession : IAutomationSession
 	public HelloCommandResponse Hello { get; internal set; }
 
 	public TResponse Send<TResponse>(IpcCommand command, int timeoutMs)
+		=> SendAsync<TResponse>(command, timeoutMs, CancellationToken.None).ConfigureAwait(false).GetAwaiter().GetResult();
+
+	public TResponse Send<TResponse>(IpcCommand command, int timeoutMs, CancellationToken cancellationToken)
+		=> SendAsync<TResponse>(command, timeoutMs, cancellationToken).ConfigureAwait(false).GetAwaiter().GetResult();
+
+	public async Task<TResponse> SendAsync<TResponse>(IpcCommand command, int timeoutMs, CancellationToken cancellationToken = default)
 	{
 		try
 		{
@@ -209,8 +224,8 @@ public sealed class NamedPipeAutomationSession : IAutomationSession
 				throw new ObjectDisposedException(nameof(NamedPipeAutomationSession));
 			var effectiveTimeoutMs = Math.Max(1, timeoutMs);
 			var response = reuseControlConnection
-				? controlClient.Send(command, effectiveTimeoutMs)
-				: SendOneShot(command, effectiveTimeoutMs);
+				? await controlClient.SendAsync(command, effectiveTimeoutMs, cancellationToken).ConfigureAwait(false)
+				: await SendOneShotAsync(command, effectiveTimeoutMs, cancellationToken).ConfigureAwait(false);
 			return MessagePacker.ConvertTo<TResponse>(response);
 		}
 		catch (NamedPipeSessionException ex)
@@ -238,14 +253,14 @@ public sealed class NamedPipeAutomationSession : IAutomationSession
 			controlClient.Dispose();
 	}
 
-	private object SendOneShot(IpcCommand command, int timeoutMs)
+	private async Task<object> SendOneShotAsync(IpcCommand command, int timeoutMs, CancellationToken cancellationToken)
 	{
 		using var client = new NamedPipeClient(
 			connection.PipeName,
 			getTargetExitCode: () => connection.TargetProcess.HasExited ? 0 : null,
 			connectTimeoutMs: Math.Min(AutomationTimeoutDefaults.OneShotConnectTimeoutCapMs, timeoutMs),
 			connectRetryCount: 1);
-		return client.Send(command, timeoutMs);
+		return await client.SendAsync(command, timeoutMs, cancellationToken).ConfigureAwait(false);
 	}
 
 	public IAutomationStreamSession StartStream(StartSendingCommandRequest command, int timeoutMs) =>
