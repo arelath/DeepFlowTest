@@ -28,6 +28,8 @@ function Enter-WorkspaceBuildLock {
   $reportedWaiting = $false
 
   while ($true) {
+    $stream = $null
+    $temporaryOwnerPath = $null
     try {
       $stream = [System.IO.File]::Open(
         $lockPath,
@@ -59,6 +61,26 @@ function Enter-WorkspaceBuildLock {
       }
     }
     catch [System.IO.IOException] {
+      if ($null -ne $stream) {
+        $metadataException = $_.Exception
+        try {
+          if ($temporaryOwnerPath -and (Test-Path -LiteralPath $temporaryOwnerPath)) {
+            Remove-Item -LiteralPath $temporaryOwnerPath -Force
+          }
+        }
+        catch {
+          # The metadata file is diagnostic only; releasing the exclusive
+          # workspace lock is the required cleanup on this failure path.
+        }
+        finally {
+          $stream.Dispose()
+        }
+
+        throw [System.IO.IOException]::new(
+          "Could not publish workspace build lock metadata '$ownerPath'.",
+          $metadataException)
+      }
+
       if (-not $reportedWaiting) {
         Write-Host "Waiting for workspace build lock '$lockPath'."
         $reportedWaiting = $true
@@ -102,9 +124,6 @@ function Exit-WorkspaceBuildLock {
   }
 
   try {
-    $LockHandle.Stream.Dispose()
-  }
-  finally {
     try {
       if (Test-Path -LiteralPath $LockHandle.OwnerPath) {
         $owner = Get-Content -LiteralPath $LockHandle.OwnerPath -Raw | ConvertFrom-Json
@@ -116,5 +135,8 @@ function Exit-WorkspaceBuildLock {
     catch {
       Write-Warning "Could not clean workspace build lock metadata '$($LockHandle.OwnerPath)': $($_.Exception.Message)"
     }
+  }
+  finally {
+    $LockHandle.Stream.Dispose()
   }
 }

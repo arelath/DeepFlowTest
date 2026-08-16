@@ -2,6 +2,7 @@ namespace DeepFlowTest.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -164,6 +165,64 @@ public sealed class RepositoryConfigurationTests
 			Assert.That(script, Does.Contain("Enter-WorkspaceBuildLock"), scriptName);
 			Assert.That(script, Does.Contain("Exit-WorkspaceBuildLock"), scriptName);
 			Assert.That(script, Does.Contain("finally"), scriptName);
+		}
+	}
+
+	[Test]
+	public void WorkspaceBuildLockReleasesHandleWhenMetadataPublicationFails()
+	{
+		var root = FindRepositoryRoot();
+		var helperPath = Path.Combine(root, "Tools", "WorkspaceBuildLock.ps1");
+		var temporaryRoot = Path.Combine(Path.GetTempPath(), $"DeepFlowTest-lock-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(temporaryRoot);
+
+		try
+		{
+			var script = $$"""
+				$ErrorActionPreference = 'Stop'
+				. '{{EscapePowerShellLiteral(helperPath)}}'
+				function global:Move-Item {
+					param([string]$LiteralPath, [string]$Destination, [switch]$Force)
+					throw [System.IO.IOException]::new('Forced metadata publication failure.')
+				}
+				$failedAsExpected = $false
+				try {
+					Enter-WorkspaceBuildLock -Root '{{EscapePowerShellLiteral(temporaryRoot)}}' -Timeout ([TimeSpan]::FromSeconds(2)) -CommandDescription 'metadata failure test' | Out-Null
+				}
+				catch [System.IO.IOException] {
+					$failedAsExpected = $true
+				}
+				Microsoft.PowerShell.Management\Remove-Item -LiteralPath function:\Move-Item
+				if (-not $failedAsExpected) { throw 'Metadata publication unexpectedly succeeded.' }
+				$lockPath = Join-Path '{{EscapePowerShellLiteral(temporaryRoot)}}' 'artifacts/.workspace-build.lock'
+				$probe = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+				$probe.Dispose()
+				Write-Output 'LOCK_RELEASED'
+				""";
+			var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+			var startInfo = new ProcessStartInfo("powershell.exe", $"-NoProfile -NonInteractive -EncodedCommand {encodedCommand}")
+			{
+				CreateNoWindow = true,
+				RedirectStandardError = true,
+				RedirectStandardOutput = true,
+				UseShellExecute = false,
+			};
+
+			using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start PowerShell.");
+			var standardOutput = process.StandardOutput.ReadToEnd();
+			var standardError = process.StandardError.ReadToEnd();
+			if (!process.WaitForExit(30_000))
+			{
+				process.Kill(entireProcessTree: true);
+				Assert.Fail("PowerShell lock regression test timed out.");
+			}
+
+			Assert.That(process.ExitCode, Is.Zero, standardError);
+			Assert.That(standardOutput, Does.Contain("LOCK_RELEASED"), standardError);
+		}
+		finally
+		{
+			Directory.Delete(temporaryRoot, recursive: true);
 		}
 	}
 
@@ -469,6 +528,11 @@ public sealed class RepositoryConfigurationTests
 			directory = directory.Parent;
 
 		return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root was not found.");
+	}
+
+	private static string EscapePowerShellLiteral(string value)
+	{
+		return value.Replace("'", "''", StringComparison.Ordinal);
 	}
 
 	private static string Decode(string value)
